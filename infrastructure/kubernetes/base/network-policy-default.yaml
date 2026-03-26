@@ -1,0 +1,135 @@
+# ============================================================================
+# ORDR-Connect — Default Deny NetworkPolicy
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# CLAUDE.md Rule 10: Zero-trust — default deny all traffic
+# ============================================================================
+
+# Default deny ALL ingress traffic
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    ordr-connect/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+# Default deny ALL egress traffic
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    ordr-connect/policy-type: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+
+# Allow DNS resolution for all pods (required for service discovery)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    ordr-connect/policy-type: dns
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+# Allow intra-namespace communication (pods in ordr-system can talk to each other)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    ordr-connect/policy-type: namespace
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+
+# Allow Istio control plane communication
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istio-control-plane
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    ordr-connect/policy-type: istio
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 15012
+        - protocol: TCP
+          port: 15014
+
+# Allow Prometheus scraping from monitoring namespace
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    ordr-connect/policy-type: monitoring
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15020

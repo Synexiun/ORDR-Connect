@@ -1,0 +1,35 @@
+# ============================================================================
+# ORDR-Connect — Terraform Variables Example
+# Copy to terraform.tfvars and fill with real values
+# NEVER commit terraform.tfvars — it is in .gitignore
+# ============================================================================
+
+environment = "staging"
+aws_region  = "us-east-1"
+
+# Networking
+vpc_cidr = "10.0.0.0/16"
+
+# EKS
+eks_cluster_version = "1.29"
+
+# RDS PostgreSQL
+rds_instance_class       = "db.r6g.xlarge"
+db_name                  = "ordr_connect"
+db_master_username       = "ordr_admin"
+db_backup_retention_days = 35
+
+# Redis
+redis_node_type          = "cache.r6g.large"
+redis_num_cache_clusters = 3
+
+# Kafka (MSK)
+kafka_broker_instance_type = "kafka.m5.large"
+kafka_broker_count         = 3
+
+# S3
+audit_retention_days = 2557
+backup_region        = "us-west-2"
+
+# Vault
+vault_replicas = 3

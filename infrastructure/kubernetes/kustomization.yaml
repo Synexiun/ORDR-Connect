@@ -1,0 +1,68 @@
+# ============================================================================
+# ORDR-Connect — Base Kustomization
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Aggregates all K8s manifests into a single deployable unit
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ordr-system
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ordr-connect
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  # Base shared resources
+  - base/namespace.yaml
+  - base/resource-quota.yaml
+  - base/limit-range.yaml
+  - base/network-policy-default.yaml
+
+  # API
+  - apps/api/service-account.yaml
+  - apps/api/deployment.yaml
+  - apps/api/service.yaml
+  - apps/api/hpa.yaml
+  - apps/api/ingress.yaml
+  - apps/api/network-policy.yaml
+
+  # Worker
+  - apps/worker/service-account.yaml
+  - apps/worker/deployment.yaml
+  - apps/worker/service.yaml
+  - apps/worker/hpa.yaml
+  - apps/worker/network-policy.yaml
+
+  # Agent Runtime
+  - apps/agent-runtime/service-account.yaml
+  - apps/agent-runtime/deployment.yaml
+  - apps/agent-runtime/service.yaml
+  - apps/agent-runtime/hpa.yaml
+  - apps/agent-runtime/network-policy.yaml
+
+  # Web
+  - apps/web/service-account.yaml
+  - apps/web/deployment.yaml
+  - apps/web/service.yaml
+  - apps/web/hpa.yaml
+  - apps/web/network-policy.yaml
+
+  # Developer Portal
+  - apps/developer-portal/service-account.yaml
+  - apps/developer-portal/deployment.yaml
+  - apps/developer-portal/service.yaml
+  - apps/developer-portal/hpa.yaml
+  - apps/developer-portal/network-policy.yaml
+
+  # Istio Service Mesh
+  - istio/peer-authentication.yaml
+  - istio/destination-rules.yaml
+  - istio/virtual-services.yaml
+  - istio/authorization-policies.yaml
+
+  # Monitoring
+  - monitoring/service-monitor.yaml
+  - monitoring/prometheus-rules.yaml

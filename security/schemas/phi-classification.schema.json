@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ordr-connect.synexiun.com/schemas/phi-classification.json",
+  "title": "ORDR-Connect Data Classification",
+  "description": "Data classification schema for PHI/PII handling per SOC2, ISO 27001, and HIPAA requirements. Maps classification levels to encryption and access requirements.",
+  "type": "object",
+  "required": ["classification", "fields"],
+  "properties": {
+    "classification": {
+      "type": "string",
+      "enum": ["public", "internal", "confidential", "restricted"],
+      "description": "Data sensitivity classification level"
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/classifiedField"
+      },
+      "description": "List of fields with their individual classification and handling requirements"
+    },
+    "resource": {
+      "type": "string",
+      "description": "Resource type this classification applies to (e.g., 'customers', 'interactions')"
+    },
+    "tenantId": {
+      "type": "string",
+      "description": "Tenant scope for this classification"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "classifiedField": {
+      "type": "object",
+      "required": ["name", "classification", "encryptionRequired"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Field/column name"
+        },
+        "classification": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "restricted"],
+          "description": "Classification level for this specific field"
+        },
+        "encryptionRequired": {
+          "type": "boolean",
+          "description": "Whether field-level encryption is required before storage"
+        },
+        "isPhi": {
+          "type": "boolean",
+          "description": "Whether this field contains Protected Health Information"
+        },
+        "isPii": {
+          "type": "boolean",
+          "description": "Whether this field contains Personally Identifiable Information"
+        },
+        "maskingRule": {
+          "type": "string",
+          "enum": ["full", "partial", "hash", "none"],
+          "description": "How to mask this field in non-production environments"
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Data retention period in days (0 = indefinite within classification limits)"
+        },
+        "accessRoles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["super_admin", "tenant_admin", "manager", "agent", "viewer"]
+          },
+          "description": "Roles authorized to access this field"
+        }
+      },
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "classification": { "const": "restricted" }
+        }
+      },
+      "then": {
+        "properties": {
+          "encryptionRequired": { "const": true }
+        }
+      }
+    },
+    "classificationRequirements": {
+      "type": "object",
+      "description": "Handling requirements per classification level",
+      "properties": {
+        "public": {
+          "$ref": "#/$defs/levelRequirements"
+        },
+        "internal": {
+          "$ref": "#/$defs/levelRequirements"
+        },
+        "confidential": {
+          "$ref": "#/$defs/levelRequirements"
+        },
+        "restricted": {
+          "$ref": "#/$defs/levelRequirements"
+        }
+      }
+    },
+    "levelRequirements": {
+      "type": "object",
+      "required": [
+        "encryptAtRest",
+        "encryptInTransit",
+        "fieldLevelEncryption",
+        "accessLogging",
+        "auditTrail",
+        "mfaRequired"
+      ],
+      "properties": {
+        "encryptAtRest": { "type": "boolean" },
+        "encryptInTransit": { "type": "boolean" },
+        "fieldLevelEncryption": { "type": "boolean" },
+        "accessLogging": { "type": "boolean" },
+        "auditTrail": { "type": "boolean" },
+        "mfaRequired": { "type": "boolean" },
+        "retentionYears": { "type": "integer", "minimum": 1 },
+        "allowedExportFormats": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,95 @@
+# ORDR-Connect — gitleaks Configuration
+# SOC2/ISO27001/HIPAA: Secret scanning rules
+# Blocks real secrets, allows test fixtures
+
+title = "ORDR-Connect Secret Scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for test fixtures and safe patterns"
+paths = [
+  '''(^|/)\.github/__tests__/.*''',
+  '''(^|/)tests/.*fixtures.*''',
+  '''(^|/).*\.test\.ts$''',
+  '''(^|/).*\.spec\.ts$''',
+  '''(^|/)Tools/.*''',
+  '''(^|/)Data/.*''',
+  '''(^|/)Research/.*''',
+]
+regexTarget = "line"
+regexes = [
+  '''EXAMPLE_''',
+  '''test[_-]?key''',
+  '''fake[_-]?secret''',
+  '''dummy[_-]?token''',
+  '''placeholder''',
+  '''ordr_dev_password''',
+]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID"
+regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["aws", "credentials"]
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex = '''(?i)aws_secret_access_key\s*[=:]\s*['\"]?([A-Za-z0-9/+=]{40})['\"]?'''
+tags = ["aws", "credentials"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub Token"
+regex = '''(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,255}'''
+tags = ["github", "token"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|apikey)\s*[=:]\s*['\"]?([A-Za-z0-9_\-]{32,})['\"]?'''
+tags = ["api", "key"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key"
+regex = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+tags = ["crypto", "private-key"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token"
+regex = '''eyJ[A-Za-z0-9-_]+\.eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_.+/=]+'''
+tags = ["jwt", "token"]
+
+[[rules]]
+id = "database-url"
+description = "Database Connection String"
+regex = '''(?i)(postgres|mysql|mongodb|redis)://[^\s'"]+:[^\s'"]+@[^\s'"]+'''
+tags = ["database", "credentials"]
+
+[[rules]]
+id = "sendgrid-key"
+description = "SendGrid API Key"
+regex = '''SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}'''
+tags = ["sendgrid", "key"]
+
+[[rules]]
+id = "twilio-key"
+description = "Twilio API Key"
+regex = '''SK[a-f0-9]{32}'''
+tags = ["twilio", "key"]
+
+[[rules]]
+id = "vault-token"
+description = "HashiCorp Vault Token"
+regex = '''(?i)(vault[_-]?token|hvs\.)\s*[=:]\s*['\"]?([A-Za-z0-9._\-]{24,})['\"]?'''
+tags = ["vault", "token"]
+
+[[rules]]
+id = "cosign-password"
+description = "Cosign Password"
+regex = '''(?i)cosign[_-]?password\s*[=:]\s*['\"]?([^\s'"]{8,})['\"]?'''
+tags = ["cosign", "credentials"]

@@ -1,0 +1,75 @@
+# ============================================================================
+# ORDR-Connect — Worker HPA + KEDA ScaledObject
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Scale on Kafka consumer lag (threshold: 100 messages)
+# ============================================================================
+
+# Standard HPA as fallback
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+  minReplicas: 2
+  maxReplicas: 10
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+# KEDA ScaledObject — Kafka consumer lag trigger
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-kafka-scaler
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  scaleTargetRef:
+    name: worker
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: ordr-kafka-bootstrap.ordr-system.svc.cluster.local:9094
+        consumerGroup: ordr-worker-group
+        topic: ordr.events
+        lagThreshold: "100"
+        offsetResetPolicy: earliest
+      authenticationRef:
+        name: kafka-trigger-auth

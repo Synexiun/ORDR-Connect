@@ -1,0 +1,141 @@
+# ============================================================================
+# ORDR-Connect — Agent Runtime Deployment
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# AI agent execution — higher memory, compute-optimized nodes, strict safety
+# Rule 9: Agent safety — bounded, audited, killable
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-runtime
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: agent-runtime
+    app.kubernetes.io/component: agent-runtime
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    ordr-connect/compliance: soc2-iso27001-hipaa
+    ordr-connect/agent-safety: enabled
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-runtime
+      app.kubernetes.io/component: agent-runtime
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-runtime
+        app.kubernetes.io/component: agent-runtime
+        app.kubernetes.io/part-of: ordr-connect
+        sidecar.istio.io/inject: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: agent-runtime
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Schedule on compute-optimized agent-runtime nodes
+      nodeSelector:
+        workload: agent-runtime
+      tolerations:
+        - key: workload
+          value: agent-runtime
+          effect: NoSchedule
+      containers:
+        - name: agent-runtime
+          image: ghcr.io/synexiun/ordr-connect-agent-runtime:0.1.0
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: agent-runtime-config
+            - secretRef:
+                name: agent-runtime-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: METRICS_PORT
+              value: "9090"
+            # Agent safety bounds (Rule 9)
+            - name: AGENT_MAX_TOKENS
+              value: "100000"
+            - name: AGENT_MAX_ACTIONS
+              value: "50"
+            - name: AGENT_CONFIDENCE_THRESHOLD
+              value: "0.7"
+            - name: AGENT_TIMEOUT_MS
+              value: "120000"
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=2048"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 200Mi

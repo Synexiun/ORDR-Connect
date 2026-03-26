@@ -1,0 +1,49 @@
+# ORDR-Connect — Docker Build Context Exclusions
+
+# Dependencies (rebuilt in container)
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+**/dist
+.turbo
+
+# Version control
+.git
+.gitignore
+
+# Environment files (secrets must not leak into images)
+.env
+.env.*
+!.env.example
+
+# Non-application directories
+Tools
+Data
+Research
+
+# Test & coverage artifacts
+coverage
+**/*.test.ts
+**/*.spec.ts
+**/__tests__
+
+# Documentation
+*.md
+
+# IDE & editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (prevent recursive context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore

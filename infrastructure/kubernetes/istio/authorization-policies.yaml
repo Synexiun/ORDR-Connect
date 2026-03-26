@@ -1,0 +1,212 @@
+# ============================================================================
+# ORDR-Connect — Istio AuthorizationPolicies
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Per-service RBAC: explicit allow, default deny
+# CLAUDE.md Rule 2: Zero trust — every request authorized
+# ============================================================================
+
+# Default DENY for the namespace
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  {}
+
+# API — reachable from istio-ingressgateway, web, developer-portal, agent-runtime
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: api-authz
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  action: ALLOW
+  rules:
+    # From Istio ingress gateway
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+      to:
+        - operation:
+            ports: ["3000"]
+    # From web frontend
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ordr-system/sa/web
+      to:
+        - operation:
+            ports: ["3000"]
+    # From developer portal
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ordr-system/sa/developer-portal
+      to:
+        - operation:
+            ports: ["3000"]
+    # From agent runtime
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ordr-system/sa/agent-runtime
+      to:
+        - operation:
+            ports: ["3000"]
+    # Prometheus metrics scraping
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports: ["9090"]
+            methods: ["GET"]
+            paths: ["/metrics"]
+
+# Worker — internal only, no external HTTP
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: worker-authz
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  action: ALLOW
+  rules:
+    # Only Prometheus can scrape metrics
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports: ["9090"]
+            methods: ["GET"]
+            paths: ["/metrics", "/health/live", "/health/ready"]
+
+# Agent Runtime — only API can call it
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: agent-runtime-authz
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: agent-runtime
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-runtime
+  action: ALLOW
+  rules:
+    # Only API service can invoke agent-runtime
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/ordr-system/sa/api
+      to:
+        - operation:
+            ports: ["3000"]
+    # Prometheus metrics
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports: ["9090"]
+            methods: ["GET"]
+            paths: ["/metrics"]
+
+# Web — reachable from Istio ingress only
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: web-authz
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+      to:
+        - operation:
+            ports: ["8080"]
+    # Prometheus metrics
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports: ["9113"]
+            methods: ["GET"]
+
+# Developer Portal — reachable from Istio ingress only
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: developer-portal-authz
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: developer-portal
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: developer-portal
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+      to:
+        - operation:
+            ports: ["3000"]
+    # Prometheus metrics
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            ports: ["9090"]
+            methods: ["GET"]
+            paths: ["/metrics"]

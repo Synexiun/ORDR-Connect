@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# ORDR-Connect — Pre-commit hook
+# SOC2/ISO27001/HIPAA: Lint, format, and secret scan before every commit
+
+pnpm exec lint-staged

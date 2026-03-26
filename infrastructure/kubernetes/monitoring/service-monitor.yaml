@@ -1,0 +1,125 @@
+# ============================================================================
+# ORDR-Connect — Prometheus ServiceMonitors
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# One ServiceMonitor per application for granular metric collection
+# ============================================================================
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-monitor
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  namespaceSelector:
+    matchNames:
+      - ordr-system
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: http
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: worker-monitor
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  namespaceSelector:
+    matchNames:
+      - ordr-system
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: http
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: agent-runtime-monitor
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: agent-runtime
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-runtime
+  namespaceSelector:
+    matchNames:
+      - ordr-system
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: http
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: web-monitor
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  namespaceSelector:
+    matchNames:
+      - ordr-system
+  endpoints:
+    - port: http
+      interval: 30s
+      path: /metrics
+      scheme: http
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: developer-portal-monitor
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: developer-portal
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: developer-portal
+  namespaceSelector:
+    matchNames:
+      - ordr-system
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: http

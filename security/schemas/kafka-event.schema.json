@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ordr-connect.synexiun.com/schemas/kafka-event.json",
+  "title": "ORDR-Connect Kafka Event Envelope",
+  "description": "Event envelope for Kafka event streaming. Matches packages/events/src/schemas.ts EventEnvelope type. Every event must be validated before publishing.",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "tenantId",
+    "payload",
+    "metadata",
+    "timestamp"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique event identifier (UUID v4)"
+    },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "enum": [
+        "customer.created",
+        "customer.updated",
+        "interaction.logged",
+        "agent.action_executed",
+        "compliance.check",
+        "auth.login",
+        "auth.logout",
+        "auth.failed",
+        "auth.mfa_verified"
+      ],
+      "description": "Event type — maps to schema registry for validation"
+    },
+    "tenantId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Tenant isolation — events are scoped to a single tenant"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event-specific payload — validated against the schema registered for the event type",
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "correlationId",
+        "causationId",
+        "source",
+        "version"
+      ],
+      "properties": {
+        "correlationId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Request correlation ID for distributed tracing"
+        },
+        "causationId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ID of the event/request that caused this event"
+        },
+        "userId": {
+          "type": "string",
+          "description": "User who triggered the event (if human-initiated)"
+        },
+        "agentId": {
+          "type": "string",
+          "description": "Agent that triggered the event (if agent-initiated)"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Service that produced the event (e.g., 'api', 'agent-runtime', 'worker')"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Schema version for backward compatibility"
+        }
+      },
+      "additionalProperties": false
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of event creation"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+# ============================================================================
+# ORDR-Connect — API PodDisruptionBudget (Production)
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Ensure at least 2 API pods during disruptions
+# ============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/component: api

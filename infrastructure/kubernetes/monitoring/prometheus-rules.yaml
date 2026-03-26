@@ -1,0 +1,271 @@
+# ============================================================================
+# ORDR-Connect — Prometheus Alert Rules
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Incident classification per CLAUDE.md: P0 (15m), P1 (1h), P2 (24h), P3 (1w)
+# ============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ordr-connect-alerts
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+    prometheus: ordr-connect
+spec:
+  groups:
+    # ========================================================================
+    # P0 — CRITICAL (15 min response)
+    # Data breach, PHI exposure, audit chain broken, auth bypass
+    # ========================================================================
+    - name: ordr-p0-critical
+      interval: 30s
+      rules:
+        - alert: AuditChainBroken
+          expr: |
+            increase(ordr_audit_chain_verification_failures_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: P0
+            team: security
+            compliance: soc2-hipaa
+          annotations:
+            summary: "CRITICAL: Audit hash chain integrity failure"
+            description: "Audit log chain verification has failed. Potential tampering detected. Immediate investigation required."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/audit-chain-broken"
+
+        - alert: UnauthorizedDataAccess
+          expr: |
+            increase(ordr_unauthorized_data_access_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: P0
+            team: security
+            compliance: hipaa
+          annotations:
+            summary: "CRITICAL: Unauthorized data access detected"
+            description: "Unauthorized access to restricted data (PHI/PII) detected. Incident response required."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/unauthorized-access"
+
+        - alert: AuthBypassDetected
+          expr: |
+            increase(ordr_auth_bypass_attempts_total[5m]) > 0
+          for: 0m
+          labels:
+            severity: P0
+            team: security
+            compliance: soc2-iso27001
+          annotations:
+            summary: "CRITICAL: Authentication bypass attempt detected"
+            description: "Requests bypassing authentication middleware detected. Immediate lockdown required."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/auth-bypass"
+
+        - alert: EncryptionFailure
+          expr: |
+            increase(ordr_encryption_failures_total[5m]) > 0
+          for: 1m
+          labels:
+            severity: P0
+            team: security
+            compliance: hipaa
+          annotations:
+            summary: "CRITICAL: Encryption operation failure"
+            description: "PHI/PII encryption operations failing. Data may be stored unencrypted."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/encryption-failure"
+
+    # ========================================================================
+    # P1 — HIGH (1 hour response)
+    # Agent safety failure, compliance violation, service down
+    # ========================================================================
+    - name: ordr-p1-high
+      interval: 60s
+      rules:
+        - alert: AgentSafetyViolation
+          expr: |
+            increase(ordr_agent_safety_violations_total[10m]) > 0
+          for: 1m
+          labels:
+            severity: P1
+            team: platform
+            compliance: soc2
+          annotations:
+            summary: "HIGH: Agent safety boundary violation"
+            description: "AI agent exceeded permission boundaries or confidence threshold. Agent kill switch may be required."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/agent-safety"
+
+        - alert: ServiceDown
+          expr: |
+            up{namespace="ordr-system"} == 0
+          for: 5m
+          labels:
+            severity: P1
+            team: platform
+          annotations:
+            summary: "HIGH: Service {{ $labels.job }} is down"
+            description: "Service {{ $labels.job }} has been unreachable for 5 minutes."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/service-down"
+
+        - alert: HighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{namespace="ordr-system", status=~"5.."}[5m])) by (service)
+              /
+              sum(rate(http_requests_total{namespace="ordr-system"}[5m])) by (service)
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: P1
+            team: platform
+          annotations:
+            summary: "HIGH: Error rate above 5% for {{ $labels.service }}"
+            description: "{{ $labels.service }} has error rate {{ $value | humanizePercentage }} over last 5m."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/high-error-rate"
+
+        - alert: PodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="ordr-system"}[15m]) * 60 * 15 > 3
+          for: 5m
+          labels:
+            severity: P1
+            team: platform
+          annotations:
+            summary: "HIGH: Pod {{ $labels.pod }} crash looping"
+            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in 15 minutes."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/crash-loop"
+
+        - alert: TenantIsolationFailure
+          expr: |
+            increase(ordr_tenant_isolation_violations_total[10m]) > 0
+          for: 1m
+          labels:
+            severity: P1
+            team: security
+            compliance: soc2-hipaa
+          annotations:
+            summary: "HIGH: Tenant isolation boundary breach"
+            description: "Cross-tenant data access detected. RLS enforcement may be failing."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/tenant-isolation"
+
+    # ========================================================================
+    # P2 — MEDIUM (24 hour response)
+    # Security scan failures, dependency CVEs, performance degradation
+    # ========================================================================
+    - name: ordr-p2-medium
+      interval: 300s
+      rules:
+        - alert: HighLatency
+          expr: |
+            histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{namespace="ordr-system"}[5m])) by (le, service)) > 5
+          for: 15m
+          labels:
+            severity: P2
+            team: platform
+          annotations:
+            summary: "MEDIUM: P99 latency above 5s for {{ $labels.service }}"
+            description: "{{ $labels.service }} P99 latency is {{ $value }}s."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/high-latency"
+
+        - alert: HighMemoryUsage
+          expr: |
+            (
+              container_memory_working_set_bytes{namespace="ordr-system"}
+              /
+              container_spec_memory_limit_bytes{namespace="ordr-system"}
+            ) > 0.85
+          for: 15m
+          labels:
+            severity: P2
+            team: platform
+          annotations:
+            summary: "MEDIUM: Container {{ $labels.container }} memory usage above 85%"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/high-memory"
+
+        - alert: HighCPUUsage
+          expr: |
+            (
+              rate(container_cpu_usage_seconds_total{namespace="ordr-system"}[5m])
+              /
+              container_spec_cpu_quota{namespace="ordr-system"} * container_spec_cpu_period{namespace="ordr-system"}
+            ) > 0.85
+          for: 15m
+          labels:
+            severity: P2
+            team: platform
+          annotations:
+            summary: "MEDIUM: Container {{ $labels.container }} CPU usage above 85%"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of CPU limit."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/high-cpu"
+
+        - alert: KafkaConsumerLagHigh
+          expr: |
+            kafka_consumer_group_lag{namespace="ordr-system"} > 10000
+          for: 15m
+          labels:
+            severity: P2
+            team: platform
+          annotations:
+            summary: "MEDIUM: Kafka consumer lag above 10K for {{ $labels.group }}"
+            description: "Consumer group {{ $labels.group }} has lag of {{ $value }} messages."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/kafka-lag"
+
+        - alert: CertificateExpiringSoon
+          expr: |
+            (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 14
+          for: 1h
+          labels:
+            severity: P2
+            team: security
+          annotations:
+            summary: "MEDIUM: TLS certificate expiring within 14 days"
+            description: "Certificate {{ $labels.name }} expires in {{ $value }} days."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/cert-expiry"
+
+    # ========================================================================
+    # P3 — LOW (1 week response)
+    # Best practice deviations, minor config issues
+    # ========================================================================
+    - name: ordr-p3-low
+      interval: 600s
+      rules:
+        - alert: HPAMaxedOut
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="ordr-system"}
+            ==
+            kube_horizontalpodautoscaler_spec_max_replicas{namespace="ordr-system"}
+          for: 1h
+          labels:
+            severity: P3
+            team: platform
+          annotations:
+            summary: "LOW: HPA {{ $labels.horizontalpodautoscaler }} at max replicas"
+            description: "HPA has been at max replicas for 1 hour. Consider increasing max."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p3/hpa-maxed"
+
+        - alert: PodNotReady
+          expr: |
+            kube_pod_status_ready{namespace="ordr-system", condition="true"} == 0
+          for: 30m
+          labels:
+            severity: P3
+            team: platform
+          annotations:
+            summary: "LOW: Pod {{ $labels.pod }} not ready for 30 minutes"
+            description: "Pod {{ $labels.pod }} has not been ready for 30 minutes."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p3/pod-not-ready"
+
+        - alert: PersistentVolumeSpaceLow
+          expr: |
+            (
+              kubelet_volume_stats_available_bytes{namespace="ordr-system"}
+              /
+              kubelet_volume_stats_capacity_bytes{namespace="ordr-system"}
+            ) < 0.2
+          for: 1h
+          labels:
+            severity: P3
+            team: platform
+          annotations:
+            summary: "LOW: PV {{ $labels.persistentvolumeclaim }} space below 20%"
+            description: "PersistentVolume {{ $labels.persistentvolumeclaim }} has only {{ $value | humanizePercentage }} space remaining."
+            runbook: "https://runbooks.ordr-connect.synexiun.com/p3/pv-space-low"

@@ -1,0 +1,29 @@
+# ============================================================================
+# ORDR-Connect — API Service
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# ClusterIP only — external access via Istio gateway
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

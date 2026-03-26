@@ -1,0 +1,95 @@
+# ============================================================
+# ORDR-Connect — Git Ignore Rules
+# SOC2/ISO27001/HIPAA: Secrets, credentials, and PHI MUST
+# never appear in version control.
+# ============================================================
+
+# ── Dependencies ─────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ── Build Outputs ────────────────────────────────────────────
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# ── Environment & Secrets ────────────────────────────────────
+# COMPLIANCE: .env files may contain database URLs, API keys,
+# encryption keys — NEVER commit.
+.env
+.env.local
+.env.*.local
+.env.development
+.env.staging
+.env.production
+!.env.example
+
+# Secrets — NEVER commit (SOC2 CC6.1 / HIPAA §164.312(a)(1))
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+secrets.json
+service-account.json
+**/secrets/
+
+# ── IDE & Editors ────────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ── OS Files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ── Testing & Coverage ──────────────────────────────────────
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+
+# ── Docker ───────────────────────────────────────────────────
+.docker/
+
+# ── Database ─────────────────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+
+# ── Terraform ────────────────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# ── Tools (reference repos — not project code) ──────────────
+Tools/deer-flow/
+Tools/agency-agents/
+Tools/shannon/
+Tools/skills/
+
+# ── Claude Code (user-specific state) ───────────────────────
+.claude/memory/
+.claude/state/

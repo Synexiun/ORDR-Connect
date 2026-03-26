@@ -1,0 +1,93 @@
+# ORDR-Connect — Worker Service Production Dockerfile
+# SOC2/ISO27001/HIPAA: Alpine runtime, non-root, graceful shutdown
+# Target: apps/worker (Kafka consumer + background jobs)
+
+# ============================================================
+# Stage 1: Builder — install deps + compile TypeScript
+# ============================================================
+FROM node:22.14-alpine3.20 AS builder
+
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+WORKDIR /app
+
+# Copy workspace manifests for dependency resolution
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json turbo.json ./
+
+# Copy package.json files for required packages
+COPY apps/worker/package.json ./apps/worker/
+COPY packages/core/package.json ./packages/core/
+COPY packages/db/package.json ./packages/db/
+COPY packages/events/package.json ./packages/events/
+COPY packages/compliance/package.json ./packages/compliance/
+COPY packages/channels/package.json ./packages/channels/
+COPY packages/graph/package.json ./packages/graph/
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/audit/package.json ./packages/audit/
+COPY packages/analytics/package.json ./packages/analytics/
+COPY packages/decision-engine/package.json ./packages/decision-engine/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/crypto/package.json ./packages/crypto/
+COPY packages/auth/package.json ./packages/auth/
+
+RUN pnpm install --frozen-lockfile
+
+# Copy source for build
+COPY packages/ ./packages/
+COPY apps/worker/ ./apps/worker/
+
+RUN pnpm --filter @ordr/worker... build
+
+# Prune to production deps only
+RUN pnpm install --frozen-lockfile --prod
+
+# ============================================================
+# Stage 2: Runtime — Alpine, non-root, signal-ready
+# ============================================================
+FROM node:22.14-alpine3.20 AS runtime
+
+LABEL org.opencontainers.image.title="ordr-connect-worker"
+LABEL org.opencontainers.image.description="ORDR-Connect Worker — Kafka consumer + background jobs"
+LABEL org.opencontainers.image.vendor="Synexiun"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.source="https://github.com/synexiun/ordr-connect"
+
+# Remove unnecessary packages and create non-root user
+RUN apk add --no-cache tini \
+    && addgroup -g 1000 -S ordr \
+    && adduser -u 1000 -S ordr -G ordr
+
+WORKDIR /app
+
+# Copy production artifacts
+COPY --from=builder --chown=ordr:ordr /app/node_modules ./node_modules
+COPY --from=builder --chown=ordr:ordr /app/package.json ./
+COPY --from=builder --chown=ordr:ordr /app/apps/worker/dist ./apps/worker/dist
+COPY --from=builder --chown=ordr:ordr /app/apps/worker/package.json ./apps/worker/
+COPY --from=builder --chown=ordr:ordr /app/packages/core/dist ./packages/core/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/core/package.json ./packages/core/
+COPY --from=builder --chown=ordr:ordr /app/packages/db/dist ./packages/db/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/db/package.json ./packages/db/
+COPY --from=builder --chown=ordr:ordr /app/packages/events/dist ./packages/events/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/events/package.json ./packages/events/
+COPY --from=builder --chown=ordr:ordr /app/packages/compliance/dist ./packages/compliance/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/compliance/package.json ./packages/compliance/
+COPY --from=builder --chown=ordr:ordr /app/packages/channels/dist ./packages/channels/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/channels/package.json ./packages/channels/
+COPY --from=builder --chown=ordr:ordr /app/packages/graph/dist ./packages/graph/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/graph/package.json ./packages/graph/
+COPY --from=builder --chown=ordr:ordr /app/packages/ai/dist ./packages/ai/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/ai/package.json ./packages/ai/
+COPY --from=builder --chown=ordr:ordr /app/packages/audit/dist ./packages/audit/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/audit/package.json ./packages/audit/
+COPY --from=builder --chown=ordr:ordr /app/packages/analytics/dist ./packages/analytics/dist
+COPY --from=builder --chown=ordr:ordr /app/packages/analytics/package.json ./packages/analytics/
+
+USER ordr
+
+ENV NODE_ENV=production
+
+# Tini handles PID 1 signal forwarding for graceful Kafka shutdown
+ENTRYPOINT ["tini", "--"]
+
+# No HEALTHCHECK — worker uses process liveness probe (K8s exec probe)
+CMD ["node", "apps/worker/dist/server.js"]

@@ -1,0 +1,32 @@
+# ============================================================================
+# ORDR-Connect — ResourceQuota
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# CLAUDE.md Rule 10: ResourceQuotas mandatory
+# ============================================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ordr-system-quota
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  hard:
+    # CPU limits for entire namespace
+    requests.cpu: "20"
+    limits.cpu: "40"
+    # Memory limits for entire namespace
+    requests.memory: 40Gi
+    limits.memory: 80Gi
+    # Pod count limit
+    pods: "100"
+    # Service count limit
+    services: "20"
+    # ConfigMap and Secret limits
+    configmaps: "50"
+    secrets: "50"
+    # PVC limits
+    persistentvolumeclaims: "20"
+    # Prevent NodePort/LoadBalancer services (use Istio gateway)
+    services.nodeports: "0"

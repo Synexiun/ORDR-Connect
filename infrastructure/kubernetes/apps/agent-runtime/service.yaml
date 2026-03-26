@@ -1,0 +1,28 @@
+# ============================================================================
+# ORDR-Connect — Agent Runtime Service
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-runtime
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: agent-runtime
+    app.kubernetes.io/component: agent-runtime
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: agent-runtime
+    app.kubernetes.io/component: agent-runtime
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

@@ -1,0 +1,82 @@
+# ORDR-Connect — Container Image Scan
+# SOC2/ISO27001/HIPAA: Weekly base image CVE scanning
+# Reports findings as GitHub issue
+
+name: Container Scan
+
+on:
+  schedule:
+    - cron: '0 8 * * 1' # Every Monday at 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  scan-base-images:
+    name: Scan Base Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        image:
+          - 'node:22-alpine'
+          - 'gcr.io/distroless/nodejs22-debian12'
+    steps:
+      - name: Scan ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Parse results and create issue
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('trivy-results.json', 'utf8'));
+            const vulns = (results.Results || [])
+              .flatMap(r => r.Vulnerabilities || [])
+              .filter(v => ['CRITICAL', 'HIGH'].includes(v.Severity));
+
+            if (vulns.length === 0) {
+              console.log('No critical/high CVEs found in ${{ matrix.image }}');
+              return;
+            }
+
+            const table = vulns.slice(0, 20).map(v =>
+              `| ${v.VulnerabilityID} | ${v.Severity} | ${v.PkgName} | ${v.InstalledVersion} | ${v.FixedVersion || 'N/A'} |`
+            ).join('\n');
+
+            const body = [
+              `## Container Image CVE Report`,
+              `**Image:** \`${{ matrix.image }}\``,
+              `**Scan Date:** ${new Date().toISOString()}`,
+              `**Total findings:** ${vulns.length}`,
+              ``,
+              `| CVE | Severity | Package | Installed | Fixed |`,
+              `|-----|----------|---------|-----------|-------|`,
+              table,
+              vulns.length > 20 ? `\n*...and ${vulns.length - 20} more*` : '',
+              ``,
+              `**Action Required:** Update base images or apply patches within 48 hours for CRITICAL, 7 days for HIGH.`,
+              ``,
+              `*Automated by ORDR-Connect container-scan workflow*`
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Security] CVEs in ${('${{ matrix.image }}'.split(':')[0]).split('/').pop()} base image`,
+              body: body,
+              labels: ['security', 'automated', 'container-scan']
+            });

@@ -1,0 +1,56 @@
+# ORDR-Connect — Docker Build Context Exclusions
+# SOC2/ISO27001/HIPAA: prevent secrets, docs, and dev artifacts from leaking into images
+
+# Version control
+.git
+.gitignore
+
+# Dependencies (rebuilt in container)
+node_modules
+**/node_modules
+
+# Build outputs (rebuilt in container)
+dist
+**/dist
+.turbo
+**/.turbo
+
+# Environment files — secrets MUST NOT leak into images
+.env
+.env.*
+!.env.example
+
+# Non-application directories
+Data/
+Research/
+Tools/
+security/
+.claude/
+
+# Test & coverage artifacts
+tests/
+**/__tests__
+coverage
+**/*.test.ts
+**/*.spec.ts
+
+# Documentation
+*.md
+
+# IDE & editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker meta (prevent recursive context)
+docker-compose*.yml
+.dockerignore
+
+# Secrets directory
+secrets/

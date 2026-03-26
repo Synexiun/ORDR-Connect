@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ordr-connect.synexiun.com/schemas/api-response.json",
+  "title": "ORDR-Connect API Response",
+  "description": "Schema for API response structure. SECURITY: Error responses use correlation IDs, never stack traces or internal details.",
+  "type": "object",
+  "required": ["success"],
+  "oneOf": [
+    {
+      "properties": {
+        "success": { "const": true },
+        "data": {
+          "description": "Response payload"
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "page": { "type": "integer", "minimum": 1 },
+            "pageSize": { "type": "integer", "minimum": 1 },
+            "total": { "type": "integer", "minimum": 0 },
+            "totalPages": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["success", "data"],
+      "additionalProperties": false
+    },
+    {
+      "properties": {
+        "success": { "const": false },
+        "error": {
+          "type": "object",
+          "required": ["code", "message", "correlationId"],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "AUTH_FAILED",
+                "AUTH_EXPIRED",
+                "FORBIDDEN",
+                "TENANT_MISMATCH",
+                "NOT_FOUND",
+                "VALIDATION_FAILED",
+                "CONFLICT",
+                "RATE_LIMIT",
+                "COMPLIANCE_VIOLATION",
+                "PHI_ACCESS_DENIED",
+                "AGENT_SAFETY_BLOCK",
+                "AUDIT_CHAIN_BROKEN",
+                "INTERNAL_ERROR"
+              ],
+              "description": "Machine-readable error code"
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable error message — NEVER contains stack traces, internal paths, or PHI"
+            },
+            "correlationId": {
+              "type": "string",
+              "description": "Request correlation ID for support/debugging"
+            },
+            "fields": {
+              "type": "object",
+              "description": "Field-specific validation errors (only for VALIDATION_FAILED)",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["success", "error"],
+      "additionalProperties": false
+    }
+  ]
+}

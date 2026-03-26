@@ -1,0 +1,227 @@
+# ORDR-Connect — Production Deployment
+# SOC2/ISO27001/HIPAA: Full CI + security + signed images + blue-green + auto-rollback
+# Triggers: Push to main (requires environment approval)
+
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '9.15.4'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  ci:
+    name: CI Checks
+    uses: ./.github/workflows/ci.yml
+
+  security:
+    name: Security Checks
+    uses: ./.github/workflows/security.yml
+
+  build-sign:
+    name: Build & Sign Container
+    needs: [ci, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=prod-
+            type=semver,pattern={{version}}
+            type=raw,value=production-latest
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: .
+          file: ./infrastructure/docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Sign container image
+        run: |
+          cosign sign --yes \
+            --key env://COSIGN_PRIVATE_KEY \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+  deploy:
+    name: Blue-Green Production Deploy
+    needs: [build-sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f # v4.0.0
+        with:
+          version: 'latest'
+
+      - name: Set kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.PRODUCTION_KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Blue-green deployment
+        id: deploy
+        run: |
+          NAMESPACE="ordr-production"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod-${{ github.sha }}"
+          CURRENT_COLOR=$(kubectl get svc ordr-connect-api -n $NAMESPACE -o jsonpath='{.spec.selector.color}' 2>/dev/null || echo "blue")
+
+          if [ "$CURRENT_COLOR" = "blue" ]; then
+            NEW_COLOR="green"
+          else
+            NEW_COLOR="blue"
+          fi
+
+          echo "current-color=$CURRENT_COLOR" >> "$GITHUB_OUTPUT"
+          echo "new-color=$NEW_COLOR" >> "$GITHUB_OUTPUT"
+          echo "Deploying $NEW_COLOR (current: $CURRENT_COLOR)"
+
+          # Deploy new version to inactive color
+          kubectl set image deployment/ordr-connect-api-$NEW_COLOR \
+            api=$IMAGE \
+            --namespace=$NAMESPACE
+          kubectl rollout status deployment/ordr-connect-api-$NEW_COLOR \
+            --namespace=$NAMESPACE \
+            --timeout=300s
+
+      - name: Health check verification
+        id: healthcheck
+        run: |
+          NAMESPACE="ordr-production"
+          NEW_COLOR="${{ steps.deploy.outputs.new-color }}"
+          POD_IP=$(kubectl get pods -n $NAMESPACE -l app=ordr-connect-api,color=$NEW_COLOR -o jsonpath='{.items[0].status.podIP}')
+
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            STATUS=$(kubectl exec -n $NAMESPACE deploy/ordr-connect-api-$NEW_COLOR -- \
+              node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1))" 2>/dev/null && echo "200" || echo "fail")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed on attempt $i"
+              echo "healthy=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $i: health check failed, retrying in 5s..."
+            sleep 5
+          done
+
+          echo "healthy=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Health check failed after 10 attempts"
+          exit 1
+
+      - name: Switch traffic to new color
+        if: steps.healthcheck.outputs.healthy == 'true'
+        run: |
+          NAMESPACE="ordr-production"
+          NEW_COLOR="${{ steps.deploy.outputs.new-color }}"
+          kubectl patch svc ordr-connect-api -n $NAMESPACE \
+            -p "{\"spec\":{\"selector\":{\"color\":\"$NEW_COLOR\"}}}"
+          echo "Traffic switched to $NEW_COLOR"
+
+      - name: Auto-rollback on failure
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          NAMESPACE="ordr-production"
+          CURRENT_COLOR="${{ steps.deploy.outputs.current-color }}"
+          NEW_COLOR="${{ steps.deploy.outputs.new-color }}"
+          echo "::warning::Rolling back — reverting to $CURRENT_COLOR"
+          kubectl rollout undo deployment/ordr-connect-api-$NEW_COLOR \
+            --namespace=$NAMESPACE
+          kubectl patch svc ordr-connect-api -n $NAMESPACE \
+            -p "{\"spec\":{\"selector\":{\"color\":\"$CURRENT_COLOR\"}}}"
+          echo "Rollback complete — traffic on $CURRENT_COLOR"
+
+  notify:
+    name: Notify
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    steps:
+      - name: PagerDuty alert on failure
+        if: needs.deploy.result == 'failure'
+        run: |
+          curl -s -X POST "https://events.pagerduty.com/v2/enqueue" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "routing_key": "${{ secrets.PAGERDUTY_ROUTING_KEY }}",
+              "event_action": "trigger",
+              "payload": {
+                "summary": "ORDR-Connect production deployment FAILED",
+                "severity": "critical",
+                "source": "github-actions",
+                "component": "ordr-connect-api",
+                "custom_details": {
+                  "commit": "${{ github.sha }}",
+                  "actor": "${{ github.actor }}",
+                  "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                }
+              }
+            }'
+
+      - name: Slack notification
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0 # v1.27.0
+        with:
+          payload: |
+            {
+              "text": "ORDR-Connect Production Deploy: ${{ needs.deploy.result == 'success' && 'SUCCESS' || 'FAILED' }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ORDR-Connect Production Deploy*\n*Status:* ${{ needs.deploy.result == 'success' && ':white_check_mark: Success' || ':rotating_light: FAILED' }}\n*Commit:* `${{ github.sha }}`\n*Actor:* ${{ github.actor }}\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

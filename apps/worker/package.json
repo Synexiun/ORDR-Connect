@@ -1,0 +1,32 @@
+{
+  "name": "@ordr/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ordr/core": "workspace:*",
+    "@ordr/events": "workspace:*",
+    "@ordr/agent-runtime": "workspace:*",
+    "@ordr/graph": "workspace:*",
+    "@ordr/compliance": "workspace:*",
+    "@ordr/audit": "workspace:*",
+    "@ordr/channels": "workspace:*",
+    "@ordr/ai": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0"
+  }
+}

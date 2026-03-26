@@ -1,0 +1,100 @@
+# ============================================================================
+# ORDR-Connect — Istio PeerAuthentication
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# CLAUDE.md Rule 1 + Rule 2: mTLS STRICT — no plaintext in-cluster traffic
+# ============================================================================
+
+# Namespace-wide STRICT mTLS
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: ordr-system-mtls
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  mtls:
+    mode: STRICT
+
+# Per-service STRICT mTLS (defense in depth — explicit per service)
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: api-mtls
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  mtls:
+    mode: STRICT
+
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: worker-mtls
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  mtls:
+    mode: STRICT
+
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: agent-runtime-mtls
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: agent-runtime
+    app.kubernetes.io/part-of: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-runtime
+  mtls:
+    mode: STRICT
+
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: web-mtls
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  mtls:
+    mode: STRICT
+
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: developer-portal-mtls
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: developer-portal
+    app.kubernetes.io/part-of: ordr-connect
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: developer-portal
+  mtls:
+    mode: STRICT

@@ -1,0 +1,36 @@
+# ============================================================================
+# ORDR-Connect — LimitRange
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Default container limits — every container MUST have resource bounds
+# ============================================================================
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ordr-system-limits
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  limits:
+    - type: Container
+      # Default limits if not specified (safety net)
+      default:
+        cpu: 500m
+        memory: 512Mi
+      # Default requests if not specified
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      # Absolute maximums per container
+      max:
+        cpu: "4"
+        memory: 8Gi
+      # Absolute minimums per container
+      min:
+        cpu: 50m
+        memory: 64Mi
+    - type: Pod
+      max:
+        cpu: "8"
+        memory: 16Gi

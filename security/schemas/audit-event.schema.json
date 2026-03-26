@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ordr-connect.synexiun.com/schemas/audit-event.json",
+  "title": "ORDR-Connect Audit Event",
+  "description": "Immutable WORM audit event for SOC2/ISO27001/HIPAA compliance. Each event is cryptographically linked to its predecessor via SHA-256 hash chain.",
+  "type": "object",
+  "required": [
+    "id",
+    "sequenceNumber",
+    "tenantId",
+    "eventType",
+    "actorType",
+    "actorId",
+    "resource",
+    "resourceId",
+    "action",
+    "details",
+    "previousHash",
+    "hash",
+    "timestamp"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the audit event (UUID v4)"
+    },
+    "sequenceNumber": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing sequence number per tenant — no gaps allowed"
+    },
+    "tenantId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Tenant scope for this audit event"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "data.created",
+        "data.read",
+        "data.updated",
+        "data.deleted",
+        "auth.login",
+        "auth.logout",
+        "auth.failed",
+        "auth.mfa_verified",
+        "agent.action",
+        "agent.decision",
+        "agent.killed",
+        "compliance.check",
+        "compliance.violation",
+        "system.config_change",
+        "system.deployment",
+        "phi.accessed",
+        "phi.exported",
+        "api.request"
+      ],
+      "description": "Category of the auditable action"
+    },
+    "actorType": {
+      "type": "string",
+      "enum": ["user", "agent", "system"],
+      "description": "Type of entity that performed the action"
+    },
+    "actorId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the actor — user ID, agent ID, or 'system'"
+    },
+    "resource": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Resource type being acted upon (e.g., 'customers', 'agents')"
+    },
+    "resourceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier of the specific resource instance"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Description of the action performed (e.g., 'POST /api/v1/customers')"
+    },
+    "details": {
+      "type": "object",
+      "description": "Additional context — MUST NOT contain PHI/PII in plaintext. Use tokenized references only.",
+      "additionalProperties": true
+    },
+    "previousHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of the preceding event in the chain (or genesis hash for first event)"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of this event including all fields and previousHash"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the event occurred"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata for extended audit context",
+      "properties": {
+        "ipAddress": {
+          "type": "string",
+          "description": "IP address of the request origin"
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "User-Agent header from the request"
+        },
+        "correlationId": {
+          "type": "string",
+          "description": "Request correlation ID for distributed tracing"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

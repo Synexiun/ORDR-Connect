@@ -1,0 +1,82 @@
+# ORDR-Connect — Developer Portal Production Dockerfile
+# SOC2/ISO27001/HIPAA: distroless runtime, non-root, multi-stage
+# Target: apps/developer-portal (Hono HTTP server)
+
+# ============================================================
+# Stage 1: Builder — install deps + compile TypeScript
+# ============================================================
+FROM node:22.14-alpine3.20 AS builder
+
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+WORKDIR /app
+
+# Copy workspace manifests for dependency resolution
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json turbo.json ./
+
+# Copy package.json files for required packages
+COPY apps/developer-portal/package.json ./apps/developer-portal/
+COPY packages/core/package.json ./packages/core/
+COPY packages/auth/package.json ./packages/auth/
+COPY packages/db/package.json ./packages/db/
+COPY packages/audit/package.json ./packages/audit/
+COPY packages/crypto/package.json ./packages/crypto/
+COPY packages/events/package.json ./packages/events/
+COPY packages/compliance/package.json ./packages/compliance/
+COPY packages/channels/package.json ./packages/channels/
+COPY packages/graph/package.json ./packages/graph/
+COPY packages/analytics/package.json ./packages/analytics/
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/decision-engine/package.json ./packages/decision-engine/
+COPY packages/sdk/package.json ./packages/sdk/
+
+RUN pnpm install --frozen-lockfile
+
+# Copy source for build
+COPY packages/ ./packages/
+COPY apps/developer-portal/ ./apps/developer-portal/
+
+RUN pnpm --filter @ordr/developer-portal... build
+
+# Prune to production deps only
+RUN pnpm install --frozen-lockfile --prod
+
+# ============================================================
+# Stage 2: Runtime — distroless, minimal attack surface
+# ============================================================
+FROM gcr.io/distroless/nodejs22-debian12 AS runtime
+
+LABEL org.opencontainers.image.title="ordr-connect-developer-portal"
+LABEL org.opencontainers.image.description="ORDR-Connect Developer Portal — SDK docs + API explorer"
+LABEL org.opencontainers.image.vendor="Synexiun"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.source="https://github.com/synexiun/ordr-connect"
+
+WORKDIR /app
+
+# Copy production artifacts
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/apps/developer-portal/dist ./apps/developer-portal/dist
+COPY --from=builder /app/apps/developer-portal/package.json ./apps/developer-portal/
+COPY --from=builder /app/packages/core/dist ./packages/core/dist
+COPY --from=builder /app/packages/core/package.json ./packages/core/
+COPY --from=builder /app/packages/auth/dist ./packages/auth/dist
+COPY --from=builder /app/packages/auth/package.json ./packages/auth/
+COPY --from=builder /app/packages/db/dist ./packages/db/dist
+COPY --from=builder /app/packages/db/package.json ./packages/db/
+COPY --from=builder /app/packages/audit/dist ./packages/audit/dist
+COPY --from=builder /app/packages/audit/package.json ./packages/audit/
+
+# Copy healthcheck script
+COPY --from=builder /app/infrastructure/docker/healthcheck.mjs ./healthcheck.mjs
+
+# Non-root user
+USER 1000
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/nodejs/bin/node", "healthcheck.mjs"]
+
+CMD ["apps/developer-portal/dist/server.js"]

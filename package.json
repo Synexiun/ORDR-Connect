@@ -1,0 +1,47 @@
+{
+  "name": "ordr-connect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ORDR-Connect — Customer Operations OS",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "test:ci": "turbo run test -- --reporter=verbose",
+    "test:integration": "vitest run --config vitest.config.integration.ts",
+    "test:integration:watch": "vitest --config vitest.config.integration.ts",
+    "test:coverage": "turbo run test:coverage",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "typecheck": "turbo run type-check",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean",
+    "db:generate": "pnpm --filter @ordr/db generate",
+    "db:migrate": "pnpm --filter @ordr/db migrate",
+    "db:push": "pnpm --filter @ordr/db push",
+    "security:scan": "pnpm audit --audit-level=high && gitleaks detect --source . --no-banner",
+    "security:secrets": "gitleaks detect --source . --verbose",
+    "precommit": "pnpm lint && pnpm type-check && pnpm security:secrets",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.15.0",
+    "eslint-plugin-security": "^3.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.4.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.15.0",
+    "vitest": "^2.1.0",
+    "yaml": "^2.8.3"
+  }
+}

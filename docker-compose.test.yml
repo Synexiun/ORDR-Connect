@@ -1,0 +1,45 @@
+# ORDR-Connect — Lightweight test services
+# Usage: docker compose -f docker-compose.test.yml up -d
+#
+# Provides only PostgreSQL and Redis for integration tests.
+# Kafka, Neo4j, ClickHouse are mocked at the application layer.
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ordr_connect_test
+      POSTGRES_USER: ordr_test
+      POSTGRES_PASSWORD: ordr_test_password
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ordr_test -d ordr_connect_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    command:
+      - "postgres"
+      - "-c"
+      - "fsync=off"
+      - "-c"
+      - "synchronous_commit=off"
+      - "-c"
+      - "full_page_writes=off"
+      - "-c"
+      - "max_connections=50"
+      - "-c"
+      - "shared_buffers=128MB"
+
+  redis-test:
+    image: redis:7-alpine
+    command: redis-server --requirepass ordr_test_password --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "ordr_test_password", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

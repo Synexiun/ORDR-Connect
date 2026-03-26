@@ -1,0 +1,25 @@
+# ============================================================================
+# ORDR-Connect — Worker Service
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Headless service for metrics scraping only (no HTTP traffic)
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: ordr-system
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: ordr-connect
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/component: worker
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

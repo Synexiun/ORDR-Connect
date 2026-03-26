@@ -1,0 +1,105 @@
+# ============================================================================
+# ORDR-Connect — Production Overlay
+# SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
+# Full replicas, higher limits, PodDisruptionBudgets for zero downtime
+# ============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ordr-system
+
+resources:
+  - ../../
+  # Production-only: PodDisruptionBudgets
+  - pdb-api.yaml
+  - pdb-worker.yaml
+  - pdb-agent-runtime.yaml
+  - pdb-web.yaml
+  - pdb-developer-portal.yaml
+
+labels:
+  - pairs:
+      environment: production
+    includeSelectors: false
+
+patches:
+  # API — production resources
+  - target:
+      kind: Deployment
+      name: api
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+
+  # Agent Runtime — production resources
+  - target:
+      kind: Deployment
+      name: agent-runtime
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 1Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "4"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 4Gi
+
+  # Worker — production resources
+  - target:
+      kind: Deployment
+      name: worker
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+
+  # Production ResourceQuota — full allocation
+  - target:
+      kind: ResourceQuota
+      name: ordr-system-quota
+    patch: |
+      - op: replace
+        path: /spec/hard/requests.cpu
+        value: "40"
+      - op: replace
+        path: /spec/hard/limits.cpu
+        value: "80"
+      - op: replace
+        path: /spec/hard/requests.memory
+        value: 80Gi
+      - op: replace
+        path: /spec/hard/limits.memory
+        value: 160Gi
+      - op: replace
+        path: /spec/hard/pods
+        value: "200"
