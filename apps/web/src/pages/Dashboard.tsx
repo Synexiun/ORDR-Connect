@@ -9,7 +9,9 @@ import { ActivityFeed } from '../components/activity-feed/ActivityFeed';
 import { SparkLine } from '../components/charts/SparkLine';
 import { DonutChart } from '../components/charts/DonutChart';
 import { AreaChart } from '../components/charts/AreaChart';
-import { fetchDashboardSummary } from '../lib/analytics-api';
+import { fetchDashboardSummary, fetchRealTimeCounters } from '../lib/analytics-api';
+import { useInterval } from '../hooks/useInterval';
+import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import {
   Users,
   Bot,
@@ -127,6 +129,7 @@ export function Dashboard(): ReactNode {
   const [agentPerf, setAgentPerf] = useState<AgentPerformance | null>(null);
   const [deliveryTrend, setDeliveryTrend] = useState<MiniTrendPoint[]>([]);
   const [agentSparkline, setAgentSparkline] = useState<MiniTrendPoint[]>([]);
+  const [hitlPending, setHitlPending] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
@@ -140,6 +143,7 @@ export function Dashboard(): ReactNode {
         revenueCollected: summary.revenueCollected,
       });
       setAgentPerf({ ...mockAgentPerf, activeNow: summary.activeAgents });
+      setHitlPending(summary.hitlPending);
       setDeliveryTrend(mockDeliveryTrend);
       setAgentSparkline(mockAgentSparkline);
     } catch {
@@ -152,9 +156,51 @@ export function Dashboard(): ReactNode {
     }
   }, []);
 
+  // Refresh live counters every 30 seconds
+  const refreshCounters = useCallback(async () => {
+    try {
+      const counters = await fetchRealTimeCounters();
+      setHitlPending(counters.hitlPending);
+      setKpis((prev) =>
+        prev !== null
+          ? {
+              ...prev,
+              activeAgents: counters.activeAgents,
+              complianceScore: counters.complianceScore,
+            }
+          : prev,
+      );
+    } catch {
+      // Silent — keep stale data
+    }
+  }, []);
+
   useEffect(() => {
     void fetchDashboard();
   }, [fetchDashboard]);
+
+  // 30-second auto-refresh of live counters
+  useInterval(() => {
+    void refreshCounters();
+  }, 30_000);
+
+  // SSE: update live counters when backend emits analytics events
+  useRealtimeEvents({
+    'analytics.counters_updated': (data) => {
+      if (typeof data['hitlPending'] === 'number') setHitlPending(data['hitlPending']);
+      if (typeof data['activeAgents'] === 'number') {
+        setKpis((prev) =>
+          prev !== null ? { ...prev, activeAgents: data['activeAgents'] as number } : prev,
+        );
+      }
+    },
+    'agent.hitl_created': () => {
+      setHitlPending((prev) => prev + 1);
+    },
+    'agent.session_completed': () => {
+      void refreshCounters();
+    },
+  });
 
   if (loading) {
     return (
@@ -179,11 +225,23 @@ export function Dashboard(): ReactNode {
           <p className="page-subtitle">Operations overview</p>
         </div>
         <div className="flex items-center gap-2">
+          {hitlPending > 0 && (
+            <button
+              className="flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/20"
+              onClick={() => navigate('/agents')}
+              aria-label={`${hitlPending} HITL approvals pending`}
+            >
+              <Activity className="h-3 w-3" />
+              {hitlPending} HITL pending
+            </button>
+          )}
           <Button
             variant="ghost"
             size="sm"
             icon={<RefreshCw className="h-3.5 w-3.5" />}
-            onClick={fetchDashboard}
+            onClick={() => {
+              void fetchDashboard();
+            }}
           >
             Refresh
           </Button>

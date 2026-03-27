@@ -24,6 +24,7 @@ import {
   type AgentSession as ApiSession,
   type HitlItem as ApiHitlItem,
 } from '../lib/agents-api';
+import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 
 // --- Types ---
 
@@ -336,6 +337,19 @@ export function AgentActivity(): ReactNode {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  // SSE: re-fetch sessions and HITL queue on relevant agent events
+  useRealtimeEvents({
+    'agent.session_started': () => {
+      void fetchData();
+    },
+    'agent.session_completed': () => {
+      void fetchData();
+    },
+    'agent.hitl_created': () => {
+      void fetchData();
+    },
+  });
 
   const handleKillSession = useCallback(async (session: AgentSession) => {
     try {
