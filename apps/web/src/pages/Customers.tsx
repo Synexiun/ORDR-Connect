@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -13,6 +13,7 @@ import {
   listCustomers,
   createCustomer,
   deleteCustomer,
+  semanticSearchCustomers,
   type Customer as ApiCustomer,
   type CustomerStatus,
 } from '../lib/customers-api';
@@ -169,8 +170,52 @@ export function Customers(): ReactNode {
 
   const pageSize = 10;
 
+  // Debounced search — 400ms delay so we don't fire on every keystroke.
+  // Semantic search activates when the debounced value is > 3 chars.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [isSemanticSearch, setIsSemanticSearch] = useState(false);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => {
+      if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
+    };
+  }, [search]);
+
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
+    const trimmed = debouncedSearch.trim();
+
+    // Semantic search path — for substantive queries (> 3 chars)
+    if (trimmed.length > 3) {
+      try {
+        const res = await semanticSearchCustomers(trimmed, pageSize);
+        setCustomers(
+          res.data.map((r) => ({
+            id: r.id,
+            name: r.name,
+            email: r.email ?? '',
+            status: 'active' as Customer['status'],
+            healthScore: Math.round(r.score * 100),
+            lifecycleStage: 'active' as Customer['lifecycleStage'],
+            lastContact: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          })),
+        );
+        setTotal(res.data.length);
+        setIsSemanticSearch(true);
+        setLoading(false);
+        return;
+      } catch {
+        // Semantic search unavailable — fall through to text search
+      }
+    }
+
+    setIsSemanticSearch(false);
     try {
       const apiStatus =
         statusFilter !== 'all' && statusFilter !== 'prospect'
@@ -179,7 +224,7 @@ export function Customers(): ReactNode {
       const res = await listCustomers({
         page,
         pageSize,
-        search: search.trim() !== '' ? search.trim() : undefined,
+        search: trimmed !== '' ? trimmed : undefined,
         status: apiStatus,
       });
       setCustomers(res.data.map(adaptApiCustomer));
@@ -187,8 +232,8 @@ export function Customers(): ReactNode {
     } catch {
       // Graceful degradation: filter mock data locally
       let filtered = mockCustomers;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
+      if (trimmed) {
+        const q = trimmed.toLowerCase();
         filtered = filtered.filter(
           (c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q),
         );
@@ -202,13 +247,13 @@ export function Customers(): ReactNode {
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, [debouncedSearch, page, statusFilter]);
 
   useEffect(() => {
     void fetchCustomers();
   }, [fetchCustomers]);
 
-  // Reset page on filter change
+  // Reset page immediately when search or status filter changes
   useEffect(() => {
     setPage(1);
   }, [search, statusFilter]);
@@ -427,15 +472,22 @@ export function Customers(): ReactNode {
       {/* Filters */}
       <Card padding={false}>
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-          <div className="flex-1">
-            <Input
-              placeholder="Search customers..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-              }}
-              aria-label="Search customers"
-            />
+          <div className="flex flex-1 items-center gap-2">
+            <div className="flex-1">
+              <Input
+                placeholder="Search customers…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                }}
+                aria-label="Search customers"
+              />
+            </div>
+            {isSemanticSearch && (
+              <span className="inline-flex items-center rounded-full bg-brand-accent/15 px-2 py-0.5 text-2xs font-medium text-brand-accent">
+                Semantic
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {['all', 'active', 'inactive', 'prospect', 'churned'].map((s) => (

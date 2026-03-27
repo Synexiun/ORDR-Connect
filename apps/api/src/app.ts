@@ -25,6 +25,7 @@
  * - /api/v1/partners — Partner program (registration, earnings, payouts)
  * - /api/v1/ai — AI features (sentiment, insights, entity routing)
  * - /api/v1/compliance — Compliance dashboard (summary, violations, consent)
+ * - /api/v1/events — SSE event stream (real-time dashboard updates)
  * - /api/v1/openapi.json — OpenAPI 3.1 specification (public, no auth)
  */
 
@@ -57,6 +58,7 @@ import { marketplaceReviewRouter } from './routes/marketplace-review.js';
 import { partnersRouter } from './routes/partners.js';
 import { aiRouter } from './routes/ai.js';
 import { complianceDashboardRouter } from './routes/compliance-dashboard.js';
+import { eventsRouter } from './routes/events.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -195,6 +197,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Compliance dashboard routes — summary, violations, consent status
   app.route('/api/v1/compliance', complianceDashboardRouter);
+
+  // SSE events stream — real-time dashboard updates
+  app.route('/api/v1/events', eventsRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);

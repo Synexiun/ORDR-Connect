@@ -26,6 +26,7 @@ import { ValidationError, NotFoundError, AuthorizationError, PAGINATION } from '
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { broadcastEvent } from './events.js';
 
 // ---- Input Schemas ---------------------------------------------------------
 
@@ -227,6 +228,12 @@ agentsRouter.post('/trigger', requirePermissionMiddleware('agents', 'create'), a
     console.error('[ORDR:API] Failed to publish agent.triggered event:', publishErr);
   });
 
+  // Broadcast SSE event so connected dashboard clients update immediately
+  broadcastEvent({
+    type: 'agent.session_started',
+    data: { tenantId: ctx.tenantId, sessionId, agentRole, customerId },
+  });
+
   return c.json(
     {
       success: true as const,
@@ -370,6 +377,12 @@ agentsRouter.post(
       console.error('[ORDR:API] Failed to publish agent.killed event:', publishErr);
     });
 
+    // Broadcast SSE event — dashboard active-agent count updates immediately
+    broadcastEvent({
+      type: 'agent.session_completed',
+      data: { tenantId: ctx.tenantId, sessionId, resolved: false },
+    });
+
     return c.json({ success: true as const });
   },
 );
@@ -443,6 +456,12 @@ agentsRouter.post(
           confidence: decision.confidence,
         },
         timestamp: new Date(),
+      });
+
+      // Broadcast SSE — HITL pending count decrements on all connected dashboards
+      broadcastEvent({
+        type: 'analytics.counters_updated',
+        data: { tenantId: ctx.tenantId, event: 'hitl_resolved' },
       });
 
       return c.json({
@@ -524,6 +543,12 @@ agentsRouter.post(
           reason: parsed.data.reason,
         },
         timestamp: new Date(),
+      });
+
+      // Broadcast SSE — HITL pending count decrements on all connected dashboards
+      broadcastEvent({
+        type: 'analytics.counters_updated',
+        data: { tenantId: ctx.tenantId, event: 'hitl_resolved' },
       });
 
       return c.json({

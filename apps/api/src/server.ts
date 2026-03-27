@@ -48,6 +48,7 @@ import { configureAudit } from './middleware/audit.js';
 import { configureHealthChecks } from './routes/health.js';
 import { configureBrandingRoutes } from './routes/branding.js';
 import { configureAiRoutes } from './routes/ai.js';
+import { configureEventsRoute } from './routes/events.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -200,6 +201,7 @@ async function bootstrap(): Promise<void> {
 
   // ── 7. Configure middleware ────────────────────────────────────────────
   configureAuth(jwtConfig);
+  configureEventsRoute({ jwtConfig });
 
   configureHealthChecks({
     checkDb: async () => {
