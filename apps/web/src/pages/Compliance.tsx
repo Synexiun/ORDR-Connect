@@ -15,6 +15,14 @@ import { DonutChart } from '../components/charts/DonutChart';
 import { ProgressBar } from '../components/charts/ProgressBar';
 import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from '../components/icons';
 import { fetchComplianceMetrics } from '../lib/analytics-api';
+import {
+  fetchComplianceSummary,
+  fetchViolations,
+  fetchConsentStatus,
+  resolveViolation,
+  type ViolationRecord,
+  type ConsentChannel as ApiConsentChannel,
+} from '../lib/compliance-api';
 
 // --- Types ---
 
@@ -204,57 +212,121 @@ export function Compliance(): ReactNode {
   const [regulationScores, setRegulationScores] = useState<RegulationScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [regulationFilter, setRegulationFilter] = useState('all');
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    try {
-      const metrics = await fetchComplianceMetrics('30d');
 
-      // Derive overview from check ratios
-      const totalChecks = metrics.checkRatios.reduce((s, r) => s + r.passed + r.failed, 0);
-      const passingChecks = metrics.checkRatios.reduce((s, r) => s + r.passed, 0);
-      const latestScore =
-        metrics.scoreTrend.length > 0
-          ? (metrics.scoreTrend[metrics.scoreTrend.length - 1]?.score ?? mockOverview.score)
-          : mockOverview.score;
+    const [summaryResult, violationsResult, consentResult] = await Promise.allSettled([
+      fetchComplianceSummary(),
+      fetchViolations({ pageSize: 50 }),
+      fetchConsentStatus(),
+    ]);
 
+    // Summary (with analytics fallback)
+    if (summaryResult.status === 'fulfilled') {
+      const s = summaryResult.value.data;
       setOverview({
-        score: latestScore,
-        totalChecks: totalChecks > 0 ? totalChecks : mockOverview.totalChecks,
-        passingChecks: passingChecks > 0 ? passingChecks : mockOverview.passingChecks,
-        failingChecks: totalChecks > 0 ? totalChecks - passingChecks : mockOverview.failingChecks,
-        lastAudit: new Date().toISOString(),
+        score: s.score,
+        totalChecks: s.totalChecks,
+        passingChecks: s.passingChecks,
+        failingChecks: s.failingChecks,
+        lastAudit: s.lastAudit,
       });
-
-      // Map violation breakdown to per-regulation scores (score = 100 - violation%)
-      if (metrics.violationBreakdown.length > 0) {
-        setRegulationScores(
-          metrics.violationBreakdown.map((v) => ({
-            regulation: v.regulation,
-            score: Math.max(0, 100 - v.percentage),
-            color: regulationColorMap[v.regulation] ?? '#3b82f6',
-          })),
-        );
-      } else {
+      setRegulationScores(
+        s.regulations.map((r) => ({
+          regulation: r.regulation,
+          score: r.score,
+          color: regulationColorMap[r.regulation] ?? '#3b82f6',
+        })),
+      );
+    } else {
+      // Analytics fallback if dedicated endpoint unavailable
+      try {
+        const metrics = await fetchComplianceMetrics('30d');
+        const totalChecks = metrics.checkRatios.reduce((s, r) => s + r.passed + r.failed, 0);
+        const passingChecks = metrics.checkRatios.reduce((s, r) => s + r.passed, 0);
+        const latestScore =
+          metrics.scoreTrend.length > 0
+            ? (metrics.scoreTrend[metrics.scoreTrend.length - 1]?.score ?? mockOverview.score)
+            : mockOverview.score;
+        setOverview({
+          score: latestScore,
+          totalChecks: totalChecks > 0 ? totalChecks : mockOverview.totalChecks,
+          passingChecks: passingChecks > 0 ? passingChecks : mockOverview.passingChecks,
+          failingChecks: totalChecks > 0 ? totalChecks - passingChecks : mockOverview.failingChecks,
+          lastAudit: new Date().toISOString(),
+        });
+        if (metrics.violationBreakdown.length > 0) {
+          setRegulationScores(
+            metrics.violationBreakdown.map((v) => ({
+              regulation: v.regulation,
+              score: Math.max(0, 100 - v.percentage),
+              color: regulationColorMap[v.regulation] ?? '#3b82f6',
+            })),
+          );
+        } else {
+          setRegulationScores(mockRegulationScores);
+        }
+      } catch {
+        setOverview(mockOverview);
         setRegulationScores(mockRegulationScores);
       }
-
-      // Individual violations and consent: no dedicated backend endpoints yet
-      setViolations(mockViolations);
-      setConsent(mockConsent);
-    } catch {
-      setOverview(mockOverview);
-      setViolations(mockViolations);
-      setConsent(mockConsent);
-      setRegulationScores(mockRegulationScores);
-    } finally {
-      setLoading(false);
     }
+
+    // Violations
+    if (violationsResult.status === 'fulfilled') {
+      setViolations(
+        violationsResult.value.data.map((v: ViolationRecord) => ({
+          id: v.id,
+          rule: v.rule,
+          regulation: v.regulation,
+          severity: v.severity,
+          description: v.description,
+          customerId: v.customerId,
+          customerName: v.customerName,
+          timestamp: v.timestamp,
+          resolved: v.resolved,
+        })),
+      );
+    } else {
+      setViolations(mockViolations);
+    }
+
+    // Consent
+    if (consentResult.status === 'fulfilled') {
+      setConsent(
+        consentResult.value.data.map((ch: ApiConsentChannel) => ({
+          channel: ch.channel,
+          consented: ch.consented,
+          total: ch.total,
+          percentage: ch.percentage,
+        })),
+      );
+    } else {
+      setConsent(mockConsent);
+    }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  const handleResolve = useCallback(async (violationId: string) => {
+    setResolvingId(violationId);
+    try {
+      await resolveViolation(violationId);
+      setViolations((prev) =>
+        prev.map((v) => (v.id === violationId ? { ...v, resolved: true } : v)),
+      );
+    } catch {
+      // Silently fail — violation remains open, user can retry
+    } finally {
+      setResolvingId(null);
+    }
+  }, []);
 
   const filteredViolations =
     regulationFilter === 'all'
@@ -401,6 +473,23 @@ export function Compliance(): ReactNode {
           {row.resolved ? 'Resolved' : 'Open'}
         </Badge>
       ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (row: Violation) =>
+        row.resolved ? null : (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={resolvingId === row.id}
+            onClick={() => {
+              void handleResolve(row.id);
+            }}
+          >
+            {resolvingId === row.id ? 'Resolving…' : 'Resolve'}
+          </Button>
+        ),
     },
   ];
 
