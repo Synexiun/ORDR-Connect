@@ -6,7 +6,14 @@ import { Table } from '../components/ui/Table';
 import { Spinner } from '../components/ui/Spinner';
 import { AreaChart } from '../components/charts/AreaChart';
 import { StackedBarChart } from '../components/charts/StackedBarChart';
-import { apiClient } from '../lib/api';
+import {
+  getPartnerProfile,
+  getEarnings,
+  listPayouts,
+  type Partner,
+  type EarningsSummary as ApiEarnings,
+  type Payout,
+} from '../lib/partners-api';
 import {
   DollarSign,
   Wallet,
@@ -92,6 +99,48 @@ function formatCurrency(cents: number, currency: string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(cents / 100);
+}
+
+// --- API adapters ---
+
+const partnerTierMap: Record<string, PartnerProfile['tier']> = {
+  referral: 'silver',
+  reseller: 'gold',
+  strategic: 'platinum',
+};
+
+function adaptProfile(p: Partner): PartnerProfile {
+  return {
+    id: p.id,
+    name: p.contactName,
+    email: '',
+    company: p.companyName,
+    tier: partnerTierMap[p.tier] ?? 'silver',
+    status: p.status === 'inactive' ? 'suspended' : p.status,
+    revenueSharePct: Math.round(p.commissionRate * 100),
+  };
+}
+
+function adaptEarnings(e: ApiEarnings): EarningsSummary {
+  return {
+    totalCents: Math.round(e.totalEarned * 100),
+    pendingCents: Math.round(e.pendingPayout * 100),
+    paidCents: Math.round(e.paidOut * 100),
+    currency: 'USD',
+  };
+}
+
+function adaptPayout(p: Payout): PayoutItem {
+  return {
+    id: p.id,
+    amountCents: Math.round(p.amount * 100),
+    currency: p.currency,
+    periodStart: p.periodStart,
+    periodEnd: p.periodEnd,
+    status: p.status,
+    paidAt: p.paidAt,
+    createdAt: p.createdAt,
+  };
 }
 
 // --- Mock data ---
@@ -216,14 +265,20 @@ export function PartnerDashboard(): ReactNode {
     setLoading(true);
     try {
       const [profileRes, earningsRes, payoutsRes] = await Promise.allSettled([
-        apiClient.get<{ data: PartnerProfile }>('/v1/partners/me'),
-        apiClient.get<{ data: EarningsSummary }>('/v1/partners/earnings'),
-        apiClient.get<{ data: PayoutItem[] }>('/v1/partners/payouts'),
+        getPartnerProfile(),
+        getEarnings(),
+        listPayouts(),
       ]);
 
-      setProfile(profileRes.status === 'fulfilled' ? profileRes.value.data : mockProfile);
-      setEarnings(earningsRes.status === 'fulfilled' ? earningsRes.value.data : mockEarnings);
-      setPayouts(payoutsRes.status === 'fulfilled' ? payoutsRes.value.data : mockPayouts);
+      setProfile(
+        profileRes.status === 'fulfilled' ? adaptProfile(profileRes.value.data) : mockProfile,
+      );
+      setEarnings(
+        earningsRes.status === 'fulfilled' ? adaptEarnings(earningsRes.value.data) : mockEarnings,
+      );
+      setPayouts(
+        payoutsRes.status === 'fulfilled' ? payoutsRes.value.data.map(adaptPayout) : mockPayouts,
+      );
       setPublishedAgents(mockPublishedAgents);
       setMonthlyEarnings(mockMonthlyEarnings);
       setReferralFunnel(mockReferralFunnel);

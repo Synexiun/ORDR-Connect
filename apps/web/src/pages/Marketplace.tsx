@@ -15,7 +15,13 @@ import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { Spinner } from '../components/ui/Spinner';
-import { apiClient } from '../lib/api';
+import {
+  listMarketplaceAgents,
+  installAgent as apiInstallAgent,
+  uninstallAgent as apiUninstallAgent,
+  listReviews as apiListReviews,
+  type MarketplaceAgent as ApiMarketplaceAgent,
+} from '../lib/marketplace-api';
 import {
   Search,
   Store,
@@ -55,11 +61,6 @@ interface MarketplaceReview {
   rating: number;
   comment: string | null;
   createdAt: string;
-}
-
-interface AgentListResponse {
-  agents: MarketplaceAgent[];
-  total: number;
 }
 
 // --- Constants ---
@@ -169,6 +170,31 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+// --- API adapter ---
+
+function adaptApiAgent(a: ApiMarketplaceAgent): MarketplaceAgent {
+  const statusMap: Record<string, MarketplaceAgent['status']> = {
+    pending: 'review',
+    published: 'published',
+    suspended: 'suspended',
+    deprecated: 'rejected',
+  };
+  return {
+    id: a.id,
+    name: a.name,
+    version: a.version,
+    description: a.description,
+    author: a.author,
+    rating: a.rating ?? 0,
+    downloads: a.installCount,
+    status: (statusMap[a.status] as MarketplaceAgent['status'] | undefined) ?? 'published',
+    manifest: {},
+    license: a.license,
+    createdAt: a.publishedAt,
+    category: a.category,
+  };
+}
+
 // --- Mock data ---
 
 const mockAgents: MarketplaceAgent[] = Array.from({ length: 12 }, (_, i) => ({
@@ -242,12 +268,14 @@ export function Marketplace(): ReactNode {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: '20', offset: '0' });
-      if (search.trim()) params.set('search', search.trim());
-      if (category !== 'all') params.set('category', category);
-
-      const res = await apiClient.get<AgentListResponse>(`/v1/marketplace?${params.toString()}`);
-      setAgents(res.agents);
+      const res = await listMarketplaceAgents({
+        pageSize: 20,
+        ...(search.trim().length > 0 && { search: search.trim() }),
+        ...(category !== 'all' && {
+          category: category as import('../lib/marketplace-api').AgentCategory,
+        }),
+      });
+      setAgents(res.data.map(adaptApiAgent));
       setTotal(res.total);
     } catch {
       // Graceful degradation — filter mock data locally
@@ -275,7 +303,7 @@ export function Marketplace(): ReactNode {
   const handleInstall = useCallback(async (agentId: string) => {
     setInstalling(agentId);
     try {
-      await apiClient.post(`/v1/marketplace/${agentId}/install`);
+      await apiInstallAgent(agentId);
       setAgents((prev) =>
         prev.map((a) => (a.id === agentId ? { ...a, downloads: a.downloads + 1 } : a)),
       );
@@ -291,7 +319,7 @@ export function Marketplace(): ReactNode {
 
   const handleUninstall = useCallback(async (agentId: string) => {
     try {
-      await apiClient.delete(`/v1/marketplace/${agentId}/install`);
+      await apiUninstallAgent(agentId);
     } catch {
       // Mock: no-op
     }
@@ -300,10 +328,16 @@ export function Marketplace(): ReactNode {
   const openDetail = useCallback(async (agent: MarketplaceAgent) => {
     setSelectedAgent(agent);
     try {
-      const res = await apiClient.get<{ data: MarketplaceReview[] }>(
-        `/v1/marketplace/${agent.id}/reviews`,
+      const res = await apiListReviews(agent.id);
+      setReviews(
+        res.data.map((r) => ({
+          id: r.id,
+          reviewerId: r.userId,
+          rating: r.rating,
+          comment: r.comment,
+          createdAt: r.createdAt,
+        })),
       );
-      setReviews(res.data);
     } catch {
       setReviews([
         {

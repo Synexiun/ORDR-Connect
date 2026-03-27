@@ -17,7 +17,18 @@ import { Modal } from '../components/ui/Modal';
 import { Table } from '../components/ui/Table';
 import { Spinner } from '../components/ui/Spinner';
 import { BarChart } from '../components/charts/BarChart';
-import { apiClient } from '../lib/api';
+import {
+  listApiKeys,
+  createApiKey,
+  revokeApiKey,
+  listSandboxes,
+  type ApiKey,
+  type SandboxTenant,
+} from '../lib/developer-api';
+import {
+  listMarketplaceAgents,
+  type MarketplaceAgent as ApiMarketplaceAgent,
+} from '../lib/marketplace-api';
 import {
   Key,
   Bot,
@@ -127,6 +138,47 @@ const endpointUsageData = [
   { label: '/reports', value: 1450 },
   { label: '/marketplace', value: 980 },
 ];
+
+// --- API adapters ---
+
+function adaptApiKey(k: ApiKey): ApiKeyItem {
+  return {
+    id: k.id,
+    name: k.name,
+    prefix: k.keyPrefix,
+    createdAt: k.createdAt,
+    expiresAt: k.expiresAt,
+    revokedAt: k.isActive ? null : k.createdAt,
+  };
+}
+
+const agentStatusMap: Record<string, PublishedAgent['status']> = {
+  pending: 'review',
+  published: 'published',
+  suspended: 'suspended',
+  deprecated: 'rejected',
+};
+
+function adaptPublishedAgent(a: ApiMarketplaceAgent): PublishedAgent {
+  return {
+    id: a.id,
+    name: a.name,
+    version: a.version,
+    status: (agentStatusMap[a.status] as PublishedAgent['status'] | undefined) ?? 'published',
+    downloads: a.installCount,
+    createdAt: a.publishedAt,
+  };
+}
+
+function adaptSandbox(s: SandboxTenant): SandboxItem {
+  return {
+    id: s.id,
+    name: s.name,
+    status: s.status,
+    expiresAt: s.expiresAt,
+    createdAt: s.createdAt,
+  };
+}
 
 // --- Mock data ---
 
@@ -276,14 +328,20 @@ export function DeveloperConsole(): ReactNode {
     setLoading(true);
     try {
       const [keysRes, agentsRes, sandboxRes] = await Promise.allSettled([
-        apiClient.get<{ data: ApiKeyItem[] }>('/v1/developers/keys'),
-        apiClient.get<{ data: PublishedAgent[] }>('/v1/marketplace?publisher=me'),
-        apiClient.get<{ data: SandboxItem[] }>('/v1/developers/sandbox'),
+        listApiKeys(),
+        listMarketplaceAgents({ pageSize: 20 }),
+        listSandboxes(),
       ]);
 
-      setKeys(keysRes.status === 'fulfilled' ? keysRes.value.data : mockKeys);
-      setAgents(agentsRes.status === 'fulfilled' ? agentsRes.value.data : mockAgents);
-      setSandboxes(sandboxRes.status === 'fulfilled' ? sandboxRes.value.data : mockSandboxes);
+      setKeys(keysRes.status === 'fulfilled' ? keysRes.value.data.map(adaptApiKey) : mockKeys);
+      setAgents(
+        agentsRes.status === 'fulfilled'
+          ? agentsRes.value.data.map(adaptPublishedAgent)
+          : mockAgents,
+      );
+      setSandboxes(
+        sandboxRes.status === 'fulfilled' ? sandboxRes.value.data.map(adaptSandbox) : mockSandboxes,
+      );
       setUsage(mockUsage);
     } catch {
       setKeys(mockKeys);
@@ -302,28 +360,9 @@ export function DeveloperConsole(): ReactNode {
   const handleCreateKey = useCallback(async () => {
     if (!newKeyName.trim()) return;
     try {
-      const res = await apiClient.post<{
-        data: {
-          key: string;
-          id: string;
-          name: string;
-          prefix: string;
-          createdAt: string;
-          expiresAt: string | null;
-        };
-      }>('/v1/developers/keys', { name: newKeyName });
-      setRawKey(res.data.key);
-      setKeys((prev) => [
-        ...prev,
-        {
-          id: res.data.id,
-          name: res.data.name,
-          prefix: res.data.prefix,
-          createdAt: res.data.createdAt,
-          expiresAt: res.data.expiresAt,
-          revokedAt: null,
-        },
-      ]);
+      const res = await createApiKey({ name: newKeyName });
+      setRawKey(res.data.rawKey);
+      setKeys((prev) => [...prev, adaptApiKey(res.data)]);
     } catch {
       // Mock: generate fake key
       const fakeKey = `ordr_mk_${Math.random().toString(36).slice(2, 18)}`;
@@ -344,7 +383,7 @@ export function DeveloperConsole(): ReactNode {
 
   const handleRevokeKey = useCallback(async (keyId: string) => {
     try {
-      await apiClient.delete(`/v1/developers/keys/${keyId}`);
+      await revokeApiKey(keyId);
     } catch {
       // Mock: revoke locally
     }
