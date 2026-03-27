@@ -23,6 +23,7 @@
  * - /api/v1/marketplace — Agent marketplace (CRUD, installs, reviews)
  * - /api/v1/admin/marketplace — Agent security review pipeline (admin only)
  * - /api/v1/partners — Partner program (registration, earnings, payouts)
+ * - /api/v1/ai — AI features (sentiment, insights, entity routing)
  * - /api/v1/openapi.json — OpenAPI 3.1 specification (public, no auth)
  */
 
@@ -53,6 +54,7 @@ import { developersRouter } from './routes/developers.js';
 import { marketplaceRouter } from './routes/marketplace.js';
 import { marketplaceReviewRouter } from './routes/marketplace-review.js';
 import { partnersRouter } from './routes/partners.js';
+import { aiRouter } from './routes/ai.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -185,6 +187,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Partner program routes — registration, earnings, payouts
   app.route('/api/v1/partners', partnersRouter);
+
+  // AI routes — sentiment analysis, agent insights, entity routing
+  app.route('/api/v1/ai', aiRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);

@@ -23,12 +23,7 @@ export type {
   LLMClientConfig,
 } from './types.js';
 
-export {
-  LLM_PROVIDERS,
-  MODEL_TIERS,
-  FINISH_REASONS,
-  MESSAGE_ROLES,
-} from './types.js';
+export { LLM_PROVIDERS, MODEL_TIERS, FINISH_REASONS, MESSAGE_ROLES } from './types.js';
 
 // ─── Models ───────────────────────────────────────────────────────
 export {
@@ -52,11 +47,7 @@ export {
 } from './safety.js';
 
 // ─── Prompts ──────────────────────────────────────────────────────
-export {
-  COMPLIANCE_BLOCKS,
-  BUILT_IN_TEMPLATES,
-  PromptRegistry,
-} from './prompts.js';
+export { COMPLIANCE_BLOCKS, BUILT_IN_TEMPLATES, PromptRegistry } from './prompts.js';
 
 // ─── Token Counter ────────────────────────────────────────────────
 export {
@@ -75,11 +66,7 @@ export type {
   EmbeddingBackend,
 } from './embeddings.js';
 
-export {
-  EMBEDDING_PROVIDERS,
-  EMBEDDING_DIMENSIONS,
-  EmbeddingClient,
-} from './embeddings.js';
+export { EMBEDDING_PROVIDERS, EMBEDDING_DIMENSIONS, EmbeddingClient } from './embeddings.js';
 
 // ─── Long-Term Memory ────────────────────────────────────────────
 export type {
@@ -94,10 +81,7 @@ export type {
   MemoryErasureProvider,
 } from './memory/long-term.js';
 
-export {
-  LongTermMemory,
-  cosineSimilarity,
-} from './memory/long-term.js';
+export { LongTermMemory, cosineSimilarity } from './memory/long-term.js';
 
 // ─── Sentiment Analysis ─────────────────────────────────────────
 export type {
@@ -108,11 +92,10 @@ export type {
   SentimentRawOutput,
 } from './sentiment.js';
 
-export {
-  SENTIMENT_LABELS,
-  SENTIMENT_SYSTEM_PROMPT,
-  SentimentAnalyzer,
-} from './sentiment.js';
+export { SENTIMENT_LABELS, SENTIMENT_SYSTEM_PROMPT, SentimentAnalyzer } from './sentiment.js';
+
+// ─── LLM Sentiment Backend ───────────────────────────────────────
+export { LlmSentimentBackend } from './sentiment-backend-llm.js';
 
 // ─── Sentiment Router ───────────────────────────────────────────
 export type {
@@ -125,10 +108,7 @@ export type {
   RoutingAuditLogger,
 } from './routing/sentiment-router.js';
 
-export {
-  ROUTING_ACTIONS,
-  SentimentRouter,
-} from './routing/sentiment-router.js';
+export { ROUTING_ACTIONS, SentimentRouter } from './routing/sentiment-router.js';
 
 // ─── Multi-Modal Processing ─────────────────────────────────────
 export type {

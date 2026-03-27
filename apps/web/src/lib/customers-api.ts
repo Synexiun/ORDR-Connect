@@ -114,3 +114,26 @@ export function updateCustomer(
 export async function deleteCustomer(id: string): Promise<void> {
   await apiClient.delete(`/v1/customers/${id}`);
 }
+
+// ── Semantic Search ─────────────────────────────────────────────
+
+export interface SemanticSearchResult {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string | null;
+  readonly score: number; // Similarity 0–1
+}
+
+/**
+ * Semantic (embedding-based) customer search.
+ * Falls back to text search when query < 4 characters.
+ * COMPLIANCE: No PHI in query param — use sanitized search terms.
+ */
+export function semanticSearchCustomers(
+  query: string,
+  limit = 10,
+): Promise<{ readonly success: true; readonly data: SemanticSearchResult[] }> {
+  return apiClient.get<{ readonly success: true; readonly data: SemanticSearchResult[] }>(
+    `/v1/customers/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  );
+}

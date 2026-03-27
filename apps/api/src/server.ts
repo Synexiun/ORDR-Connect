@@ -47,6 +47,7 @@ import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
 import { configureHealthChecks } from './routes/health.js';
 import { configureBrandingRoutes } from './routes/branding.js';
+import { configureAiRoutes } from './routes/ai.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -175,7 +176,11 @@ async function bootstrap(): Promise<void> {
       timeoutMs: 30_000,
       maxRetries: 3,
     });
+    configureAiRoutes({ llmClient });
     console.warn('[ORDR:API] LLM client initialized — model: claude-sonnet-4-6 (standard tier)');
+    console.warn(
+      '[ORDR:API] AI routes configured — /v1/ai/sentiment, /v1/ai/insights, /v1/ai/route',
+    );
   } else {
     console.warn('[ORDR:API] LLM client skipped — ANTHROPIC_API_KEY not set (agents disabled)');
   }
