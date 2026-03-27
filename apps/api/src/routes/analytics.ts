@@ -32,7 +32,14 @@ const timeRangeSchema = z.object({
 });
 
 const trendParamSchema = z.object({
-  metric: z.enum(['delivery', 'agent_performance', 'compliance', 'customer_engagement'] as const),
+  metric: z.enum([
+    'delivery',
+    'agent_performance',
+    'compliance',
+    'customer_engagement',
+    'response-rate',
+    'response-time',
+  ] as const),
 });
 
 const trendQuerySchema = z.object({
@@ -302,7 +309,15 @@ analyticsRouter.get('/trends/:metric', async (c): Promise<Response> => {
       );
       break;
     case 'customer_engagement':
+    case 'response-rate':
       result = await deps.queries.getCustomerEngagementTrend(ctx.tenantId, timeRange);
+      break;
+    case 'response-time':
+      result = await deps.queries.getAgentPerformanceTrend(
+        ctx.tenantId,
+        timeRange,
+        queryParsed.data.agentRole,
+      );
       break;
   }
 
@@ -310,9 +325,18 @@ analyticsRouter.get('/trends/:metric', async (c): Promise<Response> => {
     return jsonErr(c, result.error);
   }
 
+  // Normalise MetricValue[] → TrendPoint[] so the frontend receives { date, value } tuples.
+  const trendPoints = result.data.map((v) => ({
+    date:
+      v.timestamp instanceof Date
+        ? v.timestamp.toISOString().split('T')[0]
+        : String(v.timestamp).split('T')[0],
+    value: v.value,
+  }));
+
   return c.json({
     success: true as const,
-    data: result.data,
+    data: trendPoints,
     metric: paramParsed.data.metric,
     timeRange: {
       from: timeRange.from.toISOString(),

@@ -48,8 +48,10 @@ vi.mock('../lib/api', () => ({
 
 // ─── Fixtures ────────────────────────────────────────────────────
 
+// Response shapes match the service layer: { success, data, total, page, pageSize }
 const MOCK_AGENTS = {
-  agents: [
+  success: true,
+  data: [
     {
       id: 'a1',
       name: 'Smart Collections',
@@ -94,9 +96,12 @@ const MOCK_AGENTS = {
     },
   ],
   total: 3,
+  page: 1,
+  pageSize: 20,
 };
 
 const MOCK_REVIEWS = {
+  success: true,
   data: [
     {
       id: 'r1',
@@ -113,6 +118,7 @@ const MOCK_REVIEWS = {
       createdAt: '2025-01-11T00:00:00Z',
     },
   ],
+  total: 2,
 };
 
 function renderComponent(): ReturnType<typeof render> {
@@ -168,7 +174,7 @@ describe('Marketplace', () => {
   });
 
   it('shows empty state when no agents match', async () => {
-    mockGet.mockResolvedValue({ agents: [], total: 0 });
+    mockGet.mockResolvedValue({ success: true, data: [], total: 0, page: 1, pageSize: 20 });
     renderComponent();
 
     await waitFor(() => {
@@ -219,7 +225,8 @@ describe('Marketplace', () => {
       fireEvent.click(installButtons[0]!);
     });
 
-    expect(mockPost).toHaveBeenCalledWith('/v1/marketplace/a1/install');
+    // installAgent calls apiClient.post(path, body) — body is {} per service layer
+    expect(mockPost).toHaveBeenCalledWith('/v1/marketplace/a1/install', {});
   });
 
   it('opens agent detail modal', async () => {
