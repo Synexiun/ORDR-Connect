@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useCallback, type FormEvent } from 'react';
+import { type ReactNode, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { Button } from '../components/ui/Button';
@@ -6,7 +6,7 @@ import { Input } from '../components/ui/Input';
 import { ApiRequestError } from '../lib/api';
 
 export function Login(): ReactNode {
-  const { login, isLoading } = useAuth();
+  const { login, loginDemo, isLoading } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -14,7 +14,7 @@ export function Login(): ReactNode {
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = useCallback(
-    async (e: FormEvent<HTMLFormElement>) => {
+    async (e: React.SyntheticEvent<HTMLFormElement>) => {
       e.preventDefault();
       setError(null);
 
@@ -25,7 +25,7 @@ export function Login(): ReactNode {
 
       try {
         await login({ email: email.trim(), password });
-        navigate('/dashboard', { replace: true });
+        void navigate('/dashboard', { replace: true });
       } catch (err) {
         if (err instanceof ApiRequestError) {
           if (err.status === 429) {
@@ -44,14 +44,16 @@ export function Login(): ReactNode {
   );
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface p-4">
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-accent text-lg font-bold text-white">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-accent text-sm font-bold text-white">
             O
           </div>
-          <h1 className="text-xl font-bold text-content">ORDR-Connect</h1>
+          <h1 className="font-mono text-xl font-bold tracking-tight text-content">
+            ORDR<span className="text-content-tertiary">.</span>Connect
+          </h1>
           <p className="mt-1 text-sm text-content-secondary">Customer Operations OS</p>
         </div>
 
@@ -66,7 +68,9 @@ export function Login(): ReactNode {
                 type="email"
                 placeholder="operator@company.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                }}
                 autoComplete="email"
                 autoFocus
                 required
@@ -78,14 +82,16 @@ export function Login(): ReactNode {
                 type="password"
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                }}
                 autoComplete="current-password"
                 required
                 disabled={isLoading}
               />
             </div>
 
-            {error && (
+            {error !== null && (
               <div
                 className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400"
                 role="alert"
@@ -105,6 +111,24 @@ export function Login(): ReactNode {
               Sign In
             </Button>
           </form>
+
+          <div className="mt-4 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => {
+                loginDemo();
+                void navigate('/dashboard', { replace: true });
+              }}
+              disabled={isLoading}
+            >
+              Launch Demo
+            </Button>
+            <p className="mt-2 text-center text-2xs text-content-tertiary">
+              Explore the dashboard with sample data
+            </p>
+          </div>
         </div>
 
         {/* Compliance footer */}

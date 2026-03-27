@@ -11,20 +11,9 @@
  * - No secrets stored in React context (Rule 5)
  */
 
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useMemo,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react';
 import { apiClient } from '../lib/api';
-import {
-  applyTheme,
-  getDefaultBrandConfig,
-  type ClientBrandConfig,
-} from '../lib/theme';
+import { applyTheme, getDefaultBrandConfig, type ClientBrandConfig } from '../lib/theme';
 
 // ─── Context ────────────────────────────────────────────────────
 
@@ -56,12 +45,11 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactNode 
 
     async function fetchBranding(): Promise<void> {
       try {
-        const response = await apiClient.get<BrandingApiResponse>(
-          '/v1/branding',
-          { signal: controller.signal },
-        );
+        const response = await apiClient.get<BrandingApiResponse>('/v1/branding', {
+          signal: controller.signal,
+        });
 
-        if (response.success && response.data) {
+        if (response.success) {
           setBrand(response.data);
           applyTheme(response.data);
         }
@@ -73,23 +61,16 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactNode 
       }
     }
 
-    fetchBranding();
+    void fetchBranding();
 
     return () => {
       controller.abort();
     };
   }, []);
 
-  const value = useMemo<BrandingContextValue>(
-    () => ({ brand, isLoading }),
-    [brand, isLoading],
-  );
+  const value = useMemo<BrandingContextValue>(() => ({ brand, isLoading }), [brand, isLoading]);
 
-  return (
-    <BrandingContext.Provider value={value}>
-      {children}
-    </BrandingContext.Provider>
-  );
+  return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;
 }
 
 // ─── Hook ───────────────────────────────────────────────────────

@@ -162,7 +162,9 @@ describe('applyTheme', () => {
     vi.restoreAllMocks();
     // Clean up any favicon links added during tests
     const faviconLinks = document.querySelectorAll('link[rel="icon"]');
-    faviconLinks.forEach((el) => el.remove());
+    faviconLinks.forEach((el) => {
+      el.remove();
+    });
   });
 
   const testConfig: ClientBrandConfig = {
@@ -422,9 +424,13 @@ describe('applyTheme with customCss', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     const customStyles = document.querySelectorAll('style[data-ordr-custom]');
-    customStyles.forEach((el) => el.remove());
+    customStyles.forEach((el) => {
+      el.remove();
+    });
     const faviconLinks = document.querySelectorAll('link[rel="icon"]');
-    faviconLinks.forEach((el) => el.remove());
+    faviconLinks.forEach((el) => {
+      el.remove();
+    });
   });
 
   const testConfig: ClientBrandConfig = {
@@ -502,7 +508,9 @@ describe('ThemeProvider integration', () => {
     const config = getDefaultBrandConfig();
 
     // Should not throw
-    expect(() => applyTheme(config)).not.toThrow();
+    expect(() => {
+      applyTheme(config);
+    }).not.toThrow();
   });
 
   it('brandConfigToCSS output matches getDefaultTheme for default config', () => {

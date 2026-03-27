@@ -24,7 +24,8 @@ describe('cn utility', () => {
   });
 
   it('handles conditional classes', () => {
-    const result = cn('base', true && 'active', false && 'hidden');
+    const flags = [true, false] as boolean[];
+    const result = cn('base', flags[0] === true && 'active', flags[1] === true && 'hidden');
     expect(result).toBe('base active');
   });
 
@@ -167,9 +168,7 @@ interface TestRow {
 
 describe('Table component contract', () => {
   it('creates table with columns and data', () => {
-    const columns = [
-      { key: 'name', header: 'Name', render: (r: TestRow) => r.name },
-    ];
+    const columns = [{ key: 'name', header: 'Name', render: (r: TestRow) => r.name }];
     const data: TestRow[] = [{ id: '1', name: 'Test' }];
 
     const element = createElement(Table<TestRow>, {
@@ -190,10 +189,12 @@ describe('Table component contract', () => {
       pagination: { page: 1, pageSize: 10, total: 100 },
     });
 
-    const pagination = element.props.pagination;
+    const pagination = element.props.pagination as
+      | { page: number; pageSize: number; total: number }
+      | undefined;
     expect(pagination).toBeDefined();
-    expect(pagination!.total).toBe(100);
-    expect(pagination!.page).toBe(1);
+    expect(pagination?.total).toBe(100);
+    expect(pagination?.page).toBe(1);
   });
 });
 

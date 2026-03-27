@@ -100,31 +100,78 @@ export function brandConfigToCSS(config: ClientBrandConfig): Record<string, stri
  */
 const SAFE_CSS_PROPERTIES = new Set([
   // Colors
-  'color', 'background-color', 'background', 'border-color',
-  'outline-color', 'text-decoration-color', 'caret-color',
-  'accent-color', 'fill', 'stroke', 'opacity',
+  'color',
+  'background-color',
+  'background',
+  'border-color',
+  'outline-color',
+  'text-decoration-color',
+  'caret-color',
+  'accent-color',
+  'fill',
+  'stroke',
+  'opacity',
   // Fonts
-  'font-family', 'font-size', 'font-weight', 'font-style',
-  'font-variant', 'line-height', 'letter-spacing', 'word-spacing',
-  'text-align', 'text-transform', 'text-decoration', 'text-indent',
-  'text-shadow', 'white-space',
+  'font-family',
+  'font-size',
+  'font-weight',
+  'font-style',
+  'font-variant',
+  'line-height',
+  'letter-spacing',
+  'word-spacing',
+  'text-align',
+  'text-transform',
+  'text-decoration',
+  'text-indent',
+  'text-shadow',
+  'white-space',
   // Spacing
-  'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
-  'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
-  'gap', 'row-gap', 'column-gap',
+  'margin',
+  'margin-top',
+  'margin-right',
+  'margin-bottom',
+  'margin-left',
+  'padding',
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+  'gap',
+  'row-gap',
+  'column-gap',
   // Borders
-  'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
-  'border-width', 'border-style', 'border-radius',
-  'border-top-left-radius', 'border-top-right-radius',
-  'border-bottom-left-radius', 'border-bottom-right-radius',
+  'border',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+  'border-width',
+  'border-style',
+  'border-radius',
+  'border-top-left-radius',
+  'border-top-right-radius',
+  'border-bottom-left-radius',
+  'border-bottom-right-radius',
   // Box
-  'box-shadow', 'width', 'max-width', 'min-width',
-  'height', 'max-height', 'min-height',
+  'box-shadow',
+  'width',
+  'max-width',
+  'min-width',
+  'height',
+  'max-height',
+  'min-height',
   // Transitions (visual only)
-  'transition', 'transition-property', 'transition-duration',
-  'transition-timing-function', 'transition-delay',
+  'transition',
+  'transition-property',
+  'transition-duration',
+  'transition-timing-function',
+  'transition-delay',
   // Misc visual
-  'cursor', 'list-style', 'list-style-type', 'overflow',
+  'cursor',
+  'list-style',
+  'list-style-type',
+  'overflow',
 ]);
 
 /**
@@ -217,8 +264,8 @@ export function sanitizeCSS(raw: string): string {
   match = ruleBlockRegex.exec(cssInput);
   while (match !== null) {
     hasBlocks = true;
-    const selector = match[1].trim();
-    const declarations = match[2];
+    const selector = (match[1] ?? '').trim();
+    const declarations = match[2] ?? '';
 
     // Filter declarations within the block
     const filteredDecls = filterDeclarations(declarations);
@@ -261,7 +308,7 @@ export function applyTheme(config: ClientBrandConfig): void {
   }
 
   // Update favicon if provided
-  if (config.faviconUrl) {
+  if (config.faviconUrl !== null && config.faviconUrl !== '') {
     const existingLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (existingLink) {
       existingLink.href = config.faviconUrl;
@@ -274,7 +321,7 @@ export function applyTheme(config: ClientBrandConfig): void {
   }
 
   // Apply sanitized custom CSS if present
-  if (config.customCss) {
+  if (config.customCss !== null && config.customCss !== '') {
     const sanitized = sanitizeCSS(config.customCss);
     if (sanitized.length > 0) {
       const existingStyle = document.querySelector<HTMLStyleElement>('style[data-ordr-custom]');

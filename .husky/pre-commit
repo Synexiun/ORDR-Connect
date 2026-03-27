@@ -2,4 +2,11 @@
 # ORDR-Connect — Pre-commit hook
 # SOC2/ISO27001/HIPAA: Lint, format, and secret scan before every commit
 
+# Secret scan on staged diff (gitleaks v8+)
+git diff --cached | gitleaks stdin --no-banner
+if [ $? -ne 0 ]; then
+  echo "gitleaks: secrets detected in staged files — commit blocked"
+  exit 1
+fi
+
 pnpm exec lint-staged

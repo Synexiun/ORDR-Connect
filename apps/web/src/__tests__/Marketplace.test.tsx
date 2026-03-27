@@ -40,9 +40,9 @@ const mockDelete = vi.fn();
 
 vi.mock('../lib/api', () => ({
   apiClient: {
-    get: (...args: unknown[]) => mockGet(...args),
-    post: (...args: unknown[]) => mockPost(...args),
-    delete: (...args: unknown[]) => mockDelete(...args),
+    get: (...args: unknown[]) => mockGet(...args) as unknown,
+    post: (...args: unknown[]) => mockPost(...args) as unknown,
+    delete: (...args: unknown[]) => mockDelete(...args) as unknown,
   },
 }));
 
@@ -50,24 +50,73 @@ vi.mock('../lib/api', () => ({
 
 const MOCK_AGENTS = {
   agents: [
-    { id: 'a1', name: 'Smart Collections', version: '1.0.0', description: 'Automates debt collection', author: 'ORDR Labs', rating: 4.5, downloads: 847, status: 'published', manifest: { tools: ['read'] }, license: 'MIT', createdAt: '2025-01-01T00:00:00Z' },
-    { id: 'a2', name: 'Healthcare Bot', version: '2.0.0', description: 'Patient scheduling agent', author: 'HealthTech', rating: 4.0, downloads: 234, status: 'published', manifest: { tools: ['write'] }, license: 'Apache-2.0', createdAt: '2025-01-02T00:00:00Z' },
-    { id: 'a3', name: 'Support Triage', version: '1.5.0', description: 'Routes support tickets', author: 'SupportAI', rating: 3.5, downloads: 156, status: 'published', manifest: { tools: ['read', 'write'] }, license: 'MIT', createdAt: '2025-01-03T00:00:00Z' },
+    {
+      id: 'a1',
+      name: 'Smart Collections',
+      version: '1.0.0',
+      description: 'Automates debt collection',
+      author: 'ORDR Labs',
+      rating: 4.5,
+      downloads: 847,
+      status: 'published',
+      manifest: { tools: ['read'] },
+      license: 'MIT',
+      category: 'collections',
+      createdAt: '2025-01-01T00:00:00Z',
+    },
+    {
+      id: 'a2',
+      name: 'Healthcare Bot',
+      version: '2.0.0',
+      description: 'Patient scheduling agent',
+      author: 'HealthTech',
+      rating: 4.0,
+      downloads: 234,
+      status: 'published',
+      manifest: { tools: ['write'] },
+      license: 'Apache-2.0',
+      category: 'healthcare',
+      createdAt: '2025-01-02T00:00:00Z',
+    },
+    {
+      id: 'a3',
+      name: 'Support Triage',
+      version: '1.5.0',
+      description: 'Routes support tickets',
+      author: 'SupportAI',
+      rating: 3.5,
+      downloads: 156,
+      status: 'published',
+      manifest: { tools: ['read', 'write'] },
+      license: 'MIT',
+      category: 'support',
+      createdAt: '2025-01-03T00:00:00Z',
+    },
   ],
   total: 3,
 };
 
 const MOCK_REVIEWS = {
   data: [
-    { id: 'r1', reviewerId: 'u1', rating: 5, comment: 'Excellent agent.', createdAt: '2025-01-10T00:00:00Z' },
-    { id: 'r2', reviewerId: 'u2', rating: 4, comment: 'Good but needs docs.', createdAt: '2025-01-11T00:00:00Z' },
+    {
+      id: 'r1',
+      reviewerId: 'u1',
+      rating: 5,
+      comment: 'Excellent agent.',
+      createdAt: '2025-01-10T00:00:00Z',
+    },
+    {
+      id: 'r2',
+      reviewerId: 'u2',
+      rating: 4,
+      comment: 'Good but needs docs.',
+      createdAt: '2025-01-11T00:00:00Z',
+    },
   ],
 };
 
 function renderComponent(): ReturnType<typeof render> {
-  return render(
-    createElement(BrowserRouter, null, createElement(Marketplace)),
-  );
+  return render(createElement(BrowserRouter, null, createElement(Marketplace)));
 }
 
 // ─── Setup / Teardown ────────────────────────────────────────────
@@ -107,7 +156,12 @@ describe('Marketplace', () => {
   });
 
   it('shows loading spinner initially', () => {
-    mockGet.mockImplementation(() => new Promise(() => { /* never resolves */ }));
+    mockGet.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
     renderComponent();
 
     expect(screen.getByText('Loading agents')).toBeDefined();
@@ -141,7 +195,7 @@ describe('Marketplace', () => {
     });
 
     const input = screen.getByLabelText('Search agents');
-    await act(async () => {
+    act(() => {
       fireEvent.change(input, { target: { value: 'Healthcare' } });
     });
 
@@ -160,7 +214,7 @@ describe('Marketplace', () => {
     });
 
     const installButtons = screen.getAllByText('Install');
-    await act(async () => {
+    act(() => {
       fireEvent.click(installButtons[0]);
     });
 
@@ -179,13 +233,14 @@ describe('Marketplace', () => {
     });
 
     const detailButtons = screen.getAllByText('Details');
-    await act(async () => {
+    act(() => {
       fireEvent.click(detailButtons[0]);
     });
 
     await waitFor(() => {
-      expect(screen.getByText('ORDR Labs')).toBeDefined();
-      expect(screen.getByText('MIT')).toBeDefined();
+      // "by ORDR Labs" appears both in the card and modal
+      expect(screen.getAllByText('by ORDR Labs').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('MIT').length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -201,7 +256,7 @@ describe('Marketplace', () => {
     });
 
     const detailButtons = screen.getAllByText('Details');
-    await act(async () => {
+    act(() => {
       fireEvent.click(detailButtons[0]);
     });
 
@@ -235,7 +290,7 @@ describe('Marketplace', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText('All')).toBeDefined();
+      expect(screen.getByText('All Agents')).toBeDefined();
       expect(screen.getByText('Healthcare')).toBeDefined();
       expect(screen.getByText('Support')).toBeDefined();
       expect(screen.getByText('Analytics')).toBeDefined();
@@ -256,7 +311,7 @@ describe('Marketplace', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText('3 agents available')).toBeDefined();
+      expect(screen.getByText('Total Agents')).toBeDefined();
     });
   });
 
@@ -272,7 +327,7 @@ describe('Marketplace', () => {
     });
 
     const detailButtons = screen.getAllByText('Details');
-    await act(async () => {
+    act(() => {
       fireEvent.click(detailButtons[0]);
     });
 
@@ -293,7 +348,7 @@ describe('Marketplace', () => {
     });
 
     const detailButtons = screen.getAllByText('Details');
-    await act(async () => {
+    act(() => {
       fireEvent.click(detailButtons[0]);
     });
 
@@ -307,7 +362,7 @@ describe('Marketplace', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText('847 installs')).toBeDefined();
+      expect(screen.getByText('Total Installs')).toBeDefined();
     });
   });
 
@@ -333,7 +388,7 @@ describe('Marketplace', () => {
     });
 
     const detailButtons = screen.getAllByText('Details');
-    await act(async () => {
+    act(() => {
       fireEvent.click(detailButtons[0]);
     });
 

@@ -4,10 +4,12 @@
  * Color transitions based on value thresholds:
  * - green (75+), yellow (50-74), orange (25-49), red (0-24)
  *
+ * CSS mount animation on stroke-dashoffset for visual entrance effect.
+ *
  * No external charting libraries — supply chain compliance (Rule 8).
  */
 
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useMemo, useState, useEffect } from 'react';
 import { cn } from '../../lib/cn';
 
 interface GaugeChartProps {
@@ -15,14 +17,8 @@ interface GaugeChartProps {
   label?: string;
   color?: string;
   size?: number;
+  animated?: boolean;
   className?: string;
-}
-
-function defaultColor(value: number): string {
-  if (value >= 75) return '#10b981'; // emerald-500
-  if (value >= 50) return '#f59e0b'; // amber-500
-  if (value >= 25) return '#f97316'; // orange-500
-  return '#ef4444'; // red-500
 }
 
 function defaultStrokeClass(value: number): string {
@@ -44,17 +40,36 @@ export function GaugeChart({
   label,
   color,
   size = 120,
+  animated = true,
   className,
 }: GaugeChartProps): ReactNode {
   const clampedValue = Math.max(0, Math.min(100, value));
 
-  const { circumference, dashOffset, radius, strokeWidth } = useMemo(() => {
+  const { circumference, targetDashOffset, radius, strokeWidth } = useMemo(() => {
     const r = (size - 16) / 2;
     const sw = Math.max(6, size * 0.07);
     const circ = 2 * Math.PI * r;
     const offset = circ - (clampedValue / 100) * circ;
-    return { circumference: circ, dashOffset: offset, radius: r, strokeWidth: sw };
+    return { circumference: circ, targetDashOffset: offset, radius: r, strokeWidth: sw };
   }, [size, clampedValue]);
+
+  // Mount animation: start from full offset (empty), animate to target
+  const [currentOffset, setCurrentOffset] = useState(animated ? circumference : targetDashOffset);
+
+  useEffect(() => {
+    if (!animated) {
+      setCurrentOffset(targetDashOffset);
+      return;
+    }
+
+    // Delay to ensure the initial (empty) state renders first
+    const timer = setTimeout(() => {
+      setCurrentOffset(targetDashOffset);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [animated, targetDashOffset, circumference]);
 
   const center = size / 2;
 
@@ -67,7 +82,7 @@ export function GaugeChart({
           viewBox={`0 0 ${size} ${size}`}
           className="-rotate-90"
           role="img"
-          aria-label={`${label || 'Score'}: ${clampedValue}%`}
+          aria-label={`${label !== undefined && label !== '' ? label : 'Score'}: ${clampedValue}%`}
         >
           {/* Background arc */}
           <circle
@@ -88,11 +103,15 @@ export function GaugeChart({
             fill="none"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
-            className={color ? undefined : defaultStrokeClass(clampedValue)}
-            stroke={color || undefined}
+            className={
+              color !== undefined && color !== '' ? undefined : defaultStrokeClass(clampedValue)
+            }
+            stroke={color !== undefined && color !== '' ? color : undefined}
             strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+            strokeDashoffset={currentOffset}
+            style={{
+              transition: animated ? 'stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+            }}
           />
         </svg>
 
@@ -106,25 +125,23 @@ export function GaugeChart({
               fontSize={22}
               fontWeight="bold"
               fontFamily="monospace"
-              className={color ? 'fill-content' : defaultTextClass(clampedValue)}
-              fill={color || undefined}
+              className={
+                color !== undefined && color !== ''
+                  ? 'fill-content'
+                  : defaultTextClass(clampedValue)
+              }
+              fill={color !== undefined && color !== '' ? color : undefined}
             >
               {clampedValue}
             </text>
-            <text
-              x="30"
-              y="36"
-              textAnchor="middle"
-              fontSize={9}
-              className="fill-content-tertiary"
-            >
+            <text x="30" y="36" textAnchor="middle" fontSize={9} className="fill-content-tertiary">
               / 100
             </text>
           </svg>
         </div>
       </div>
 
-      {label && (
+      {label !== undefined && label !== '' && (
         <p className="mt-1 text-xs font-medium text-content-secondary">{label}</p>
       )}
     </div>

@@ -5,12 +5,15 @@
  * All violation data is metadata-only; no PHI is rendered.
  */
 
-import { type ReactNode, useState, useEffect, useCallback } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Table } from '../components/ui/Table';
 import { Spinner } from '../components/ui/Spinner';
+import { DonutChart } from '../components/charts/DonutChart';
+import { ProgressBar } from '../components/charts/ProgressBar';
+import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from '../components/icons';
 import { apiClient } from '../lib/api';
 
 // --- Types ---
@@ -42,6 +45,12 @@ interface ConsentStatus {
   percentage: number;
 }
 
+interface RegulationScore {
+  regulation: string;
+  score: number;
+  color: string;
+}
+
 // --- Constants ---
 
 const severityBadge: Record<Violation['severity'], 'danger' | 'warning' | 'info' | 'neutral'> = {
@@ -71,14 +80,94 @@ const mockOverview: ComplianceOverview = {
 };
 
 const mockViolations: Violation[] = [
-  { id: 'v-001', rule: 'TCPA-quiet-hours', regulation: 'TCPA', severity: 'high', description: 'Outbound call attempted during quiet hours (9PM-8AM local)', customerId: 'cust-0012', customerName: 'Oscorp', timestamp: new Date(Date.now() - 1800000).toISOString(), resolved: false },
-  { id: 'v-002', rule: 'HIPAA-phi-logging', regulation: 'HIPAA', severity: 'critical', description: 'PHI field detected in structured log output — automatically redacted', customerId: 'cust-0005', customerName: 'Stark Industries', timestamp: new Date(Date.now() - 3600000).toISOString(), resolved: true },
-  { id: 'v-003', rule: 'FDCPA-frequency', regulation: 'FDCPA', severity: 'medium', description: 'Contact frequency exceeded 7-day limit for collection communications', customerId: 'cust-0008', customerName: 'Pied Piper', timestamp: new Date(Date.now() - 7200000).toISOString(), resolved: false },
-  { id: 'v-004', rule: 'GDPR-consent-expired', regulation: 'GDPR', severity: 'medium', description: 'Marketing consent expired, communication blocked automatically', customerId: 'cust-0003', customerName: 'Initech', timestamp: new Date(Date.now() - 14400000).toISOString(), resolved: true },
-  { id: 'v-005', rule: 'SOC2-access-anomaly', regulation: 'SOC2', severity: 'low', description: 'Unusual access pattern detected — additional verification triggered', customerId: 'cust-0015', customerName: 'Massive Dynamic', timestamp: new Date(Date.now() - 21600000).toISOString(), resolved: true },
-  { id: 'v-006', rule: 'TCPA-do-not-call', regulation: 'TCPA', severity: 'high', description: 'Number on DNC registry — outbound call blocked', customerId: 'cust-0007', customerName: 'LexCorp', timestamp: new Date(Date.now() - 28800000).toISOString(), resolved: true },
-  { id: 'v-007', rule: 'ISO27001-key-rotation', regulation: 'ISO27001', severity: 'low', description: 'Encryption key approaching 75-day rotation threshold — scheduled for rotation', customerId: 'cust-0000', customerName: 'System', timestamp: new Date(Date.now() - 43200000).toISOString(), resolved: false },
-  { id: 'v-008', rule: 'HIPAA-min-necessary', regulation: 'HIPAA', severity: 'medium', description: 'Agent requested data beyond minimum necessary scope — request denied', customerId: 'cust-0002', customerName: 'Globex Inc', timestamp: new Date(Date.now() - 57600000).toISOString(), resolved: true },
+  {
+    id: 'v-001',
+    rule: 'TCPA-quiet-hours',
+    regulation: 'TCPA',
+    severity: 'high',
+    description: 'Outbound call attempted during quiet hours (9PM-8AM local)',
+    customerId: 'cust-0012',
+    customerName: 'Oscorp',
+    timestamp: new Date(Date.now() - 1800000).toISOString(),
+    resolved: false,
+  },
+  {
+    id: 'v-002',
+    rule: 'HIPAA-phi-logging',
+    regulation: 'HIPAA',
+    severity: 'critical',
+    description: 'PHI field detected in structured log output — automatically redacted',
+    customerId: 'cust-0005',
+    customerName: 'Stark Industries',
+    timestamp: new Date(Date.now() - 3600000).toISOString(),
+    resolved: true,
+  },
+  {
+    id: 'v-003',
+    rule: 'FDCPA-frequency',
+    regulation: 'FDCPA',
+    severity: 'medium',
+    description: 'Contact frequency exceeded 7-day limit for collection communications',
+    customerId: 'cust-0008',
+    customerName: 'Pied Piper',
+    timestamp: new Date(Date.now() - 7200000).toISOString(),
+    resolved: false,
+  },
+  {
+    id: 'v-004',
+    rule: 'GDPR-consent-expired',
+    regulation: 'GDPR',
+    severity: 'medium',
+    description: 'Marketing consent expired, communication blocked automatically',
+    customerId: 'cust-0003',
+    customerName: 'Initech',
+    timestamp: new Date(Date.now() - 14400000).toISOString(),
+    resolved: true,
+  },
+  {
+    id: 'v-005',
+    rule: 'SOC2-access-anomaly',
+    regulation: 'SOC2',
+    severity: 'low',
+    description: 'Unusual access pattern detected — additional verification triggered',
+    customerId: 'cust-0015',
+    customerName: 'Massive Dynamic',
+    timestamp: new Date(Date.now() - 21600000).toISOString(),
+    resolved: true,
+  },
+  {
+    id: 'v-006',
+    rule: 'TCPA-do-not-call',
+    regulation: 'TCPA',
+    severity: 'high',
+    description: 'Number on DNC registry — outbound call blocked',
+    customerId: 'cust-0007',
+    customerName: 'LexCorp',
+    timestamp: new Date(Date.now() - 28800000).toISOString(),
+    resolved: true,
+  },
+  {
+    id: 'v-007',
+    rule: 'ISO27001-key-rotation',
+    regulation: 'ISO27001',
+    severity: 'low',
+    description: 'Encryption key approaching 75-day rotation threshold — scheduled for rotation',
+    customerId: 'cust-0000',
+    customerName: 'System',
+    timestamp: new Date(Date.now() - 43200000).toISOString(),
+    resolved: false,
+  },
+  {
+    id: 'v-008',
+    rule: 'HIPAA-min-necessary',
+    regulation: 'HIPAA',
+    severity: 'medium',
+    description: 'Agent requested data beyond minimum necessary scope — request denied',
+    customerId: 'cust-0002',
+    customerName: 'Globex Inc',
+    timestamp: new Date(Date.now() - 57600000).toISOString(),
+    resolved: true,
+  },
 ];
 
 const mockConsent: ConsentStatus[] = [
@@ -88,14 +177,24 @@ const mockConsent: ConsentStatus[] = [
   { channel: 'Chat', consented: 2156, total: 2847, percentage: 75.7 },
 ];
 
+const mockRegulationScores: RegulationScore[] = [
+  { regulation: 'HIPAA', score: 94, color: '#ef4444' },
+  { regulation: 'FDCPA', score: 98, color: '#f59e0b' },
+  { regulation: 'TCPA', score: 91, color: '#f97316' },
+  { regulation: 'GDPR', score: 97, color: '#3b82f6' },
+  { regulation: 'SOC2', score: 99, color: '#8b5cf6' },
+  { regulation: 'ISO27001', score: 96, color: '#10b981' },
+];
+
 // --- Component ---
 
 export function Compliance(): ReactNode {
   const [overview, setOverview] = useState<ComplianceOverview | null>(null);
   const [violations, setViolations] = useState<Violation[]>([]);
   const [consent, setConsent] = useState<ConsentStatus[]>([]);
+  const [regulationScores, setRegulationScores] = useState<RegulationScore[]>([]);
   const [loading, setLoading] = useState(true);
-  const [regulationFilter, setRegulationFilter] = useState<string>('all');
+  const [regulationFilter, setRegulationFilter] = useState('all');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -109,10 +208,12 @@ export function Compliance(): ReactNode {
       setOverview(overRes.status === 'fulfilled' ? overRes.value : mockOverview);
       setViolations(violRes.status === 'fulfilled' ? violRes.value.violations : mockViolations);
       setConsent(consentRes.status === 'fulfilled' ? consentRes.value.channels : mockConsent);
+      setRegulationScores(mockRegulationScores);
     } catch {
       setOverview(mockOverview);
       setViolations(mockViolations);
       setConsent(mockConsent);
+      setRegulationScores(mockRegulationScores);
     } finally {
       setLoading(false);
     }
@@ -127,6 +228,48 @@ export function Compliance(): ReactNode {
       ? violations
       : violations.filter((v) => v.regulation === regulationFilter);
 
+  /** Donut chart segments for consent rate breakdown. */
+  const consentDonutSegments = useMemo(
+    () =>
+      consent.map((ch) => ({
+        label: ch.channel,
+        value: ch.consented,
+        color:
+          ch.channel === 'Email'
+            ? '#3b82f6'
+            : ch.channel === 'SMS'
+              ? '#10b981'
+              : ch.channel === 'Voice'
+                ? '#f59e0b'
+                : '#8b5cf6',
+      })),
+    [consent],
+  );
+
+  /** Donut chart segments for regulation violation breakdown. */
+  const regulationDonutSegments = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const v of violations) {
+      counts[v.regulation] = (counts[v.regulation] ?? 0) + 1;
+    }
+    return Object.entries(counts).map(([reg, count]) => ({
+      label: reg,
+      value: count,
+      color:
+        reg === 'HIPAA'
+          ? '#ef4444'
+          : reg === 'FDCPA'
+            ? '#f59e0b'
+            : reg === 'TCPA'
+              ? '#f97316'
+              : reg === 'GDPR'
+                ? '#3b82f6'
+                : reg === 'SOC2'
+                  ? '#8b5cf6'
+                  : '#10b981',
+    }));
+  }, [violations]);
+
   function scoreColor(score: number): string {
     if (score >= 90) return 'text-emerald-400';
     if (score >= 75) return 'text-amber-400';
@@ -137,6 +280,12 @@ export function Compliance(): ReactNode {
     if (score >= 90) return 'stroke-emerald-400';
     if (score >= 75) return 'stroke-amber-400';
     return 'stroke-red-400';
+  }
+
+  function regulationProgressColor(score: number): string {
+    if (score >= 95) return '#10b981';
+    if (score >= 85) return '#f59e0b';
+    return '#ef4444';
   }
 
   if (loading) {
@@ -174,7 +323,9 @@ export function Compliance(): ReactNode {
       header: 'Regulation',
       sortable: true,
       render: (row: Violation) => (
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-2xs font-medium ${regulationColors[row.regulation] ?? ''}`}>
+        <span
+          className={`inline-flex rounded-full px-2 py-0.5 text-2xs font-medium ${regulationColors[row.regulation] ?? ''}`}
+        >
           {row.regulation}
         </span>
       ),
@@ -220,6 +371,13 @@ export function Compliance(): ReactNode {
     },
   ];
 
+  const openViolations = violations.filter((v) => !v.resolved).length;
+  const resolvedViolations = violations.filter((v) => v.resolved).length;
+  const totalConsented = consent.reduce((sum, ch) => sum + ch.consented, 0);
+  const totalContacts = consent.reduce((sum, ch) => sum + ch.total, 0);
+  const overallConsentRate =
+    totalContacts > 0 ? ((totalConsented / totalContacts) * 100).toFixed(1) : '0';
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -235,13 +393,80 @@ export function Compliance(): ReactNode {
         </Button>
       </div>
 
-      {/* Score + overview */}
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Card accent="green">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15">
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Score
+              </p>
+              <p className={`mt-0.5 font-mono text-2xl font-bold ${scoreColor(score)}`}>{score}</p>
+            </div>
+          </div>
+        </Card>
+        <Card accent="blue">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/15">
+              <CheckCircle2 className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Passing
+              </p>
+              <p className="mt-0.5 font-mono text-2xl font-bold text-content">
+                {overview?.passingChecks ?? 0}
+                <span className="text-sm font-normal text-content-tertiary">
+                  /{overview?.totalChecks ?? 0}
+                </span>
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card accent="red">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/15">
+              <XCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Open Violations
+              </p>
+              <p className="mt-0.5 font-mono text-2xl font-bold text-red-400">{openViolations}</p>
+            </div>
+          </div>
+        </Card>
+        <Card accent="amber">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/15">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Resolved
+              </p>
+              <p className="mt-0.5 font-mono text-2xl font-bold text-emerald-400">
+                {resolvedViolations}
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Score gauge + Regulation Scores + Donut Charts */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Score gauge */}
         <Card className="flex items-center justify-center">
           <div className="flex flex-col items-center py-4">
             <div className="relative h-32 w-32">
-              <svg className="h-32 w-32 -rotate-90" viewBox="0 0 120 120" aria-label={`Compliance score: ${score}%`}>
+              <svg
+                className="h-32 w-32 -rotate-90"
+                viewBox="0 0 120 120"
+                aria-label={`Compliance score: ${score}%`}
+              >
                 <circle
                   cx="60"
                   cy="60"
@@ -265,13 +490,14 @@ export function Compliance(): ReactNode {
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-3xl font-bold ${scoreColor(score)}`}>{score}</span>
+                <span className={`font-mono text-3xl font-bold ${scoreColor(score)}`}>{score}</span>
                 <span className="text-2xs text-content-tertiary">/ 100</span>
               </div>
             </div>
             <p className="mt-3 text-sm font-medium text-content">Compliance Score</p>
             <p className="text-2xs text-content-tertiary">
-              Last audit: {new Date(overview?.lastAudit ?? '').toLocaleTimeString('en-US', {
+              Last audit:{' '}
+              {new Date(overview?.lastAudit ?? '').toLocaleTimeString('en-US', {
                 hour: '2-digit',
                 minute: '2-digit',
               })}
@@ -279,54 +505,116 @@ export function Compliance(): ReactNode {
           </div>
         </Card>
 
-        {/* Stats */}
+        {/* Regulation compliance scores with ProgressBars */}
+        <Card title="Regulation Scores">
+          <div className="space-y-3">
+            {regulationScores.map((reg) => (
+              <ProgressBar
+                key={reg.regulation}
+                value={reg.score}
+                label={reg.regulation}
+                color={regulationProgressColor(reg.score)}
+                size="sm"
+                showPercentage
+              />
+            ))}
+          </div>
+        </Card>
+
+        {/* Consent Donut */}
+        <Card title="Consent Rate">
+          <div className="flex flex-col items-center">
+            <DonutChart
+              segments={consentDonutSegments}
+              size={140}
+              thickness={20}
+              showLabels={false}
+              centerLabel={`${overallConsentRate}%`}
+            />
+            <div className="mt-3 grid w-full grid-cols-2 gap-2">
+              {consent.map((ch) => (
+                <div key={ch.channel} className="flex items-center justify-between text-xs">
+                  <span className="text-content-secondary">{ch.channel}</span>
+                  <span className="font-mono text-content">{ch.percentage}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Check Summary + Violation Breakdown row */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Check Summary */}
         <Card title="Check Summary">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm text-content-secondary">Total Checks</span>
-              <span className="text-sm font-semibold text-content">{overview?.totalChecks ?? 0}</span>
+              <span className="font-mono text-sm font-semibold text-content">
+                {overview?.totalChecks ?? 0}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-content-secondary">Passing</span>
-              <span className="text-sm font-semibold text-emerald-400">{overview?.passingChecks ?? 0}</span>
+              <span className="font-mono text-sm font-semibold text-emerald-400">
+                {overview?.passingChecks ?? 0}
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-content-secondary">Failing</span>
-              <span className="text-sm font-semibold text-red-400">{overview?.failingChecks ?? 0}</span>
+              <span className="font-mono text-sm font-semibold text-red-400">
+                {overview?.failingChecks ?? 0}
+              </span>
             </div>
-            <div className="h-2 rounded-full bg-surface-tertiary">
-              <div
-                className="h-2 rounded-full bg-emerald-400"
-                style={{
-                  width: `${overview ? (overview.passingChecks / overview.totalChecks) * 100 : 0}%`,
-                }}
-              />
-            </div>
+            <ProgressBar
+              value={overview ? (overview.passingChecks / overview.totalChecks) * 100 : 0}
+              label="Pass Rate"
+              color="#10b981"
+              size="md"
+            />
           </div>
         </Card>
 
-        {/* Consent overview */}
-        <Card title="Consent by Channel">
-          <div className="space-y-3">
-            {consent.map((ch) => (
-              <div key={ch.channel}>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-content-secondary">{ch.channel}</span>
-                  <span className="text-content">
-                    {ch.consented}/{ch.total} ({ch.percentage}%)
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 rounded-full bg-surface-tertiary">
-                  <div
-                    className="h-1.5 rounded-full bg-brand-accent"
-                    style={{ width: `${ch.percentage}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+        {/* Violation Breakdown Donut */}
+        <Card title="Violations by Regulation">
+          <div className="flex items-center justify-center py-2">
+            <DonutChart
+              segments={regulationDonutSegments}
+              size={160}
+              thickness={22}
+              showLabels
+              centerLabel={`${violations.length}`}
+            />
           </div>
         </Card>
       </div>
+
+      {/* Consent by Channel — ProgressBar version */}
+      <Card title="Consent by Channel">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {consent.map((ch) => (
+            <div key={ch.channel} className="space-y-1">
+              <ProgressBar
+                value={ch.percentage}
+                label={ch.channel}
+                color={
+                  ch.channel === 'Email'
+                    ? '#3b82f6'
+                    : ch.channel === 'SMS'
+                      ? '#10b981'
+                      : ch.channel === 'Voice'
+                        ? '#f59e0b'
+                        : '#8b5cf6'
+                }
+                size="md"
+              />
+              <p className="text-right font-mono text-2xs text-content-tertiary">
+                {ch.consented.toLocaleString()}/{ch.total.toLocaleString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* Violations */}
       <div className="space-y-4">
@@ -338,7 +626,9 @@ export function Compliance(): ReactNode {
                 key={reg}
                 variant={regulationFilter === reg ? 'primary' : 'ghost'}
                 size="sm"
-                onClick={() => setRegulationFilter(reg)}
+                onClick={() => {
+                  setRegulationFilter(reg);
+                }}
               >
                 {reg === 'all' ? 'All' : reg}
               </Button>

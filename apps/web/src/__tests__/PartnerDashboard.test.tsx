@@ -37,16 +37,14 @@ const mockGet = vi.fn();
 
 vi.mock('../lib/api', () => ({
   apiClient: {
-    get: (...args: unknown[]) => mockGet(...args),
+    get: (...args: unknown[]) => mockGet(...args) as unknown,
   },
 }));
 
 // ─── Helpers ────────────────────────────────────────────────────
 
 function renderComponent(): ReturnType<typeof render> {
-  return render(
-    createElement(BrowserRouter, null, createElement(PartnerDashboard)),
-  );
+  return render(createElement(BrowserRouter, null, createElement(PartnerDashboard)));
 }
 
 // ─── Setup / Teardown ────────────────────────────────────────────
@@ -72,7 +70,12 @@ describe('PartnerDashboard', () => {
   });
 
   it('shows loading spinner initially', () => {
-    mockGet.mockImplementation(() => new Promise(() => { /* never resolves */ }));
+    mockGet.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
     renderComponent();
 
     expect(screen.getByText('Loading partner dashboard')).toBeDefined();
@@ -174,7 +177,8 @@ describe('PartnerDashboard', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText(/847 installs/)).toBeDefined();
+      expect(screen.getByText('847')).toBeDefined();
+      expect(screen.getAllByText(/installs/).length).toBeGreaterThan(0);
     });
   });
 
@@ -193,10 +197,9 @@ describe('PartnerDashboard', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText('Monthly Earnings')).toBeDefined();
-      expect(screen.getByText('Oct')).toBeDefined();
-      expect(screen.getByText('Nov')).toBeDefined();
-      expect(screen.getByText('Dec')).toBeDefined();
+      expect(screen.getByText('Earnings Trend')).toBeDefined();
+      // AreaChart renders month labels as SVG <text> elements
+      expect(screen.getByLabelText('Area chart')).toBeDefined();
     });
   });
 

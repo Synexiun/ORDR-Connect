@@ -176,6 +176,9 @@ importers:
       clsx:
         specifier: ^2.1.0
         version: 2.1.1
+      lucide-react:
+        specifier: ^1.7.0
+        version: 1.7.0(react@19.2.4)
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -332,6 +335,31 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
 
+  packages/billing:
+    dependencies:
+      '@ordr/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@ordr/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ordr/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      hono:
+        specifier: ^4.6.0
+        version: 4.12.9
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
   packages/channels:
     dependencies:
       '@ordr/core':
@@ -401,6 +429,9 @@ importers:
       drizzle-kit:
         specifier: ^0.28.0
         version: 0.28.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -468,6 +499,31 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
 
+  packages/integrations:
+    dependencies:
+      '@ordr/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@ordr/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ordr/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@ordr/events':
+        specifier: workspace:*
+        version: link:../events
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
   packages/observability:
     dependencies:
       '@opentelemetry/api':
@@ -505,6 +561,47 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
 
+  packages/realtime:
+    dependencies:
+      '@ordr/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@ordr/core':
+        specifier: workspace:*
+        version: link:../core
+      hono:
+        specifier: ^4.6.0
+        version: 4.12.9
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/scheduler:
+    dependencies:
+      '@ordr/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@ordr/compliance':
+        specifier: workspace:*
+        version: link:../compliance
+      '@ordr/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ordr/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
   packages/sdk:
     dependencies:
       '@ordr/ai':
@@ -516,6 +613,37 @@ importers:
       '@ordr/core':
         specifier: workspace:*
         version: link:../core
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/search:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/workflow:
+    dependencies:
+      '@ordr/audit':
+        specifier: workspace:*
+        version: link:../audit
+      '@ordr/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ordr/events':
+        specifier: workspace:*
+        version: link:../events
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -2933,6 +3061,11 @@ packages:
 
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
+
+  lucide-react@1.7.0:
+    resolution: {integrity: sha512-yI7BeItCLZJTXikmK4KNUGCKoGzSvbKlfCvw44bU4fXAL6v3gYS4uHD1jzsLkfwODYwI6Drw5Tu9Z5ulDe0TSg==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
@@ -5938,6 +6071,10 @@ snapshots:
   lru-cache@5.1.1:
     dependencies:
       yallist: 3.1.1
+
+  lucide-react@1.7.0(react@19.2.4):
+    dependencies:
+      react: 19.2.4
 
   lz-string@1.5.0: {}
 

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "ORDR-Connect — Customer Operations OS",
+  "type": "module",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=22.0.0",

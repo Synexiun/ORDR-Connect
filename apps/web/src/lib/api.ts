@@ -13,10 +13,7 @@ let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 
 function generateRequestId(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  return crypto.randomUUID();
 }
 
 export function setAccessToken(token: string | null): void {
@@ -73,7 +70,7 @@ async function request<T>(
     ...options?.headers,
   };
 
-  if (accessToken) {
+  if (accessToken !== null) {
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
@@ -105,14 +102,14 @@ async function request<T>(
   if (!response.ok) {
     let errorBody: { message?: string; code?: string } = {};
     try {
-      errorBody = await response.json();
+      errorBody = (await response.json()) as { message?: string; code?: string };
     } catch {
       // Response body may not be JSON
     }
 
     throw new ApiRequestError({
-      message: errorBody.message || `Request failed with status ${response.status}`,
-      code: errorBody.code || 'REQUEST_FAILED',
+      message: errorBody.message ?? `Request failed with status ${response.status}`,
+      code: errorBody.code ?? 'REQUEST_FAILED',
       correlationId: requestId,
       status: response.status,
     });

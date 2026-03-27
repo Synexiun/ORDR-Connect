@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useEffect, useCallback } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -7,6 +7,8 @@ import { Badge } from '../components/ui/Badge';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
 import { Spinner } from '../components/ui/Spinner';
+import { SparkLine } from '../components/charts/SparkLine';
+import { Avatar } from '../components/ui/Avatar';
 import { apiClient } from '../lib/api';
 
 // --- Types ---
@@ -45,7 +47,10 @@ const statusBadge: Record<Customer['status'], 'success' | 'neutral' | 'danger' |
   prospect: 'info',
 };
 
-const lifecycleBadge: Record<Customer['lifecycleStage'], 'info' | 'warning' | 'success' | 'danger' | 'neutral'> = {
+const lifecycleBadge: Record<
+  Customer['lifecycleStage'],
+  'info' | 'warning' | 'success' | 'danger' | 'neutral'
+> = {
   lead: 'info',
   onboarding: 'warning',
   active: 'success',
@@ -59,23 +64,64 @@ function healthScoreColor(score: number): string {
   return 'text-red-400';
 }
 
+function healthScoreDot(score: number): string {
+  if (score >= 80) return 'bg-emerald-400';
+  if (score >= 60) return 'bg-amber-400';
+  return 'bg-red-400';
+}
+
+/** Generate deterministic pseudo-random sparkline data for KPI cards. */
+function generateSparkData(seed: number, points: number, base: number): number[] {
+  const result: number[] = [];
+  let value = base;
+  for (let i = 0; i < points; i++) {
+    // Simple deterministic variation using sin/cos
+    value =
+      base +
+      Math.round(Math.sin(seed + i * 0.7) * (base * 0.15) + Math.cos(i * 0.3) * (base * 0.08));
+    result.push(Math.max(0, value));
+  }
+  return result;
+}
+
 // --- Mock data ---
 
 const mockCustomers: Customer[] = Array.from({ length: 47 }, (_, i) => ({
   id: `cust-${String(i + 1).padStart(4, '0')}`,
   name: [
-    'Acme Corp', 'Globex Inc', 'Initech', 'Umbrella LLC', 'Stark Industries',
-    'Wayne Enterprises', 'Oscorp', 'LexCorp', 'Pied Piper', 'Hooli',
-    'Dunder Mifflin', 'Vehement Capital', 'Massive Dynamic', 'Cyberdyne Systems',
-    'Soylent Corp', 'Tyrell Corp', 'Weyland Industries', 'Aperture Science',
-    'Black Mesa', 'Abstergo Industries',
+    'Acme Corp',
+    'Globex Inc',
+    'Initech',
+    'Umbrella LLC',
+    'Stark Industries',
+    'Wayne Enterprises',
+    'Oscorp',
+    'LexCorp',
+    'Pied Piper',
+    'Hooli',
+    'Dunder Mifflin',
+    'Vehement Capital',
+    'Massive Dynamic',
+    'Cyberdyne Systems',
+    'Soylent Corp',
+    'Tyrell Corp',
+    'Weyland Industries',
+    'Aperture Science',
+    'Black Mesa',
+    'Abstergo Industries',
   ][i % 20] as string,
   email: `contact${i + 1}@company${i + 1}.com`,
-  status: (['active', 'active', 'active', 'inactive', 'prospect', 'churned'] as const)[i % 6] as Customer['status'],
+  status: (['active', 'active', 'active', 'inactive', 'prospect', 'churned'] as const)[
+    i % 6
+  ] as Customer['status'],
   healthScore: Math.max(20, Math.min(100, 75 + Math.floor(Math.sin(i) * 25))),
-  lifecycleStage: (['active', 'active', 'onboarding', 'at-risk', 'lead', 'churned'] as const)[i % 6] as Customer['lifecycleStage'],
-  lastContact: new Date(Date.now() - (i * 86400000 + Math.floor(Math.random() * 86400000))).toISOString(),
-  createdAt: new Date(Date.now() - ((i + 30) * 86400000)).toISOString(),
+  lifecycleStage: (['active', 'active', 'onboarding', 'at-risk', 'lead', 'churned'] as const)[
+    i % 6
+  ] as Customer['lifecycleStage'],
+  lastContact: new Date(
+    Date.now() - (i * 86400000 + Math.floor(Math.random() * 86400000)),
+  ).toISOString(),
+  createdAt: new Date(Date.now() - (i + 30) * 86400000).toISOString(),
 }));
 
 // --- Component ---
@@ -86,7 +132,7 @@ export function Customers(): ReactNode {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -141,6 +187,24 @@ export function Customers(): ReactNode {
     setPage(1);
   }, [search, statusFilter]);
 
+  // --- KPI stats computed from mock data (full set, not filtered page) ---
+  const kpiStats = useMemo(() => {
+    const all = mockCustomers;
+    const activeCount = all.filter((c) => c.status === 'active').length;
+    const atRiskCount = all.filter((c) => c.lifecycleStage === 'at-risk').length;
+    const churnedCount = all.filter((c) => c.status === 'churned').length;
+    return {
+      total: all.length,
+      active: activeCount,
+      atRisk: atRiskCount,
+      churned: churnedCount,
+      sparkTotal: generateSparkData(1, 12, all.length),
+      sparkActive: generateSparkData(2, 12, activeCount),
+      sparkAtRisk: generateSparkData(3, 12, atRiskCount),
+      sparkChurned: generateSparkData(4, 12, churnedCount),
+    };
+  }, []);
+
   const handleAddCustomer = useCallback(async () => {
     try {
       await apiClient.post('/v1/customers', formData);
@@ -183,10 +247,20 @@ export function Customers(): ReactNode {
       sortable: true,
       render: (row: Customer) => (
         <button
-          className="font-medium text-brand-accent hover:underline"
-          onClick={(e) => { e.stopPropagation(); navigate(`/customers/${row.id}`); }}
+          className="flex items-center gap-2.5 font-medium text-brand-accent hover:underline"
+          onClick={(e) => {
+            e.stopPropagation();
+            void navigate(`/customers/${row.id}`);
+          }}
           aria-label={`View ${row.name}`}
         >
+          <Avatar
+            name={row.name}
+            size="sm"
+            status={
+              row.status === 'active' ? 'online' : row.status === 'churned' ? 'busy' : 'offline'
+            }
+          />
           {row.name}
         </button>
       ),
@@ -194,9 +268,7 @@ export function Customers(): ReactNode {
     {
       key: 'email',
       header: 'Email',
-      render: (row: Customer) => (
-        <span className="text-content-secondary">{row.email}</span>
-      ),
+      render: (row: Customer) => <span className="text-content-secondary">{row.email}</span>,
     },
     {
       key: 'status',
@@ -213,9 +285,15 @@ export function Customers(): ReactNode {
       header: 'Health',
       sortable: true,
       render: (row: Customer) => (
-        <span className={`font-mono font-semibold ${healthScoreColor(row.healthScore)}`}>
-          {row.healthScore}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${healthScoreDot(row.healthScore)}`}
+            aria-hidden="true"
+          />
+          <span className={`font-mono font-semibold ${healthScoreColor(row.healthScore)}`}>
+            {row.healthScore}
+          </span>
+        </div>
       ),
     },
     {
@@ -253,9 +331,64 @@ export function Customers(): ReactNode {
             {total} customer{total !== 1 ? 's' : ''} total
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowAddModal(true)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setShowAddModal(true);
+          }}
+        >
           + Add Customer
         </Button>
+      </div>
+
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Card accent="blue">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Total Customers
+              </p>
+              <p className="mt-1 font-mono text-2xl font-bold text-content">{kpiStats.total}</p>
+            </div>
+            <SparkLine data={kpiStats.sparkTotal} color="#3b82f6" width={72} height={28} />
+          </div>
+        </Card>
+        <Card accent="green">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Active
+              </p>
+              <p className="mt-1 font-mono text-2xl font-bold text-emerald-400">
+                {kpiStats.active}
+              </p>
+            </div>
+            <SparkLine data={kpiStats.sparkActive} color="#34d399" width={72} height={28} />
+          </div>
+        </Card>
+        <Card accent="amber">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                At-Risk
+              </p>
+              <p className="mt-1 font-mono text-2xl font-bold text-amber-400">{kpiStats.atRisk}</p>
+            </div>
+            <SparkLine data={kpiStats.sparkAtRisk} color="#fbbf24" width={72} height={28} />
+          </div>
+        </Card>
+        <Card accent="red">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-content-tertiary">
+                Churned
+              </p>
+              <p className="mt-1 font-mono text-2xl font-bold text-red-400">{kpiStats.churned}</p>
+            </div>
+            <SparkLine data={kpiStats.sparkChurned} color="#f87171" width={72} height={28} />
+          </div>
+        </Card>
       </div>
 
       {/* Filters */}
@@ -265,7 +398,9 @@ export function Customers(): ReactNode {
             <Input
               placeholder="Search customers..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+              }}
               aria-label="Search customers"
             />
           </div>
@@ -275,7 +410,9 @@ export function Customers(): ReactNode {
                 key={s}
                 variant={statusFilter === s ? 'primary' : 'ghost'}
                 size="sm"
-                onClick={() => setStatusFilter(s)}
+                onClick={() => {
+                  setStatusFilter(s);
+                }}
               >
                 {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
               </Button>
@@ -296,18 +433,28 @@ export function Customers(): ReactNode {
           keyExtractor={(c) => c.id}
           pagination={{ page, pageSize, total }}
           onPageChange={setPage}
-          onRowClick={setSelectedCustomer}
+          onRowClick={(c) => {
+            setSelectedCustomer(c);
+          }}
         />
       )}
 
       {/* Detail panel */}
       <Modal
         open={selectedCustomer !== null}
-        onClose={() => setSelectedCustomer(null)}
+        onClose={() => {
+          setSelectedCustomer(null);
+        }}
         title={selectedCustomer?.name ?? 'Customer Detail'}
         actions={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setSelectedCustomer(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelectedCustomer(null);
+              }}
+            >
               Close
             </Button>
             <Button
@@ -380,11 +527,19 @@ export function Customers(): ReactNode {
       {/* Add customer modal */}
       <Modal
         open={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false);
+        }}
         title="Add Customer"
         actions={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setShowAddModal(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowAddModal(false);
+              }}
+            >
               Cancel
             </Button>
             <Button
@@ -402,7 +557,9 @@ export function Customers(): ReactNode {
             label="Company Name"
             placeholder="Acme Corp"
             value={formData.name}
-            onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+            onChange={(e) => {
+              setFormData((prev) => ({ ...prev, name: e.target.value }));
+            }}
             required
           />
           <Input
@@ -410,7 +567,9 @@ export function Customers(): ReactNode {
             type="email"
             placeholder="contact@acme.com"
             value={formData.email}
-            onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+            onChange={(e) => {
+              setFormData((prev) => ({ ...prev, email: e.target.value }));
+            }}
             required
           />
           <div className="space-y-1.5">
@@ -418,9 +577,9 @@ export function Customers(): ReactNode {
             <select
               className="block w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-content focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-border-focus"
               value={formData.status}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, status: e.target.value as Customer['status'] }))
-              }
+              onChange={(e) => {
+                setFormData((prev) => ({ ...prev, status: e.target.value as Customer['status'] }));
+              }}
               aria-label="Customer status"
             >
               <option value="prospect">Prospect</option>

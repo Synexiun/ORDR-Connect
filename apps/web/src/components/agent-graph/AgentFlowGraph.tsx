@@ -45,7 +45,10 @@ const statusColor: Record<StepStatus, string> = {
   pending: 'border-border bg-surface-tertiary/50',
 };
 
-const statusBadgeVariant: Record<StepStatus, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
+const statusBadgeVariant: Record<
+  StepStatus,
+  'success' | 'warning' | 'danger' | 'info' | 'neutral'
+> = {
   completed: 'success',
   'in-progress': 'warning',
   failed: 'danger',
@@ -63,9 +66,9 @@ const statusDotColor: Record<StepStatus, string> = {
 
 const phaseIcon: Record<StepPhase, string> = {
   observe: '\u25C9', // eye
-  think: '\u25C7',   // diamond outline
-  act: '\u25B6',     // play
-  check: '\u2713',   // check
+  think: '\u25C7', // diamond outline
+  act: '\u25B6', // play
+  check: '\u2713', // check
   handoff: '\u21C4', // arrows
 };
 
@@ -74,7 +77,12 @@ const phaseIcon: Record<StepPhase, string> = {
 export function AgentFlowGraph({ steps, className }: AgentFlowGraphProps): ReactNode {
   if (steps.length === 0) {
     return (
-      <div className={cn('flex items-center justify-center py-8 text-sm text-content-secondary', className)}>
+      <div
+        className={cn(
+          'flex items-center justify-center py-8 text-sm text-content-secondary',
+          className,
+        )}
+      >
         No flow steps available
       </div>
     );
@@ -94,9 +102,11 @@ export function AgentFlowGraph({ steps, className }: AgentFlowGraphProps): React
               <div className="relative flex items-center py-2 pl-5">
                 <div className="absolute left-[19px] top-0 h-full w-px bg-border" />
                 <div className="relative z-10 flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1">
-                  <span className="text-xs text-blue-400" aria-hidden="true">{'\u21C4'}</span>
+                  <span className="text-xs text-blue-400" aria-hidden="true">
+                    {'\u21C4'}
+                  </span>
                   <span className="text-2xs font-medium text-blue-400">
-                    Handoff: {prevStep ? prevStep.agentRole : 'unknown'} {'\u2192'} {step.agentRole}
+                    Handoff: {prevStep.agentRole} {'\u2192'} {step.agentRole}
                   </span>
                 </div>
               </div>
@@ -124,12 +134,7 @@ export function AgentFlowGraph({ steps, className }: AgentFlowGraphProps): React
               </div>
 
               {/* Step content */}
-              <div
-                className={cn(
-                  'flex-1 rounded-lg border p-3',
-                  statusColor[step.status],
-                )}
-              >
+              <div className={cn('flex-1 rounded-lg border p-3', statusColor[step.status])}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-content-secondary" aria-hidden="true">
@@ -150,7 +155,7 @@ export function AgentFlowGraph({ steps, className }: AgentFlowGraphProps): React
                 <p className="mt-1.5 text-sm text-content">{step.description}</p>
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-content-tertiary">
-                  {step.tool && (
+                  {step.tool !== undefined && (
                     <span>
                       Tool: <span className="font-mono text-content-secondary">{step.tool}</span>
                     </span>
@@ -161,8 +166,11 @@ export function AgentFlowGraph({ steps, className }: AgentFlowGraphProps): React
                       <span
                         className={cn(
                           'font-mono',
-                          step.confidence >= 0.8 ? 'text-emerald-400' :
-                          step.confidence >= 0.7 ? 'text-amber-400' : 'text-red-400',
+                          step.confidence >= 0.8
+                            ? 'text-emerald-400'
+                            : step.confidence >= 0.7
+                              ? 'text-amber-400'
+                              : 'text-red-400',
                         )}
                       >
                         {(step.confidence * 100).toFixed(0)}%
@@ -171,7 +179,8 @@ export function AgentFlowGraph({ steps, className }: AgentFlowGraphProps): React
                   )}
                   {step.durationMs !== undefined && (
                     <span>
-                      Duration: <span className="font-mono text-content-secondary">{step.durationMs}ms</span>
+                      Duration:{' '}
+                      <span className="font-mono text-content-secondary">{step.durationMs}ms</span>
                     </span>
                   )}
                 </div>

@@ -32,22 +32,81 @@ interface UseActivityFeedReturn {
 // --- Mock events for graceful degradation ---
 
 const mockEventTypes = [
-  { type: 'agent.session', description: 'Collection agent completed session for account', severity: 'success' as const },
-  { type: 'compliance.check', description: 'HIPAA compliance check passed for tenant operations', severity: 'info' as const },
-  { type: 'channel.delivery', description: 'SMS delivery batch completed: 847/850 delivered', severity: 'info' as const },
-  { type: 'agent.escalation', description: 'Agent requested human review: low confidence', severity: 'warning' as const },
-  { type: 'audit.verified', description: 'Merkle root verified for event batch', severity: 'success' as const },
-  { type: 'compliance.violation', description: 'TCPA quiet hours violation blocked', severity: 'danger' as const },
-  { type: 'customer.created', description: 'New enterprise customer onboarded', severity: 'info' as const },
-  { type: 'hitl.pending', description: 'Financial action requires human approval', severity: 'warning' as const },
-  { type: 'channel.delivery', description: 'Email batch delivered: 1,240/1,245 successful', severity: 'success' as const },
-  { type: 'system.health', description: 'All services healthy, audit chain verified', severity: 'info' as const },
-  { type: 'agent.session', description: 'Onboarding agent completed welcome sequence', severity: 'success' as const },
-  { type: 'customer.risk', description: 'Health score degradation detected for 3 accounts', severity: 'warning' as const },
+  {
+    type: 'agent.session',
+    description: 'Collection agent completed session for account',
+    severity: 'success' as const,
+  },
+  {
+    type: 'compliance.check',
+    description: 'HIPAA compliance check passed for tenant operations',
+    severity: 'info' as const,
+  },
+  {
+    type: 'channel.delivery',
+    description: 'SMS delivery batch completed: 847/850 delivered',
+    severity: 'info' as const,
+  },
+  {
+    type: 'agent.escalation',
+    description: 'Agent requested human review: low confidence',
+    severity: 'warning' as const,
+  },
+  {
+    type: 'audit.verified',
+    description: 'Merkle root verified for event batch',
+    severity: 'success' as const,
+  },
+  {
+    type: 'compliance.violation',
+    description: 'TCPA quiet hours violation blocked',
+    severity: 'danger' as const,
+  },
+  {
+    type: 'customer.created',
+    description: 'New enterprise customer onboarded',
+    severity: 'info' as const,
+  },
+  {
+    type: 'hitl.pending',
+    description: 'Financial action requires human approval',
+    severity: 'warning' as const,
+  },
+  {
+    type: 'channel.delivery',
+    description: 'Email batch delivered: 1,240/1,245 successful',
+    severity: 'success' as const,
+  },
+  {
+    type: 'system.health',
+    description: 'All services healthy, audit chain verified',
+    severity: 'info' as const,
+  },
+  {
+    type: 'agent.session',
+    description: 'Onboarding agent completed welcome sequence',
+    severity: 'success' as const,
+  },
+  {
+    type: 'customer.risk',
+    description: 'Health score degradation detected for 3 accounts',
+    severity: 'warning' as const,
+  },
 ];
 
 function generateMockEvent(index: number): FeedEvent {
-  const template = mockEventTypes[index % mockEventTypes.length]!;
+  const templateIndex = index % mockEventTypes.length;
+  const template =
+    templateIndex < mockEventTypes.length ? mockEventTypes[templateIndex] : mockEventTypes[0];
+  if (template === undefined) {
+    return {
+      id: `feed-${Date.now()}-${index}`,
+      type: 'system',
+      description: '',
+      timestamp: new Date().toISOString(),
+      severity: 'info' as const,
+    };
+  }
   return {
     id: `feed-${Date.now()}-${index}`,
     type: template.type,
@@ -66,9 +125,9 @@ export function useActivityFeed({
   );
   const [isPolling, setIsPolling] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const seenIdsRef = useRef(new Set<string>(
-    Array.from({ length: 10 }, (_, i) => `feed-${Date.now()}-${i}`),
-  ));
+  const seenIdsRef = useRef(
+    new Set<string>(Array.from({ length: 10 }, (_, i) => `feed-${Date.now()}-${i}`)),
+  );
   const pollCountRef = useRef(0);
 
   const fetchEvents = useCallback(async () => {

@@ -5,13 +5,16 @@
  * Confidence threshold < 0.7 triggers HITL. Kill switch is always available.
  */
 
-import { type ReactNode, useState, useEffect, useCallback } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import { Modal } from '../components/ui/Modal';
 import { AgentFlowGraph, type FlowStep } from '../components/agent-graph/AgentFlowGraph';
+import { GaugeChart } from '../components/charts/GaugeChart';
+import { BarChart } from '../components/charts/BarChart';
+import { SparkLine } from '../components/charts/SparkLine';
 import { apiClient } from '../lib/api';
 
 // --- Types ---
@@ -53,7 +56,10 @@ interface AgentMetrics {
 
 // --- Constants ---
 
-const sessionStatusBadge: Record<AgentSession['status'], 'success' | 'info' | 'danger' | 'warning' | 'neutral'> = {
+const sessionStatusBadge: Record<
+  AgentSession['status'],
+  'success' | 'info' | 'danger' | 'warning' | 'neutral'
+> = {
   running: 'info',
   completed: 'success',
   failed: 'danger',
@@ -64,19 +70,137 @@ const sessionStatusBadge: Record<AgentSession['status'], 'success' | 'info' | 'd
 // --- Mock data ---
 
 const mockSessions: AgentSession[] = [
-  { id: 'sess-001', agentType: 'collection', status: 'running', customerId: 'cust-0001', customerName: 'Acme Corp', stepsCompleted: 3, totalSteps: 5, toolsUsed: ['send_sms', 'check_balance', 'schedule_payment'], confidence: 0.91, costUsd: 0.12, startedAt: new Date(Date.now() - 180000).toISOString(), completedAt: null },
-  { id: 'sess-002', agentType: 'onboarding', status: 'running', customerId: 'cust-0003', customerName: 'Initech', stepsCompleted: 2, totalSteps: 4, toolsUsed: ['verify_identity', 'send_welcome'], confidence: 0.85, costUsd: 0.08, startedAt: new Date(Date.now() - 300000).toISOString(), completedAt: null },
-  { id: 'sess-003', agentType: 'collection', status: 'awaiting-review', customerId: 'cust-0005', customerName: 'Stark Industries', stepsCompleted: 2, totalSteps: 5, toolsUsed: ['check_balance', 'classify_risk'], confidence: 0.52, costUsd: 0.06, startedAt: new Date(Date.now() - 600000).toISOString(), completedAt: null },
-  { id: 'sess-004', agentType: 'support', status: 'completed', customerId: 'cust-0002', customerName: 'Globex Inc', stepsCompleted: 3, totalSteps: 3, toolsUsed: ['lookup_account', 'generate_response', 'send_email'], confidence: 0.94, costUsd: 0.15, startedAt: new Date(Date.now() - 1200000).toISOString(), completedAt: new Date(Date.now() - 900000).toISOString() },
-  { id: 'sess-005', agentType: 'collection', status: 'failed', customerId: 'cust-0007', customerName: 'LexCorp', stepsCompleted: 1, totalSteps: 5, toolsUsed: ['check_balance'], confidence: 0.34, costUsd: 0.02, startedAt: new Date(Date.now() - 1800000).toISOString(), completedAt: new Date(Date.now() - 1700000).toISOString() },
-  { id: 'sess-006', agentType: 'retention', status: 'completed', customerId: 'cust-0004', customerName: 'Umbrella LLC', stepsCompleted: 4, totalSteps: 4, toolsUsed: ['analyze_churn', 'generate_offer', 'send_sms', 'log_outcome'], confidence: 0.88, costUsd: 0.18, startedAt: new Date(Date.now() - 3600000).toISOString(), completedAt: new Date(Date.now() - 3000000).toISOString() },
-  { id: 'sess-007', agentType: 'onboarding', status: 'killed', customerId: 'cust-0009', customerName: 'Pied Piper', stepsCompleted: 1, totalSteps: 4, toolsUsed: ['verify_identity'], confidence: 0.21, costUsd: 0.01, startedAt: new Date(Date.now() - 5400000).toISOString(), completedAt: new Date(Date.now() - 5300000).toISOString() },
+  {
+    id: 'sess-001',
+    agentType: 'collection',
+    status: 'running',
+    customerId: 'cust-0001',
+    customerName: 'Acme Corp',
+    stepsCompleted: 3,
+    totalSteps: 5,
+    toolsUsed: ['send_sms', 'check_balance', 'schedule_payment'],
+    confidence: 0.91,
+    costUsd: 0.12,
+    startedAt: new Date(Date.now() - 180000).toISOString(),
+    completedAt: null,
+  },
+  {
+    id: 'sess-002',
+    agentType: 'onboarding',
+    status: 'running',
+    customerId: 'cust-0003',
+    customerName: 'Initech',
+    stepsCompleted: 2,
+    totalSteps: 4,
+    toolsUsed: ['verify_identity', 'send_welcome'],
+    confidence: 0.85,
+    costUsd: 0.08,
+    startedAt: new Date(Date.now() - 300000).toISOString(),
+    completedAt: null,
+  },
+  {
+    id: 'sess-003',
+    agentType: 'collection',
+    status: 'awaiting-review',
+    customerId: 'cust-0005',
+    customerName: 'Stark Industries',
+    stepsCompleted: 2,
+    totalSteps: 5,
+    toolsUsed: ['check_balance', 'classify_risk'],
+    confidence: 0.52,
+    costUsd: 0.06,
+    startedAt: new Date(Date.now() - 600000).toISOString(),
+    completedAt: null,
+  },
+  {
+    id: 'sess-004',
+    agentType: 'support',
+    status: 'completed',
+    customerId: 'cust-0002',
+    customerName: 'Globex Inc',
+    stepsCompleted: 3,
+    totalSteps: 3,
+    toolsUsed: ['lookup_account', 'generate_response', 'send_email'],
+    confidence: 0.94,
+    costUsd: 0.15,
+    startedAt: new Date(Date.now() - 1200000).toISOString(),
+    completedAt: new Date(Date.now() - 900000).toISOString(),
+  },
+  {
+    id: 'sess-005',
+    agentType: 'collection',
+    status: 'failed',
+    customerId: 'cust-0007',
+    customerName: 'LexCorp',
+    stepsCompleted: 1,
+    totalSteps: 5,
+    toolsUsed: ['check_balance'],
+    confidence: 0.34,
+    costUsd: 0.02,
+    startedAt: new Date(Date.now() - 1800000).toISOString(),
+    completedAt: new Date(Date.now() - 1700000).toISOString(),
+  },
+  {
+    id: 'sess-006',
+    agentType: 'retention',
+    status: 'completed',
+    customerId: 'cust-0004',
+    customerName: 'Umbrella LLC',
+    stepsCompleted: 4,
+    totalSteps: 4,
+    toolsUsed: ['analyze_churn', 'generate_offer', 'send_sms', 'log_outcome'],
+    confidence: 0.88,
+    costUsd: 0.18,
+    startedAt: new Date(Date.now() - 3600000).toISOString(),
+    completedAt: new Date(Date.now() - 3000000).toISOString(),
+  },
+  {
+    id: 'sess-007',
+    agentType: 'onboarding',
+    status: 'killed',
+    customerId: 'cust-0009',
+    customerName: 'Pied Piper',
+    stepsCompleted: 1,
+    totalSteps: 4,
+    toolsUsed: ['verify_identity'],
+    confidence: 0.21,
+    costUsd: 0.01,
+    startedAt: new Date(Date.now() - 5400000).toISOString(),
+    completedAt: new Date(Date.now() - 5300000).toISOString(),
+  },
 ];
 
 const mockHitl: HitlItem[] = [
-  { id: 'hitl-001', sessionId: 'sess-003', agentType: 'collection', action: 'Send payment demand via SMS', reason: 'Confidence below threshold (0.52)', confidence: 0.52, customerName: 'Stark Industries', createdAt: new Date(Date.now() - 600000).toISOString() },
-  { id: 'hitl-002', sessionId: 'sess-008', agentType: 'collection', action: 'Escalate account to legal team', reason: 'High-value irreversible action requires approval', confidence: 0.71, customerName: 'Wayne Enterprises', createdAt: new Date(Date.now() - 900000).toISOString() },
-  { id: 'hitl-003', sessionId: 'sess-009', agentType: 'retention', action: 'Issue $5,000 credit to account', reason: 'Financial action requires human review', confidence: 0.83, customerName: 'Hooli', createdAt: new Date(Date.now() - 1500000).toISOString() },
+  {
+    id: 'hitl-001',
+    sessionId: 'sess-003',
+    agentType: 'collection',
+    action: 'Send payment demand via SMS',
+    reason: 'Confidence below threshold (0.52)',
+    confidence: 0.52,
+    customerName: 'Stark Industries',
+    createdAt: new Date(Date.now() - 600000).toISOString(),
+  },
+  {
+    id: 'hitl-002',
+    sessionId: 'sess-008',
+    agentType: 'collection',
+    action: 'Escalate account to legal team',
+    reason: 'High-value irreversible action requires approval',
+    confidence: 0.71,
+    customerName: 'Wayne Enterprises',
+    createdAt: new Date(Date.now() - 900000).toISOString(),
+  },
+  {
+    id: 'hitl-003',
+    sessionId: 'sess-009',
+    agentType: 'retention',
+    action: 'Issue $5,000 credit to account',
+    reason: 'Financial action requires human review',
+    confidence: 0.83,
+    customerName: 'Hooli',
+    createdAt: new Date(Date.now() - 1500000).toISOString(),
+  },
 ];
 
 const mockMetrics: AgentMetrics = {
@@ -87,6 +211,16 @@ const mockMetrics: AgentMetrics = {
   totalCost: 42.58,
   hitlPending: 3,
 };
+
+// --- Confidence histogram bucket helpers ---
+
+const confidenceBuckets: { label: string; min: number; max: number; color: string }[] = [
+  { label: '0-20%', min: 0, max: 0.2, color: '#ef4444' },
+  { label: '20-40%', min: 0.2, max: 0.4, color: '#f97316' },
+  { label: '40-60%', min: 0.4, max: 0.6, color: '#f59e0b' },
+  { label: '60-80%', min: 0.6, max: 0.8, color: '#3b82f6' },
+  { label: '80-100%', min: 0.8, max: 1.01, color: '#10b981' },
+];
 
 // --- Component ---
 
@@ -123,39 +257,63 @@ export function AgentActivity(): ReactNode {
     void fetchData();
   }, [fetchData]);
 
-  const handleKillSession = useCallback(
-    async (session: AgentSession) => {
-      try {
-        await apiClient.post(`/v1/agents/sessions/${session.id}/kill`);
-      } catch {
-        // Mock update
-      }
-      setSessions((prev) =>
-        prev.map((s) => (s.id === session.id ? { ...s, status: 'killed' as const } : s)),
-      );
-      setKillConfirm(null);
-      setSelectedSession(null);
-    },
-    [],
-  );
+  const handleKillSession = useCallback(async (session: AgentSession) => {
+    try {
+      await apiClient.post(`/v1/agents/sessions/${session.id}/kill`);
+    } catch {
+      // Mock update
+    }
+    setSessions((prev) =>
+      prev.map((s) => (s.id === session.id ? { ...s, status: 'killed' as const } : s)),
+    );
+    setKillConfirm(null);
+    setSelectedSession(null);
+  }, []);
 
-  const handleHitlAction = useCallback(
-    async (item: HitlItem, action: 'approve' | 'reject') => {
-      try {
-        await apiClient.post(`/v1/agents/hitl/${item.id}/${action}`);
-      } catch {
-        // Mock update
-      }
-      setHitlQueue((prev) => prev.filter((h) => h.id !== item.id));
-    },
-    [],
-  );
+  const handleHitlAction = useCallback(async (item: HitlItem, action: 'approve' | 'reject') => {
+    try {
+      await apiClient.post(`/v1/agents/hitl/${item.id}/${action}`);
+    } catch {
+      // Mock update
+    }
+    setHitlQueue((prev) => prev.filter((h) => h.id !== item.id));
+  }, []);
 
   function confidenceColor(c: number): string {
     if (c >= 0.8) return 'text-emerald-400';
     if (c >= 0.7) return 'text-amber-400';
     return 'text-red-400';
   }
+
+  // Derived data for charts
+  const sessionsSparkData = useMemo(
+    () => [280, 310, 295, 330, 320, 340, metrics?.totalSessions ?? 347],
+    [metrics],
+  );
+  const costSparkData = useMemo(
+    () => [32.1, 35.4, 38.2, 36.5, 40.1, 41.2, metrics?.totalCost ?? 42.58],
+    [metrics],
+  );
+  const confidenceSparkData = useMemo(
+    () => [0.82, 0.84, 0.85, 0.86, 0.85, 0.87, metrics?.avgConfidence ?? 0.87].map((v) => v * 100),
+    [metrics],
+  );
+  const successSparkData = useMemo(
+    () => [91.0, 92.1, 93.0, 93.5, 93.8, 94.0, metrics?.successRate ?? 94.2],
+    [metrics],
+  );
+
+  // Confidence histogram from session data
+  const confidenceHistogramData = useMemo(
+    () =>
+      confidenceBuckets.map((bucket) => ({
+        label: bucket.label,
+        value: sessions.filter((s) => s.confidence >= bucket.min && s.confidence < bucket.max)
+          .length,
+        color: bucket.color,
+      })),
+    [sessions],
+  );
 
   if (loading) {
     return (
@@ -180,64 +338,163 @@ export function AgentActivity(): ReactNode {
         </Button>
       </div>
 
-      {/* Metrics */}
+      {/* Metrics — KPI Cards with SparkLines and accent borders */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <div className="kpi-card">
-          <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Sessions Today</p>
-          <p className="mt-1 text-lg font-bold text-content">{metrics?.totalSessions ?? 0}</p>
-        </div>
-        <div className="kpi-card">
-          <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Active Now</p>
-          <p className="mt-1 text-lg font-bold text-blue-400">{metrics?.activeSessions ?? 0}</p>
-        </div>
-        <div className="kpi-card">
-          <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Avg Confidence</p>
-          <p className={`mt-1 text-lg font-bold ${confidenceColor(metrics?.avgConfidence ?? 0)}`}>
-            {((metrics?.avgConfidence ?? 0) * 100).toFixed(1)}%
+        <Card accent="blue">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Sessions Today
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-content">
+                {metrics?.totalSessions ?? 0}
+              </p>
+            </div>
+            <SparkLine data={sessionsSparkData} color="#3b82f6" width={56} height={20} />
+          </div>
+        </Card>
+        <Card accent="blue">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Active Now
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-blue-400">
+                {metrics?.activeSessions ?? 0}
+              </p>
+            </div>
+          </div>
+        </Card>
+        <Card accent="green">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Avg Confidence
+              </p>
+              <p
+                className={`mt-1 font-mono text-lg font-bold ${confidenceColor(metrics?.avgConfidence ?? 0)}`}
+              >
+                {((metrics?.avgConfidence ?? 0) * 100).toFixed(1)}%
+              </p>
+            </div>
+            <SparkLine data={confidenceSparkData} color="#10b981" width={56} height={20} />
+          </div>
+        </Card>
+        <Card accent="green">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Success Rate
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-emerald-400">
+                {metrics?.successRate ?? 0}%
+              </p>
+            </div>
+            <SparkLine data={successSparkData} color="#10b981" width={56} height={20} />
+          </div>
+        </Card>
+        <Card accent="purple">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Total Cost
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-content">
+                ${metrics?.totalCost.toFixed(2) ?? '0.00'}
+              </p>
+            </div>
+            <SparkLine data={costSparkData} color="#8b5cf6" width={56} height={20} />
+          </div>
+        </Card>
+        <Card accent="amber">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                HITL Pending
+              </p>
+              <p
+                className={`mt-1 font-mono text-lg font-bold ${(metrics?.hitlPending ?? 0) > 0 ? 'text-amber-400' : 'text-content'}`}
+              >
+                {metrics?.hitlPending ?? 0}
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* === Gauge + Histogram Row === */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Gauges for key rates */}
+        <Card title="Agent Performance Gauges">
+          <div className="flex items-center justify-around">
+            <GaugeChart
+              value={Math.round((metrics?.avgConfidence ?? 0) * 100)}
+              label="Confidence"
+              size={110}
+            />
+            <GaugeChart
+              value={Math.round(metrics?.successRate ?? 0)}
+              label="Success Rate"
+              size={110}
+            />
+          </div>
+        </Card>
+
+        {/* Confidence Histogram */}
+        <Card title="Confidence Distribution" className="lg:col-span-2">
+          <BarChart data={confidenceHistogramData} height={200} showLabels showValues />
+          <p className="mt-2 text-2xs text-content-tertiary">
+            Distribution of confidence scores across all sessions
           </p>
-        </div>
-        <div className="kpi-card">
-          <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Success Rate</p>
-          <p className="mt-1 text-lg font-bold text-emerald-400">{metrics?.successRate ?? 0}%</p>
-        </div>
-        <div className="kpi-card">
-          <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Total Cost</p>
-          <p className="mt-1 text-lg font-bold text-content">${metrics?.totalCost.toFixed(2) ?? '0.00'}</p>
-        </div>
-        <div className="kpi-card">
-          <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">HITL Pending</p>
-          <p className={`mt-1 text-lg font-bold ${(metrics?.hitlPending ?? 0) > 0 ? 'text-amber-400' : 'text-content'}`}>
-            {metrics?.hitlPending ?? 0}
-          </p>
-        </div>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Sessions — 2/3 */}
         <div className="space-y-4 lg:col-span-2">
-          <Card title="Active Sessions" actions={<Badge variant="info" dot>Live</Badge>} padding={false}>
+          <Card
+            title="Active Sessions"
+            actions={
+              <Badge variant="info" dot>
+                Live
+              </Badge>
+            }
+            padding={false}
+          >
             <div className="divide-y divide-border">
               {sessions.map((session) => (
                 <button
                   key={session.id}
                   className="flex w-full items-start gap-3 p-4 text-left transition-colors hover:bg-surface-tertiary/30"
-                  onClick={() => setSelectedSession(session)}
+                  onClick={() => {
+                    setSelectedSession(session);
+                  }}
                   aria-label={`View session ${session.id}`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-content">{session.customerName}</span>
+                      <span className="text-sm font-medium text-content">
+                        {session.customerName}
+                      </span>
                       <Badge variant={sessionStatusBadge[session.status]} dot size="sm">
                         {session.status}
                       </Badge>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-content-tertiary">
                       <span>Agent: {session.agentType}</span>
-                      <span>Steps: {session.stepsCompleted}/{session.totalSteps}</span>
-                      <span className={confidenceColor(session.confidence)}>
-                        Confidence: {(session.confidence * 100).toFixed(0)}%
+                      <span>
+                        Steps:{' '}
+                        <span className="font-mono">
+                          {session.stepsCompleted}/{session.totalSteps}
+                        </span>
                       </span>
-                      <span>Cost: ${session.costUsd.toFixed(3)}</span>
+                      <span className={confidenceColor(session.confidence)}>
+                        Confidence:{' '}
+                        <span className="font-mono">{(session.confidence * 100).toFixed(0)}%</span>
+                      </span>
+                      <span>
+                        Cost: <span className="font-mono">${session.costUsd.toFixed(3)}</span>
+                      </span>
                     </div>
                   </div>
                   <div className="text-right">
@@ -279,9 +536,13 @@ export function AgentActivity(): ReactNode {
             title="HITL Queue"
             actions={
               hitlQueue.length > 0 ? (
-                <Badge variant="warning" dot>{hitlQueue.length} pending</Badge>
+                <Badge variant="warning" dot>
+                  {hitlQueue.length} pending
+                </Badge>
               ) : (
-                <Badge variant="success" size="sm">Clear</Badge>
+                <Badge variant="success" size="sm">
+                  Clear
+                </Badge>
               )
             }
             padding={false}
@@ -291,7 +552,9 @@ export function AgentActivity(): ReactNode {
                 <div key={item.id} className="p-4">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-content">{item.customerName}</span>
-                    <Badge variant="warning" size="sm">{item.agentType}</Badge>
+                    <Badge variant="warning" size="sm">
+                      {item.agentType}
+                    </Badge>
                   </div>
                   <p className="mt-1 text-xs text-content-secondary">{item.action}</p>
                   <p className="mt-0.5 text-2xs text-content-tertiary">{item.reason}</p>
@@ -299,10 +562,7 @@ export function AgentActivity(): ReactNode {
                     Confidence: {(item.confidence * 100).toFixed(0)}%
                   </p>
                   <div className="mt-3 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => handleHitlAction(item, 'approve')}
-                    >
+                    <Button size="sm" onClick={() => handleHitlAction(item, 'approve')}>
                       Approve
                     </Button>
                     <Button
@@ -326,19 +586,34 @@ export function AgentActivity(): ReactNode {
       </div>
 
       {/* Orchestrator Status */}
-      <Card title="Orchestrator Status" actions={<Badge variant="success" dot size="sm">Online</Badge>}>
+      <Card
+        title="Orchestrator Status"
+        actions={
+          <Badge variant="success" dot size="sm">
+            Online
+          </Badge>
+        }
+      >
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <div>
-            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Active Agents</p>
-            <p className="mt-1 text-lg font-bold text-blue-400">
+            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+              Active Agents
+            </p>
+            <p className="mt-1 font-mono text-lg font-bold text-blue-400">
               {sessions.filter((s) => s.status === 'running').length}
             </p>
           </div>
           <div>
-            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Agent Roles</p>
+            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+              Agent Roles
+            </p>
             <div className="mt-1 flex flex-wrap gap-1">
-              {[...new Set(sessions.filter((s) => s.status === 'running').map((s) => s.agentType))].map((role) => (
-                <Badge key={role} variant="info" size="sm">{role}</Badge>
+              {[
+                ...new Set(sessions.filter((s) => s.status === 'running').map((s) => s.agentType)),
+              ].map((role) => (
+                <Badge key={role} variant="info" size="sm">
+                  {role}
+                </Badge>
               ))}
               {sessions.filter((s) => s.status === 'running').length === 0 && (
                 <span className="text-xs text-content-tertiary">None active</span>
@@ -346,12 +621,18 @@ export function AgentActivity(): ReactNode {
             </div>
           </div>
           <div>
-            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Handoffs Today</p>
-            <p className="mt-1 text-lg font-bold text-content">7</p>
+            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+              Handoffs Today
+            </p>
+            <p className="mt-1 font-mono text-lg font-bold text-content">7</p>
           </div>
           <div>
-            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">Safety Status</p>
-            <Badge variant="success" dot size="sm" className="mt-1">All Bounded</Badge>
+            <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+              Safety Status
+            </p>
+            <Badge variant="success" dot size="sm" className="mt-1">
+              All Bounded
+            </Badge>
           </div>
         </div>
       </Card>
@@ -359,16 +640,30 @@ export function AgentActivity(): ReactNode {
       {/* Session detail modal */}
       <Modal
         open={selectedSession !== null}
-        onClose={() => setSelectedSession(null)}
+        onClose={() => {
+          setSelectedSession(null);
+        }}
         title={`Session: ${selectedSession?.id ?? ''}`}
         size="lg"
         actions={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setSelectedSession(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelectedSession(null);
+              }}
+            >
               Close
             </Button>
             {selectedSession?.status === 'running' && (
-              <Button variant="danger" size="sm" onClick={() => setKillConfirm(selectedSession)}>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setKillConfirm(selectedSession);
+                }}
+              >
                 Kill Session
               </Button>
             )}
@@ -394,7 +689,9 @@ export function AgentActivity(): ReactNode {
               </div>
               <div>
                 <p className="text-xs text-content-tertiary">Confidence</p>
-                <p className={`text-lg font-bold ${confidenceColor(selectedSession.confidence)}`}>
+                <p
+                  className={`font-mono text-lg font-bold ${confidenceColor(selectedSession.confidence)}`}
+                >
                   {(selectedSession.confidence * 100).toFixed(1)}%
                 </p>
               </div>
@@ -409,14 +706,16 @@ export function AgentActivity(): ReactNode {
                       }}
                     />
                   </div>
-                  <span className="text-xs text-content-secondary">
+                  <span className="font-mono text-xs text-content-secondary">
                     {selectedSession.stepsCompleted}/{selectedSession.totalSteps}
                   </span>
                 </div>
               </div>
               <div>
                 <p className="text-xs text-content-tertiary">Cost</p>
-                <p className="text-sm font-mono text-content">${selectedSession.costUsd.toFixed(4)}</p>
+                <p className="text-sm font-mono text-content">
+                  ${selectedSession.costUsd.toFixed(4)}
+                </p>
               </div>
             </div>
 
@@ -440,13 +739,18 @@ export function AgentActivity(): ReactNode {
                   phase: (['observe', 'think', 'act', 'check'] as const)[idx % 4] ?? 'observe',
                   agentRole: selectedSession.agentType,
                   description: `Execute ${tool}`,
-                  status: idx < selectedSession.stepsCompleted
-                    ? 'completed'
-                    : idx === selectedSession.stepsCompleted
-                      ? selectedSession.status === 'running' ? 'in-progress'
-                        : selectedSession.status === 'awaiting-review' ? 'hitl-pending'
-                        : selectedSession.status === 'failed' ? 'failed' : 'pending'
-                      : 'pending',
+                  status:
+                    idx < selectedSession.stepsCompleted
+                      ? 'completed'
+                      : idx === selectedSession.stepsCompleted
+                        ? selectedSession.status === 'running'
+                          ? 'in-progress'
+                          : selectedSession.status === 'awaiting-review'
+                            ? 'hitl-pending'
+                            : selectedSession.status === 'failed'
+                              ? 'failed'
+                              : 'pending'
+                        : 'pending',
                   confidence: selectedSession.confidence,
                   tool,
                   durationMs: Math.floor(Math.random() * 500 + 100),
@@ -468,12 +772,20 @@ export function AgentActivity(): ReactNode {
       {/* Kill confirmation modal */}
       <Modal
         open={killConfirm !== null}
-        onClose={() => setKillConfirm(null)}
+        onClose={() => {
+          setKillConfirm(null);
+        }}
         title="Confirm Kill Session"
         size="sm"
         actions={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setKillConfirm(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setKillConfirm(null);
+              }}
+            >
               Cancel
             </Button>
             <Button

@@ -11,13 +11,19 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   { label, error, helperText, className, id, ...props },
   ref,
 ): ReactNode {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
-  const errorId = error ? `${inputId}-error` : undefined;
-  const helperId = helperText && !error ? `${inputId}-helper` : undefined;
+  const inputId =
+    id !== undefined
+      ? id
+      : label !== undefined
+        ? label.toLowerCase().replace(/\s+/g, '-')
+        : undefined;
+  const errorId = error !== undefined ? `${inputId}-error` : undefined;
+  const helperId =
+    helperText !== undefined && error === undefined ? `${inputId}-helper` : undefined;
 
   return (
     <div className="space-y-1.5">
-      {label && (
+      {label !== undefined && (
         <label htmlFor={inputId} className="block text-sm font-medium text-content-secondary">
           {label}
         </label>
@@ -31,19 +37,19 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           'transition-colors duration-150',
           'focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-border-focus',
           'disabled:cursor-not-allowed disabled:opacity-50',
-          error ? 'border-brand-danger' : 'border-border',
+          error !== undefined ? 'border-brand-danger' : 'border-border',
           className,
         )}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={errorId || helperId}
+        aria-invalid={error !== undefined ? true : undefined}
+        aria-describedby={errorId !== undefined ? errorId : helperId}
         {...props}
       />
-      {error && (
+      {error !== undefined && (
         <p id={errorId} className="text-xs text-brand-danger" role="alert">
           {error}
         </p>
       )}
-      {helperText && !error && (
+      {helperText !== undefined && error === undefined && (
         <p id={helperId} className="text-xs text-content-tertiary">
           {helperText}
         </p>

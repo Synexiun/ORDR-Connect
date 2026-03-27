@@ -8,6 +8,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  icon?: ReactNode;
   children: ReactNode;
 }
 
@@ -32,12 +33,13 @@ export function Button({
   variant = 'primary',
   size = 'md',
   loading = false,
+  icon,
   disabled,
   className,
   children,
   ...props
 }: ButtonProps): ReactNode {
-  const isDisabled = disabled || loading;
+  const isDisabled = disabled === true || loading;
 
   return (
     <button
@@ -59,6 +61,11 @@ export function Button({
           role="status"
           aria-label="Loading"
         />
+      )}
+      {!loading && icon !== undefined && (
+        <span className="shrink-0" aria-hidden="true">
+          {icon}
+        </span>
       )}
       {children}
     </button>

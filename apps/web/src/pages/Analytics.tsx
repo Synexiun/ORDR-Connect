@@ -8,7 +8,7 @@
  * COMPLIANCE: No PHI rendered. Metadata and aggregate metrics only.
  */
 
-import { type ReactNode, useState, useEffect, useCallback } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -16,7 +16,10 @@ import { Table } from '../components/ui/Table';
 import { Spinner } from '../components/ui/Spinner';
 import { BarChart } from '../components/charts/BarChart';
 import { LineChart } from '../components/charts/LineChart';
-import { GaugeChart } from '../components/charts/GaugeChart';
+import { AreaChart } from '../components/charts/AreaChart';
+import { DonutChart } from '../components/charts/DonutChart';
+import { HeatmapChart } from '../components/charts/HeatmapChart';
+import { SparkLine } from '../components/charts/SparkLine';
 import {
   fetchChannelMetrics,
   fetchAgentMetrics,
@@ -39,7 +42,13 @@ const mockChannelMetrics: ChannelMetric[] = [
   { channel: 'SMS', deliveryRate: 96.2, volume: 12480, costPerMessage: 0.0075, failureRate: 3.8 },
   { channel: 'Email', deliveryRate: 98.5, volume: 34120, costPerMessage: 0.0012, failureRate: 1.5 },
   { channel: 'Voice', deliveryRate: 89.1, volume: 4230, costPerMessage: 0.035, failureRate: 10.9 },
-  { channel: 'WhatsApp', deliveryRate: 94.7, volume: 8940, costPerMessage: 0.005, failureRate: 5.3 },
+  {
+    channel: 'WhatsApp',
+    deliveryRate: 94.7,
+    volume: 8940,
+    costPerMessage: 0.005,
+    failureRate: 5.3,
+  },
 ];
 
 const mockChannelVolume: ChannelVolumePoint[] = Array.from({ length: 7 }, (_, i) => {
@@ -54,19 +63,53 @@ const mockChannelVolume: ChannelVolumePoint[] = Array.from({ length: 7 }, (_, i)
 });
 
 const mockAgentMetrics: AgentMetricRow[] = [
-  { agentRole: 'collection', sessions: 187, resolutionRate: 92.4, avgConfidence: 0.88, avgCost: 0.14, avgSteps: 4.2 },
-  { agentRole: 'onboarding', sessions: 94, resolutionRate: 97.1, avgConfidence: 0.91, avgCost: 0.08, avgSteps: 3.1 },
-  { agentRole: 'support', sessions: 156, resolutionRate: 88.5, avgConfidence: 0.84, avgCost: 0.19, avgSteps: 5.4 },
-  { agentRole: 'retention', sessions: 63, resolutionRate: 78.3, avgConfidence: 0.79, avgCost: 0.22, avgSteps: 6.1 },
+  {
+    agentRole: 'collection',
+    sessions: 187,
+    resolutionRate: 92.4,
+    avgConfidence: 0.88,
+    avgCost: 0.14,
+    avgSteps: 4.2,
+  },
+  {
+    agentRole: 'onboarding',
+    sessions: 94,
+    resolutionRate: 97.1,
+    avgConfidence: 0.91,
+    avgCost: 0.08,
+    avgSteps: 3.1,
+  },
+  {
+    agentRole: 'support',
+    sessions: 156,
+    resolutionRate: 88.5,
+    avgConfidence: 0.84,
+    avgCost: 0.19,
+    avgSteps: 5.4,
+  },
+  {
+    agentRole: 'retention',
+    sessions: 63,
+    resolutionRate: 78.3,
+    avgConfidence: 0.79,
+    avgCost: 0.22,
+    avgSteps: 6.1,
+  },
 ];
 
 const mockAgentTrend: AgentTrendPoint[] = Array.from({ length: 7 }, (_, i) => ({
-  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }),
   resolutionRate: 85 + Math.floor(Math.sin(i * 0.8) * 8),
 }));
 
 const mockComplianceScoreTrend: ComplianceScorePoint[] = Array.from({ length: 7 }, (_, i) => ({
-  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }),
   score: 93 + Math.floor(Math.sin(i * 0.6) * 4),
 }));
 
@@ -86,14 +129,33 @@ const mockCheckRatios: ComplianceCheckRatio[] = [
 ];
 
 const mockResponseTrend: TrendPoint[] = Array.from({ length: 7 }, (_, i) => ({
-  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }),
   value: 34 + Math.floor(Math.sin(i * 0.7) * 12),
 }));
 
 const mockResponseTimeTrend: TrendPoint[] = Array.from({ length: 7 }, (_, i) => ({
-  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  date: new Date(Date.now() - (6 - i) * 86400000).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }),
   value: 45 + Math.floor(Math.cos(i * 0.5) * 20),
 }));
+
+// --- Mock heatmap data: hour-of-day (rows) vs day-of-week (columns) ---
+
+const heatmapDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const heatmapHours = ['6am', '8am', '10am', '12pm', '2pm', '4pm', '6pm', '8pm'];
+
+const mockHeatmapData: number[][] = heatmapHours.map((_, hIdx) =>
+  heatmapDays.map((_, dIdx) =>
+    Math.floor(
+      20 + Math.sin(hIdx * 0.9 + dIdx * 0.5) * 15 + Math.cos(dIdx * 1.2) * 10 + Math.random() * 8,
+    ),
+  ),
+);
 
 // --- Helpers ---
 
@@ -108,6 +170,17 @@ function confidenceColor(c: number): string {
   if (c >= 0.8) return 'text-emerald-400';
   if (c >= 0.7) return 'text-amber-400';
   return 'text-red-400';
+}
+
+const channelColorMap: Record<string, string> = {
+  SMS: '#3b82f6',
+  Email: '#10b981',
+  Voice: '#f59e0b',
+  WhatsApp: '#8b5cf6',
+};
+
+function getChannelColor(channel: string): string {
+  return channelColorMap[channel] ?? '#3b82f6';
 }
 
 // --- Component ---
@@ -136,13 +209,14 @@ export function Analytics(): ReactNode {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [channelRes, agentRes, complianceRes, respTrendRes, respTimeRes] = await Promise.allSettled([
-        fetchChannelMetrics(timeRange),
-        fetchAgentMetrics(timeRange),
-        fetchComplianceMetrics(timeRange),
-        fetchTrend('response-rate', timeRange),
-        fetchTrend('response-time', timeRange),
-      ]);
+      const [channelRes, agentRes, complianceRes, respTrendRes, respTimeRes] =
+        await Promise.allSettled([
+          fetchChannelMetrics(timeRange),
+          fetchAgentMetrics(timeRange),
+          fetchComplianceMetrics(timeRange),
+          fetchTrend('response-rate', timeRange),
+          fetchTrend('response-time', timeRange),
+        ]);
 
       // Channel
       if (channelRes.status === 'fulfilled') {
@@ -199,6 +273,51 @@ export function Analytics(): ReactNode {
   useEffect(() => {
     void fetchAll();
   }, [fetchAll]);
+
+  // Derived KPI sparkline data
+  const totalVolume = useMemo(
+    () => channelMetrics.reduce((s, ch) => s + ch.volume, 0),
+    [channelMetrics],
+  );
+  const avgDeliveryRate = useMemo(() => {
+    if (channelMetrics.length === 0) return 0;
+    return channelMetrics.reduce((s, ch) => s + ch.deliveryRate, 0) / channelMetrics.length;
+  }, [channelMetrics]);
+  const volumeSparkData = useMemo(
+    () => channelVolume.map((v) => v.sms + v.email + v.voice + v.whatsapp),
+    [channelVolume],
+  );
+  const deliverySparkData = useMemo(
+    () => channelMetrics.map((ch) => ch.deliveryRate),
+    [channelMetrics],
+  );
+  const complianceSparkData = useMemo(
+    () => complianceScoreTrend.map((t) => t.score),
+    [complianceScoreTrend],
+  );
+  const latestComplianceScore = useMemo(
+    () =>
+      complianceScoreTrend.length > 0
+        ? (complianceScoreTrend[complianceScoreTrend.length - 1]?.score ?? 0)
+        : 0,
+    [complianceScoreTrend],
+  );
+  const responseSparkData = useMemo(() => responseTrend.map((t) => t.value), [responseTrend]);
+  const latestResponseRate = useMemo(
+    () => (responseTrend.length > 0 ? (responseTrend[responseTrend.length - 1]?.value ?? 0) : 0),
+    [responseTrend],
+  );
+
+  // Donut segments from channel volume
+  const channelMixSegments = useMemo(
+    () =>
+      channelMetrics.map((ch) => ({
+        label: ch.channel,
+        value: ch.volume,
+        color: getChannelColor(ch.channel),
+      })),
+    [channelMetrics],
+  );
 
   // Agent table columns
   const agentColumns = [
@@ -277,7 +396,9 @@ export function Analytics(): ReactNode {
               key={opt.value}
               variant={timeRange === opt.value ? 'primary' : 'ghost'}
               size="sm"
-              onClick={() => setTimeRange(opt.value)}
+              onClick={() => {
+                setTimeRange(opt.value);
+              }}
             >
               {opt.label}
             </Button>
@@ -288,19 +409,73 @@ export function Analytics(): ReactNode {
         </div>
       </div>
 
+      {/* === KPI ROW === */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Card accent="blue">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Total Volume
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-content">
+                {totalVolume.toLocaleString()}
+              </p>
+            </div>
+            <SparkLine data={volumeSparkData} color="#3b82f6" width={64} height={24} />
+          </div>
+        </Card>
+        <Card accent="green">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Avg Delivery Rate
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-emerald-400">
+                {avgDeliveryRate.toFixed(1)}%
+              </p>
+            </div>
+            <SparkLine data={deliverySparkData} color="#10b981" width={64} height={24} />
+          </div>
+        </Card>
+        <Card accent="purple">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Compliance Score
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-violet-400">
+                {latestComplianceScore}
+              </p>
+            </div>
+            <SparkLine data={complianceSparkData} color="#8b5cf6" width={64} height={24} />
+          </div>
+        </Card>
+        <Card accent="amber">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-2xs font-medium uppercase tracking-wider text-content-secondary">
+                Response Rate
+              </p>
+              <p className="mt-1 font-mono text-lg font-bold text-amber-400">
+                {latestResponseRate}%
+              </p>
+            </div>
+            <SparkLine data={responseSparkData} color="#f59e0b" width={64} height={24} />
+          </div>
+        </Card>
+      </div>
+
       {/* === CHANNEL EFFECTIVENESS === */}
       <div>
         <h2 className="section-title mb-4">Channel Effectiveness</h2>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Delivery rate by channel */}
           <Card title="Delivery Rate by Channel">
             <BarChart
               data={channelMetrics.map((ch) => ({
                 label: ch.channel,
                 value: ch.deliveryRate,
-                color: ch.channel === 'SMS' ? '#3b82f6' :
-                       ch.channel === 'Email' ? '#10b981' :
-                       ch.channel === 'Voice' ? '#f59e0b' : '#8b5cf6',
+                color: getChannelColor(ch.channel),
               }))}
               height={220}
               showLabels
@@ -314,9 +489,7 @@ export function Analytics(): ReactNode {
               data={channelMetrics.map((ch) => ({
                 label: ch.channel,
                 value: Number((ch.costPerMessage * 1000).toFixed(1)),
-                color: ch.channel === 'SMS' ? '#3b82f6' :
-                       ch.channel === 'Email' ? '#10b981' :
-                       ch.channel === 'Voice' ? '#f59e0b' : '#8b5cf6',
+                color: getChannelColor(ch.channel),
               }))}
               height={220}
               showLabels
@@ -325,14 +498,70 @@ export function Analytics(): ReactNode {
             <p className="mt-2 text-2xs text-content-tertiary">Values in millicents (x0.001 USD)</p>
           </Card>
 
-          {/* Volume over time */}
-          <Card title="Volume by Channel Over Time" className="lg:col-span-2">
+          {/* Channel Mix — DonutChart */}
+          <Card title="Channel Mix (Volume)">
+            <div className="flex items-center justify-center">
+              <DonutChart
+                segments={channelMixSegments}
+                size={180}
+                thickness={24}
+                showLabels
+                centerLabel={totalVolume.toLocaleString()}
+              />
+            </div>
+          </Card>
+
+          {/* Volume over time — AreaChart */}
+          <Card title="Volume Trend (All Channels)" className="lg:col-span-2">
+            <AreaChart
+              series={channelVolume.map((v) => ({
+                x: v.date,
+                y: v.sms + v.email + v.voice + v.whatsapp,
+              }))}
+              height={240}
+              color="#3b82f6"
+              showGrid
+              showDots
+              gradientOpacity={0.25}
+            />
+          </Card>
+
+          {/* Activity Heatmap — HeatmapChart */}
+          <Card title="Activity Heatmap (Hour vs Day)">
+            <HeatmapChart
+              data={mockHeatmapData}
+              xLabels={heatmapDays}
+              yLabels={heatmapHours}
+              height={220}
+            />
+          </Card>
+        </div>
+
+        {/* Full multi-series line chart */}
+        <div className="mt-6">
+          <Card title="Volume by Channel Over Time">
             <LineChart
               series={[
-                { data: channelVolume.map((v) => ({ x: v.date, y: v.sms })), color: '#3b82f6', label: 'SMS' },
-                { data: channelVolume.map((v) => ({ x: v.date, y: v.email })), color: '#10b981', label: 'Email' },
-                { data: channelVolume.map((v) => ({ x: v.date, y: v.voice })), color: '#f59e0b', label: 'Voice' },
-                { data: channelVolume.map((v) => ({ x: v.date, y: v.whatsapp })), color: '#8b5cf6', label: 'WhatsApp' },
+                {
+                  data: channelVolume.map((v) => ({ x: v.date, y: v.sms })),
+                  color: '#3b82f6',
+                  label: 'SMS',
+                },
+                {
+                  data: channelVolume.map((v) => ({ x: v.date, y: v.email })),
+                  color: '#10b981',
+                  label: 'Email',
+                },
+                {
+                  data: channelVolume.map((v) => ({ x: v.date, y: v.voice })),
+                  color: '#f59e0b',
+                  label: 'Voice',
+                },
+                {
+                  data: channelVolume.map((v) => ({ x: v.date, y: v.whatsapp })),
+                  color: '#8b5cf6',
+                  label: 'WhatsApp',
+                },
               ]}
               height={240}
               showGrid
@@ -361,21 +590,19 @@ export function Analytics(): ReactNode {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <Card title="Agent Metrics" padding={false}>
-              <Table
-                columns={agentColumns}
-                data={agentMetrics}
-                keyExtractor={(r) => r.agentRole}
-              />
+              <Table columns={agentColumns} data={agentMetrics} keyExtractor={(r) => r.agentRole} />
             </Card>
           </div>
 
           <Card title="Resolution Rate Trend">
             <LineChart
-              series={[{
-                data: agentTrend.map((t) => ({ x: t.date, y: t.resolutionRate })),
-                color: '#10b981',
-                label: 'Resolution Rate',
-              }]}
+              series={[
+                {
+                  data: agentTrend.map((t) => ({ x: t.date, y: t.resolutionRate })),
+                  color: '#10b981',
+                  label: 'Resolution Rate',
+                },
+              ]}
               height={200}
               showGrid
               showDots
@@ -391,11 +618,13 @@ export function Analytics(): ReactNode {
           {/* Score trend */}
           <Card title="Compliance Score Trend">
             <LineChart
-              series={[{
-                data: complianceScoreTrend.map((t) => ({ x: t.date, y: t.score })),
-                color: '#10b981',
-                label: 'Compliance Score',
-              }]}
+              series={[
+                {
+                  data: complianceScoreTrend.map((t) => ({ x: t.date, y: t.score })),
+                  color: '#10b981',
+                  label: 'Compliance Score',
+                },
+              ]}
               height={200}
               showGrid
               showDots
@@ -408,9 +637,14 @@ export function Analytics(): ReactNode {
               data={violationBreakdown.map((v) => ({
                 label: v.regulation,
                 value: v.violations,
-                color: v.regulation === 'HIPAA' ? '#ef4444' :
-                       v.regulation === 'FDCPA' ? '#f59e0b' :
-                       v.regulation === 'TCPA' ? '#f97316' : '#3b82f6',
+                color:
+                  v.regulation === 'HIPAA'
+                    ? '#ef4444'
+                    : v.regulation === 'FDCPA'
+                      ? '#f59e0b'
+                      : v.regulation === 'TCPA'
+                        ? '#f97316'
+                        : '#3b82f6',
               }))}
               height={200}
               showLabels
@@ -429,9 +663,13 @@ export function Analytics(): ReactNode {
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-content-secondary">{check.checkType}</span>
                       <div className="flex items-center gap-2">
-                        <Badge variant="success" size="sm">{check.passed}</Badge>
+                        <Badge variant="success" size="sm">
+                          {check.passed}
+                        </Badge>
                         {check.failed > 0 && (
-                          <Badge variant="danger" size="sm">{check.failed}</Badge>
+                          <Badge variant="danger" size="sm">
+                            {check.failed}
+                          </Badge>
                         )}
                       </div>
                     </div>
@@ -455,11 +693,13 @@ export function Analytics(): ReactNode {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card title="Customer Response Rate (%)">
             <LineChart
-              series={[{
-                data: responseTrend.map((t) => ({ x: t.date, y: t.value })),
-                color: '#3b82f6',
-                label: 'Response Rate',
-              }]}
+              series={[
+                {
+                  data: responseTrend.map((t) => ({ x: t.date, y: t.value })),
+                  color: '#3b82f6',
+                  label: 'Response Rate',
+                },
+              ]}
               height={200}
               showGrid
               showDots
@@ -468,11 +708,13 @@ export function Analytics(): ReactNode {
 
           <Card title="Average Response Time (minutes)">
             <LineChart
-              series={[{
-                data: responseTimeTrend.map((t) => ({ x: t.date, y: t.value })),
-                color: '#f59e0b',
-                label: 'Response Time',
-              }]}
+              series={[
+                {
+                  data: responseTimeTrend.map((t) => ({ x: t.date, y: t.value })),
+                  color: '#f59e0b',
+                  label: 'Response Time',
+                },
+              ]}
               height={200}
               showGrid
               showDots

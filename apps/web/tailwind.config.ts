@@ -6,6 +6,7 @@ export default {
   theme: {
     extend: {
       colors: {
+        canvas: '#0b0b0c',
         brand: {
           primary: '#0f172a',
           accent: '#2563eb',
@@ -33,6 +34,13 @@ export default {
           light: '#475569',
           focus: '#2563eb',
         },
+        kpi: {
+          blue: '#3b82f6',
+          green: '#22c55e',
+          red: '#ef4444',
+          purple: '#8b5cf6',
+          amber: '#f59e0b',
+        },
       },
       fontFamily: {
         sans: [
@@ -48,6 +56,15 @@ export default {
       },
       fontSize: {
         '2xs': ['0.625rem', { lineHeight: '0.875rem' }],
+      },
+      borderWidth: {
+        '3': '3px',
+      },
+      boxShadow: {
+        kpi: '0 1px 3px 0 rgba(0, 0, 0, 0.3)',
+        'card-hover': '0 4px 12px 0 rgba(0, 0, 0, 0.4)',
+        'glow-blue': '0 0 12px rgba(59, 130, 246, 0.15)',
+        'glow-green': '0 0 12px rgba(34, 197, 94, 0.15)',
       },
       animation: {
         'spin-slow': 'spin 2s linear infinite',

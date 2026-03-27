@@ -55,8 +55,8 @@ describe('BarChart component', () => {
     ];
     const element = createElement(BarChart, { data });
     const d = element.props.data as { label: string; value: number; color?: string }[];
-    expect(d[0]!.color).toBe('#ff0000');
-    expect(d[1]!.color).toBe('#00ff00');
+    expect((d[0] as { color?: string }).color).toBe('#ff0000');
+    expect((d[1] as { color?: string }).color).toBe('#00ff00');
   });
 });
 
@@ -64,14 +64,19 @@ describe('BarChart component', () => {
 
 describe('LineChart component', () => {
   it('creates element with series data', () => {
-    const series = [{
-      data: [{ x: 'Mon', y: 10 }, { x: 'Tue', y: 20 }],
-      color: '#3b82f6',
-    }];
+    const series = [
+      {
+        data: [
+          { x: 'Mon', y: 10 },
+          { x: 'Tue', y: 20 },
+        ],
+        color: '#3b82f6',
+      },
+    ];
     const element = createElement(LineChart, { series });
     expect(element.props.series).toHaveLength(1);
     const s = element.props.series as { data: { x: string; y: number }[] }[];
-    expect(s[0]!.data).toHaveLength(2);
+    expect((s[0] as { data: unknown[] }).data).toHaveLength(2);
   });
 
   it('supports multiple series', () => {
@@ -100,16 +105,18 @@ describe('LineChart component', () => {
   });
 
   it('renders path with correct data points', () => {
-    const series = [{
-      data: [
-        { x: 'Jan', y: 100 },
-        { x: 'Feb', y: 200 },
-        { x: 'Mar', y: 150 },
-      ],
-    }];
+    const series = [
+      {
+        data: [
+          { x: 'Jan', y: 100 },
+          { x: 'Feb', y: 200 },
+          { x: 'Mar', y: 150 },
+        ],
+      },
+    ];
     const element = createElement(LineChart, { series, height: 200 });
     const s = element.props.series as { data: { x: string; y: number }[] }[];
-    expect(s[0]!.data).toHaveLength(3);
+    expect((s[0] as { data: unknown[] }).data).toHaveLength(3);
     expect(element.props.height).toBe(200);
   });
 });
@@ -157,7 +164,7 @@ describe('GaugeChart component', () => {
       { value: 10, expected: 'red' },
     ];
     expect(thresholds).toHaveLength(5);
-    expect(thresholds[0]!.expected).toBe('green');
-    expect(thresholds[4]!.expected).toBe('red');
+    expect((thresholds[0] as { expected: string }).expected).toBe('green');
+    expect((thresholds[4] as { expected: string }).expected).toBe('red');
   });
 });

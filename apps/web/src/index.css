@@ -19,6 +19,7 @@
     margin: 0;
     min-height: 100vh;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: theme('colors.canvas');
   }
 
   #root {
@@ -41,7 +42,7 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: theme('colors.surface.DEFAULT');
+    background: theme('colors.canvas');
   }
 
   ::-webkit-scrollbar-thumb {
@@ -55,19 +56,76 @@
 }
 
 @layer components {
+  /* Navigation */
   .nav-link {
-    @apply flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-content-secondary transition-colors hover:bg-surface-tertiary hover:text-content;
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-content-secondary transition-all duration-150 hover:bg-surface-tertiary hover:text-content;
   }
 
   .nav-link-active {
     @apply bg-brand-accent/10 text-brand-accent;
   }
 
-  .kpi-card {
-    @apply rounded-xl border border-border bg-surface-secondary p-5;
+  .nav-section-label {
+    @apply mb-2 mt-6 px-3 text-2xs font-semibold uppercase tracking-wider text-content-tertiary;
   }
 
+  .nav-section-label:first-child {
+    @apply mt-0;
+  }
+
+  /* KPI Cards */
+  .kpi-card {
+    @apply rounded-xl border border-border bg-surface-secondary p-5 shadow-kpi transition-shadow duration-200 hover:shadow-card-hover;
+  }
+
+  .kpi-card-blue {
+    @apply kpi-card border-t-3 border-t-kpi-blue;
+  }
+
+  .kpi-card-green {
+    @apply kpi-card border-t-3 border-t-kpi-green;
+  }
+
+  .kpi-card-red {
+    @apply kpi-card border-t-3 border-t-kpi-red;
+  }
+
+  .kpi-card-purple {
+    @apply kpi-card border-t-3 border-t-kpi-purple;
+  }
+
+  .kpi-card-amber {
+    @apply kpi-card border-t-3 border-t-kpi-amber;
+  }
+
+  /* Metric values */
+  .metric-value {
+    @apply font-mono text-2xl font-bold text-content;
+  }
+
+  .metric-label {
+    @apply text-2xs font-semibold uppercase tracking-wider text-content-tertiary;
+  }
+
+  .metric-delta-up {
+    @apply inline-flex items-center gap-1 text-xs font-medium text-kpi-green;
+  }
+
+  .metric-delta-down {
+    @apply inline-flex items-center gap-1 text-xs font-medium text-kpi-red;
+  }
+
+  /* Section */
   .section-title {
     @apply text-lg font-semibold text-content;
+  }
+
+  /* Page header */
+  .page-title {
+    @apply text-xl font-bold text-content;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-content-secondary;
   }
 }

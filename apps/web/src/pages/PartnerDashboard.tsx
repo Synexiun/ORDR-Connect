@@ -4,7 +4,18 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Table } from '../components/ui/Table';
 import { Spinner } from '../components/ui/Spinner';
+import { AreaChart } from '../components/charts/AreaChart';
+import { StackedBarChart } from '../components/charts/StackedBarChart';
 import { apiClient } from '../lib/api';
+import {
+  DollarSign,
+  Wallet,
+  Award,
+  Package,
+  Star,
+  RefreshCw,
+  TrendingUp,
+} from '../components/icons';
 
 // --- Types ---
 
@@ -50,12 +61,19 @@ interface MonthlyEarning {
   amountCents: number;
 }
 
+interface ReferralFunnel {
+  month: string;
+  clicks: number;
+  signups: number;
+  conversions: number;
+}
+
 // --- Constants ---
 
-const tierBadge: Record<PartnerProfile['tier'], 'neutral' | 'warning' | 'success'> = {
-  silver: 'neutral',
-  gold: 'warning',
-  platinum: 'success',
+const tierColors: Record<PartnerProfile['tier'], string> = {
+  silver: 'bg-slate-500/15 text-slate-300 border border-slate-500/30',
+  gold: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+  platinum: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
 };
 
 const payoutBadge: Record<PayoutItem['status'], 'info' | 'warning' | 'success' | 'danger'> = {
@@ -96,16 +114,73 @@ const mockEarnings: EarningsSummary = {
 };
 
 const mockPayouts: PayoutItem[] = [
-  { id: 'pay-001', amountCents: 125000, currency: 'USD', periodStart: new Date(Date.now() - 60 * 86400000).toISOString(), periodEnd: new Date(Date.now() - 30 * 86400000).toISOString(), status: 'paid', paidAt: new Date(Date.now() - 25 * 86400000).toISOString(), createdAt: new Date(Date.now() - 28 * 86400000).toISOString() },
-  { id: 'pay-002', amountCents: 148200, currency: 'USD', periodStart: new Date(Date.now() - 30 * 86400000).toISOString(), periodEnd: new Date().toISOString(), status: 'paid', paidAt: new Date(Date.now() - 2 * 86400000).toISOString(), createdAt: new Date(Date.now() - 3 * 86400000).toISOString() },
-  { id: 'pay-003', amountCents: 100000, currency: 'USD', periodStart: new Date(Date.now() - 90 * 86400000).toISOString(), periodEnd: new Date(Date.now() - 60 * 86400000).toISOString(), status: 'paid', paidAt: new Date(Date.now() - 55 * 86400000).toISOString(), createdAt: new Date(Date.now() - 58 * 86400000).toISOString() },
-  { id: 'pay-004', amountCents: 85000, currency: 'USD', periodStart: new Date().toISOString(), periodEnd: new Date(Date.now() + 30 * 86400000).toISOString(), status: 'pending', paidAt: null, createdAt: new Date().toISOString() },
+  {
+    id: 'pay-001',
+    amountCents: 125000,
+    currency: 'USD',
+    periodStart: new Date(Date.now() - 60 * 86400000).toISOString(),
+    periodEnd: new Date(Date.now() - 30 * 86400000).toISOString(),
+    status: 'paid',
+    paidAt: new Date(Date.now() - 25 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 28 * 86400000).toISOString(),
+  },
+  {
+    id: 'pay-002',
+    amountCents: 148200,
+    currency: 'USD',
+    periodStart: new Date(Date.now() - 30 * 86400000).toISOString(),
+    periodEnd: new Date().toISOString(),
+    status: 'paid',
+    paidAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+  },
+  {
+    id: 'pay-003',
+    amountCents: 100000,
+    currency: 'USD',
+    periodStart: new Date(Date.now() - 90 * 86400000).toISOString(),
+    periodEnd: new Date(Date.now() - 60 * 86400000).toISOString(),
+    status: 'paid',
+    paidAt: new Date(Date.now() - 55 * 86400000).toISOString(),
+    createdAt: new Date(Date.now() - 58 * 86400000).toISOString(),
+  },
+  {
+    id: 'pay-004',
+    amountCents: 85000,
+    currency: 'USD',
+    periodStart: new Date().toISOString(),
+    periodEnd: new Date(Date.now() + 30 * 86400000).toISOString(),
+    status: 'pending',
+    paidAt: null,
+    createdAt: new Date().toISOString(),
+  },
 ];
 
 const mockPublishedAgents: PublishedAgentSummary[] = [
-  { id: 'agent-001', name: 'Smart Collections', version: '1.2.0', downloads: 847, rating: 4.5, status: 'published' },
-  { id: 'agent-002', name: 'Payment Reminder', version: '1.0.0', downloads: 234, rating: 4.0, status: 'published' },
-  { id: 'agent-003', name: 'Risk Scorer', version: '2.0.0', downloads: 56, rating: 3.5, status: 'published' },
+  {
+    id: 'agent-001',
+    name: 'Smart Collections',
+    version: '1.2.0',
+    downloads: 847,
+    rating: 4.5,
+    status: 'published',
+  },
+  {
+    id: 'agent-002',
+    name: 'Payment Reminder',
+    version: '1.0.0',
+    downloads: 234,
+    rating: 4.0,
+    status: 'published',
+  },
+  {
+    id: 'agent-003',
+    name: 'Risk Scorer',
+    version: '2.0.0',
+    downloads: 56,
+    rating: 3.5,
+    status: 'published',
+  },
 ];
 
 const mockMonthlyEarnings: MonthlyEarning[] = [
@@ -117,6 +192,15 @@ const mockMonthlyEarnings: MonthlyEarning[] = [
   { month: 'Mar', amountCents: 148200 },
 ];
 
+const mockReferralFunnel: ReferralFunnel[] = [
+  { month: 'Oct', clicks: 320, signups: 48, conversions: 12 },
+  { month: 'Nov', clicks: 410, signups: 62, conversions: 18 },
+  { month: 'Dec', clicks: 380, signups: 55, conversions: 15 },
+  { month: 'Jan', clicks: 490, signups: 74, conversions: 22 },
+  { month: 'Feb', clicks: 560, signups: 88, conversions: 28 },
+  { month: 'Mar', clicks: 620, signups: 95, conversions: 34 },
+];
+
 // --- Component ---
 
 export function PartnerDashboard(): ReactNode {
@@ -125,6 +209,7 @@ export function PartnerDashboard(): ReactNode {
   const [payouts, setPayouts] = useState<PayoutItem[]>([]);
   const [publishedAgents, setPublishedAgents] = useState<PublishedAgentSummary[]>([]);
   const [monthlyEarnings, setMonthlyEarnings] = useState<MonthlyEarning[]>([]);
+  const [referralFunnel, setReferralFunnel] = useState<ReferralFunnel[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -141,12 +226,14 @@ export function PartnerDashboard(): ReactNode {
       setPayouts(payoutsRes.status === 'fulfilled' ? payoutsRes.value.data : mockPayouts);
       setPublishedAgents(mockPublishedAgents);
       setMonthlyEarnings(mockMonthlyEarnings);
+      setReferralFunnel(mockReferralFunnel);
     } catch {
       setProfile(mockProfile);
       setEarnings(mockEarnings);
       setPayouts(mockPayouts);
       setPublishedAgents(mockPublishedAgents);
       setMonthlyEarnings(mockMonthlyEarnings);
+      setReferralFunnel(mockReferralFunnel);
     } finally {
       setLoading(false);
     }
@@ -165,6 +252,7 @@ export function PartnerDashboard(): ReactNode {
   }
 
   const currency = earnings?.currency ?? 'USD';
+  const currentTier = profile?.tier ?? 'silver';
 
   const payoutColumns = [
     {
@@ -172,9 +260,16 @@ export function PartnerDashboard(): ReactNode {
       header: 'Period',
       render: (row: PayoutItem) => (
         <span className="text-xs text-content">
-          {new Date(row.periodStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          {new Date(row.periodStart).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+          })}
           {' \u2013 '}
-          {new Date(row.periodEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          {new Date(row.periodEnd).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })}
         </span>
       ),
     },
@@ -191,7 +286,9 @@ export function PartnerDashboard(): ReactNode {
       key: 'status',
       header: 'Status',
       render: (row: PayoutItem) => (
-        <Badge variant={payoutBadge[row.status]} dot size="sm">{row.status}</Badge>
+        <Badge variant={payoutBadge[row.status]} dot size="sm">
+          {row.status}
+        </Badge>
       ),
     },
     {
@@ -199,100 +296,175 @@ export function PartnerDashboard(): ReactNode {
       header: 'Paid At',
       render: (row: PayoutItem) => (
         <span className="text-xs text-content-secondary">
-          {row.paidAt
-            ? new Date(row.paidAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          {row.paidAt !== null
+            ? new Date(row.paidAt).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })
             : '\u2014'}
         </span>
       ),
     },
   ];
 
-  // Calculate max for chart scaling
-  const maxEarning = Math.max(...monthlyEarnings.map((e) => e.amountCents), 1);
+  // Prepare AreaChart series from monthly earnings (convert cents to dollars)
+  const earningsSeries = monthlyEarnings.map((e) => ({
+    x: e.month,
+    y: Math.round(e.amountCents / 100),
+  }));
+
+  // Prepare StackedBarChart data for referral funnel
+  const funnelCategories = referralFunnel.map((r) => r.month);
+  const funnelSeries = [
+    { label: 'Clicks', data: referralFunnel.map((r) => r.clicks), color: '#3b82f6' },
+    { label: 'Signups', data: referralFunnel.map((r) => r.signups), color: '#8b5cf6' },
+    { label: 'Conversions', data: referralFunnel.map((r) => r.conversions), color: '#10b981' },
+  ];
 
   return (
     <div className="space-y-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-content">Partner Dashboard</h1>
-          <p className="mt-1 text-sm text-content-secondary">
-            {profile?.company ?? 'Partner'} \u00B7{' '}
-            <Badge variant={tierBadge[profile?.tier ?? 'silver']} size="sm">
-              {profile?.tier ?? 'silver'}
-            </Badge>
-          </p>
+          <h1 className="page-title">Partner Dashboard</h1>
+          <div className="mt-1 flex items-center gap-2">
+            <p className="text-sm text-content-secondary">{profile?.company ?? 'Partner'}</p>
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${tierColors[currentTier]}`}
+            >
+              <Award className="h-3 w-3" />
+              {currentTier}
+            </span>
+          </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={fetchData}>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<RefreshCw className="h-3.5 w-3.5" />}
+          onClick={fetchData}
+        >
           Refresh
         </Button>
       </div>
 
-      {/* Earnings summary KPI cards */}
+      {/* Earnings KPI cards — accent borders + font-mono values */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="kpi-card">
-          <p className="text-xs font-medium uppercase tracking-wider text-content-secondary">Total Earnings</p>
-          <p className="mt-2 text-2xl font-bold text-content">
-            {formatCurrency(earnings?.totalCents ?? 0, currency)}
-          </p>
-          <p className="mt-1 text-xs text-content-secondary">
-            {profile?.revenueSharePct ?? 0}% revenue share
+        <div className="kpi-card-blue">
+          <div className="flex items-center justify-between">
+            <p className="metric-label">Total Earnings</p>
+            <DollarSign className="h-4 w-4 text-kpi-blue" />
+          </div>
+          <p className="metric-value mt-2">{formatCurrency(earnings?.totalCents ?? 0, currency)}</p>
+          <p className="metric-delta-up mt-1">
+            <TrendingUp className="h-3 w-3" /> {profile?.revenueSharePct ?? 0}% revenue share
           </p>
         </div>
-        <div className="kpi-card">
-          <p className="text-xs font-medium uppercase tracking-wider text-content-secondary">Pending</p>
-          <p className="mt-2 text-2xl font-bold text-amber-400">
+
+        <div className="kpi-card-amber">
+          <div className="flex items-center justify-between">
+            <p className="metric-label">Pending</p>
+            <Wallet className="h-4 w-4 text-kpi-amber" />
+          </div>
+          <p className="metric-value mt-2 !text-amber-400">
             {formatCurrency(earnings?.pendingCents ?? 0, currency)}
           </p>
           <p className="mt-1 text-xs text-content-secondary">Awaiting payout</p>
         </div>
-        <div className="kpi-card">
-          <p className="text-xs font-medium uppercase tracking-wider text-content-secondary">Paid</p>
-          <p className="mt-2 text-2xl font-bold text-emerald-400">
+
+        <div className="kpi-card-green">
+          <div className="flex items-center justify-between">
+            <p className="metric-label">Paid</p>
+            <DollarSign className="h-4 w-4 text-kpi-green" />
+          </div>
+          <p className="metric-value mt-2 !text-emerald-400">
             {formatCurrency(earnings?.paidCents ?? 0, currency)}
           </p>
           <p className="mt-1 text-xs text-content-secondary">Total disbursed</p>
         </div>
       </div>
 
-      {/* Revenue chart (simple bar chart) */}
-      <Card title="Monthly Earnings">
-        <div className="flex items-end gap-2" style={{ height: '120px' }}>
-          {monthlyEarnings.map((entry) => (
-            <div key={entry.month} className="flex flex-1 flex-col items-center gap-1">
-              <span className="text-2xs font-medium text-content-secondary">
-                {formatCurrency(entry.amountCents, currency)}
-              </span>
-              <div
-                className="w-full rounded-t bg-brand-accent transition-all"
-                style={{ height: `${String((entry.amountCents / maxEarning) * 80)}px` }}
-              />
-              <span className="text-2xs text-content-tertiary">{entry.month}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {/* Earnings Trend (AreaChart) + Referral Funnel (StackedBarChart) */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card
+          title="Earnings Trend"
+          accent="blue"
+          actions={
+            <Badge variant="info" size="sm">
+              6 months
+            </Badge>
+          }
+        >
+          <AreaChart
+            series={earningsSeries}
+            height={220}
+            color="#3b82f6"
+            showGrid
+            showDots
+            gradientOpacity={0.25}
+          />
+        </Card>
+
+        <Card
+          title="Referral Funnel"
+          accent="purple"
+          actions={
+            <Badge variant="info" size="sm">
+              Monthly
+            </Badge>
+          }
+        >
+          <StackedBarChart
+            categories={funnelCategories}
+            series={funnelSeries}
+            height={248}
+            showGrid
+            showLabels
+          />
+        </Card>
+      </div>
 
       {/* Published agents + Payout history */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Published agents with install counts */}
-        <Card title="Published Agents">
+        <Card
+          title="Published Agents"
+          accent="green"
+          actions={
+            <div className="flex items-center gap-2">
+              <Package className="h-3.5 w-3.5 text-kpi-green" />
+              <Badge variant="success" size="sm">
+                {publishedAgents.length} live
+              </Badge>
+            </div>
+          }
+        >
           <div className="space-y-2">
             {publishedAgents.length === 0 ? (
               <p className="text-sm text-content-secondary">No agents published yet.</p>
             ) : (
               publishedAgents.map((agent) => (
-                <div key={agent.id} className="flex items-center justify-between rounded-lg border border-border bg-surface-secondary p-3">
+                <div
+                  key={agent.id}
+                  className="flex items-center justify-between rounded-lg border border-border bg-surface-secondary p-3"
+                >
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-content">{agent.name}</span>
-                      <Badge variant="info" size="sm">v{agent.version}</Badge>
+                      <Badge variant="info" size="sm">
+                        v{agent.version}
+                      </Badge>
                     </div>
-                    <p className="mt-0.5 text-2xs text-content-tertiary">
-                      {agent.downloads} installs \u00B7 {'★'.repeat(Math.floor(agent.rating))} {agent.rating.toFixed(1)}
-                    </p>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-2xs text-content-tertiary">
+                      <span className="font-mono">{agent.downloads}</span> installs
+                      <span className="text-content-tertiary">{'\u00B7'}</span>
+                      <Star className="inline h-2.5 w-2.5 text-amber-400" />
+                      <span className="font-mono">{agent.rating.toFixed(1)}</span>
+                    </div>
                   </div>
-                  <Badge variant="success" size="sm">{agent.status}</Badge>
+                  <Badge variant="success" size="sm">
+                    {agent.status}
+                  </Badge>
                 </div>
               ))
             )}
@@ -300,15 +472,22 @@ export function PartnerDashboard(): ReactNode {
         </Card>
 
         {/* Payout history table */}
-        <Card title="Payout History">
+        <Card
+          title="Payout History"
+          accent="amber"
+          actions={
+            <div className="flex items-center gap-2">
+              <Wallet className="h-3.5 w-3.5 text-kpi-amber" />
+              <Badge variant="warning" size="sm">
+                {payouts.length} payouts
+              </Badge>
+            </div>
+          }
+        >
           {payouts.length === 0 ? (
             <p className="text-sm text-content-secondary">No payouts yet.</p>
           ) : (
-            <Table
-              columns={payoutColumns}
-              data={payouts}
-              keyExtractor={(p) => p.id}
-            />
+            <Table columns={payoutColumns} data={payouts} keyExtractor={(p) => p.id} />
           )}
         </Card>
       </div>

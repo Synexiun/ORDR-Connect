@@ -45,7 +45,8 @@ function mockFetch(response: Partial<Response> & { json?: () => Promise<unknown>
 function getLastFetchCall(): { url: string; init: RequestInit } {
   const calls = vi.mocked(fetch).mock.calls;
   const lastCall = calls[calls.length - 1];
-  return { url: lastCall![0] as string, init: lastCall![1] as RequestInit };
+  if (!lastCall) throw new Error('No fetch calls recorded');
+  return { url: lastCall[0] as string, init: lastCall[1] as RequestInit };
 }
 
 // --- Tests ---
@@ -68,7 +69,7 @@ describe('API Client', () => {
     const { init } = getLastFetchCall();
     const headers = init.headers as Record<string, string>;
     expect(headers['X-Request-Id']).toBeDefined();
-    expect(headers['X-Request-Id']!.length).toBeGreaterThan(0);
+    expect((headers['X-Request-Id'] as string).length).toBeGreaterThan(0);
   });
 
   it('generates unique request IDs per call', async () => {

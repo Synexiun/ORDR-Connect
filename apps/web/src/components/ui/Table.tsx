@@ -73,10 +73,16 @@ export function Table<T>({
                   key={col.key}
                   className={cn(
                     'px-4 py-3 text-xs font-semibold uppercase tracking-wider text-content-secondary',
-                    col.sortable && 'cursor-pointer select-none hover:text-content',
+                    col.sortable === true && 'cursor-pointer select-none hover:text-content',
                     col.className,
                   )}
-                  onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                  onClick={
+                    col.sortable === true
+                      ? () => {
+                          handleSort(col.key);
+                        }
+                      : undefined
+                  }
                   aria-sort={
                     sortKey === col.key
                       ? sortDir === 'asc'
@@ -84,11 +90,11 @@ export function Table<T>({
                         : 'descending'
                       : undefined
                   }
-                  role={col.sortable ? 'columnheader button' : 'columnheader'}
+                  role={col.sortable === true ? 'columnheader button' : 'columnheader'}
                 >
                   <span className="inline-flex items-center gap-1">
                     {col.header}
-                    {col.sortable && sortKey === col.key && (
+                    {col.sortable === true && sortKey === col.key && (
                       <span className="text-content-tertiary" aria-hidden="true">
                         {sortDir === 'asc' ? '\u25B2' : '\u25BC'}
                       </span>
@@ -127,9 +133,15 @@ export function Table<T>({
                   key={keyExtractor(row)}
                   className={cn(
                     'bg-surface-secondary transition-colors',
-                    onRowClick && 'cursor-pointer hover:bg-surface-tertiary/50',
+                    onRowClick !== undefined && 'cursor-pointer hover:bg-surface-tertiary/50',
                   )}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  onClick={
+                    onRowClick !== undefined
+                      ? () => {
+                          onRowClick(row);
+                        }
+                      : undefined
+                  }
                   role={onRowClick ? 'row button' : 'row'}
                   tabIndex={onRowClick ? 0 : undefined}
                   onKeyDown={

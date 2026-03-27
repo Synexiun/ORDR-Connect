@@ -96,7 +96,7 @@ export function Modal({
         <div className="px-6 py-5">{children}</div>
 
         {/* Actions */}
-        {actions && (
+        {actions !== undefined && (
           <div className="flex items-center justify-end gap-3 border-t border-border px-6 py-4">
             {actions}
           </div>

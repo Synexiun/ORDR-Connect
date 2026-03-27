@@ -43,16 +43,14 @@ const mockGet = vi.fn();
 
 vi.mock('../lib/api', () => ({
   apiClient: {
-    get: (...args: unknown[]) => mockGet(...args),
+    get: (...args: unknown[]) => mockGet(...args) as unknown,
   },
 }));
 
 // ─── Helpers ────────────────────────────────────────────────────
 
 function renderComponent(): ReturnType<typeof render> {
-  return render(
-    createElement(BrowserRouter, null, createElement(HealthcareDashboard)),
-  );
+  return render(createElement(BrowserRouter, null, createElement(HealthcareDashboard)));
 }
 
 // ─── Setup / Teardown ────────────────────────────────────────────
@@ -87,7 +85,12 @@ describe('HealthcareDashboard', () => {
   });
 
   it('shows loading spinner initially', () => {
-    mockGet.mockImplementation(() => new Promise(() => { /* never resolves */ }));
+    mockGet.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
     renderComponent();
 
     expect(screen.getByText('Loading healthcare dashboard')).toBeDefined();
@@ -128,7 +131,7 @@ describe('HealthcareDashboard', () => {
       expect(tokens.length).toBeGreaterThan(0);
     });
 
-    const allText = container.textContent ?? '';
+    const allText = container.textContent;
     // No real patient names
     expect(allText).not.toMatch(/John\s+Doe/i);
     expect(allText).not.toMatch(/Jane\s+Smith/i);

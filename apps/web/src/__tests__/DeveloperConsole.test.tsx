@@ -40,18 +40,16 @@ const mockDelete = vi.fn();
 
 vi.mock('../lib/api', () => ({
   apiClient: {
-    get: (...args: unknown[]) => mockGet(...args),
-    post: (...args: unknown[]) => mockPost(...args),
-    delete: (...args: unknown[]) => mockDelete(...args),
+    get: (...args: unknown[]) => mockGet(...args) as unknown,
+    post: (...args: unknown[]) => mockPost(...args) as unknown,
+    delete: (...args: unknown[]) => mockDelete(...args) as unknown,
   },
 }));
 
 // ─── Helpers ────────────────────────────────────────────────────
 
 function renderComponent(): ReturnType<typeof render> {
-  return render(
-    createElement(BrowserRouter, null, createElement(DeveloperConsole)),
-  );
+  return render(createElement(BrowserRouter, null, createElement(DeveloperConsole)));
 }
 
 // ─── Setup / Teardown ────────────────────────────────────────────
@@ -80,7 +78,12 @@ describe('DeveloperConsole', () => {
   });
 
   it('shows loading spinner initially', () => {
-    mockGet.mockImplementation(() => new Promise(() => { /* never resolves */ }));
+    mockGet.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
     renderComponent();
 
     expect(screen.getByText('Loading developer console')).toBeDefined();
@@ -119,11 +122,11 @@ describe('DeveloperConsole', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText('+ New Key')).toBeDefined();
+      expect(screen.getByText('New Key')).toBeDefined();
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('+ New Key'));
+    act(() => {
+      fireEvent.click(screen.getByText('New Key'));
     });
 
     expect(screen.getByText('Create API Key')).toBeDefined();
@@ -135,19 +138,19 @@ describe('DeveloperConsole', () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText('+ New Key')).toBeDefined();
+      expect(screen.getByText('New Key')).toBeDefined();
     });
 
-    await act(async () => {
-      fireEvent.click(screen.getByText('+ New Key'));
+    act(() => {
+      fireEvent.click(screen.getByText('New Key'));
     });
 
     const input = screen.getByPlaceholderText('e.g. Production Key');
-    await act(async () => {
+    act(() => {
       fireEvent.change(input, { target: { value: 'Test Key' } });
     });
 
-    await act(async () => {
+    act(() => {
       fireEvent.click(screen.getByText('Create Key'));
     });
 
@@ -166,7 +169,7 @@ describe('DeveloperConsole', () => {
     });
 
     const revokeButtons = screen.getAllByText('Revoke');
-    await act(async () => {
+    act(() => {
       fireEvent.click(revokeButtons[0]);
     });
 
@@ -234,7 +237,7 @@ describe('DeveloperConsole', () => {
       expect(screen.getByText('Total API Calls')).toBeDefined();
       expect(screen.getByText('Total Errors')).toBeDefined();
       expect(screen.getByText('Calls Today')).toBeDefined();
-      expect(screen.getByText('Errors Today')).toBeDefined();
+      expect(screen.getByText('Active Keys')).toBeDefined();
     });
   });
 

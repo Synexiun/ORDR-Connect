@@ -7,10 +7,11 @@
  * COMPLIANCE: No PHI/PII in event descriptions — metadata only.
  */
 
-import { type ReactNode, useEffect, useRef, useCallback } from 'react';
+import { type ReactNode, type ComponentType, useEffect, useRef, useCallback } from 'react';
 import { Badge } from '../ui/Badge';
 import { cn } from '../../lib/cn';
 import { useActivityFeed, type FeedEvent } from './useActivityFeed';
+import { Bot, ShieldCheck, Mail, Users, ScrollText, AlertTriangle, Settings } from '../icons';
 
 // --- Event type styling ---
 
@@ -26,25 +27,26 @@ function categorize(eventType: string): EventCategory {
   return 'system';
 }
 
-const categoryIcon: Record<EventCategory, string> = {
-  agent: '\u25B2',
-  compliance: '\u25C6',
-  channel: '\u2709',
-  customer: '\u25CF',
-  audit: '\u25A0',
-  hitl: '\u26A0',
-  system: '\u2699',
+const categoryIcon: Record<EventCategory, ComponentType<{ className?: string }>> = {
+  agent: Bot,
+  compliance: ShieldCheck,
+  channel: Mail,
+  customer: Users,
+  audit: ScrollText,
+  hitl: AlertTriangle,
+  system: Settings,
 };
 
-const categoryBadge: Record<EventCategory, 'info' | 'warning' | 'success' | 'danger' | 'neutral'> = {
-  agent: 'info',
-  compliance: 'warning',
-  channel: 'success',
-  customer: 'info',
-  audit: 'neutral',
-  hitl: 'danger',
-  system: 'neutral',
-};
+const categoryBadge: Record<EventCategory, 'info' | 'warning' | 'success' | 'danger' | 'neutral'> =
+  {
+    agent: 'info',
+    compliance: 'warning',
+    channel: 'success',
+    customer: 'info',
+    audit: 'neutral',
+    hitl: 'danger',
+    system: 'neutral',
+  };
 
 // --- Timestamp formatter ---
 
@@ -69,6 +71,7 @@ interface ActivityItemProps {
 
 export function ActivityItem({ event }: ActivityItemProps): ReactNode {
   const category = categorize(event.type);
+  const Icon = categoryIcon[category];
 
   return (
     <div
@@ -80,7 +83,7 @@ export function ActivityItem({ event }: ActivityItemProps): ReactNode {
         className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-tertiary text-xs"
         aria-hidden="true"
       >
-        {categoryIcon[category]}
+        <Icon className="h-3.5 w-3.5" />
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
@@ -89,9 +92,13 @@ export function ActivityItem({ event }: ActivityItemProps): ReactNode {
           </Badge>
           <Badge
             variant={
-              event.severity === 'danger' ? 'danger' :
-              event.severity === 'warning' ? 'warning' :
-              event.severity === 'success' ? 'success' : 'neutral'
+              event.severity === 'danger'
+                ? 'danger'
+                : event.severity === 'warning'
+                  ? 'warning'
+                  : event.severity === 'success'
+                    ? 'success'
+                    : 'neutral'
             }
             size="sm"
             dot
@@ -141,7 +148,10 @@ export function ActivityFeed({
       <div className="flex items-center justify-between pb-2">
         <div className="flex items-center gap-2">
           {isPolling && (
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
+            <span
+              className="h-2 w-2 animate-pulse rounded-full bg-emerald-400"
+              aria-hidden="true"
+            />
           )}
           <span className="text-2xs text-content-tertiary">
             {events.length} event{events.length !== 1 ? 's' : ''}
@@ -157,13 +167,9 @@ export function ActivityFeed({
         aria-live="polite"
       >
         {events.length === 0 ? (
-          <p className="py-8 text-center text-sm text-content-secondary">
-            No recent activity
-          </p>
+          <p className="py-8 text-center text-sm text-content-secondary">No recent activity</p>
         ) : (
-          events.map((event) => (
-            <ActivityItem key={event.id} event={event} />
-          ))
+          events.map((event) => <ActivityItem key={event.id} event={event} />)
         )}
       </div>
     </div>
