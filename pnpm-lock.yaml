@@ -120,6 +120,9 @@ importers:
       '@ordr/graph':
         specifier: workspace:*
         version: link:../../packages/graph
+      '@ordr/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       hono:
         specifier: ^4.6.0
         version: 4.12.9
@@ -516,6 +519,19 @@ importers:
       zod:
         specifier: ^3.23.0
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/kernel:
+    dependencies:
+      '@noble/ed25519':
+        specifier: ^2.2.3
+        version: 2.3.0
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -1603,6 +1619,9 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@noble/ed25519@2.3.0':
+    resolution: {integrity: sha512-M7dvXL2B92/M7dw9+gzuydL8qn/jiqNHaoR3Q+cb1q1GHV7uwE17WCyFMG+Y+TZb5izcaXk5TdJRrDUxHXL78A==}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -4537,6 +4556,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@noble/ed25519@2.3.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:

@@ -27,6 +27,7 @@
     "@ordr/graph": "workspace:*",
     "@ordr/analytics": "workspace:*",
     "@ordr/agent-runtime": "workspace:*",
+    "@ordr/kernel": "workspace:*",
     "zod": "^3.23.0"
   },
   "devDependencies": {
