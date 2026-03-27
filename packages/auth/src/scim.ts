@@ -106,31 +106,41 @@ export interface SCIMUserRecord {
 }
 
 export interface UserStore {
-  create(tenantId: string, user: {
-    readonly email: string;
-    readonly name: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly externalId: string;
-  }): Promise<SCIMUserRecord>;
+  create(
+    tenantId: string,
+    user: {
+      readonly email: string;
+      readonly name: string;
+      readonly firstName: string;
+      readonly lastName: string;
+      readonly externalId: string;
+    },
+  ): Promise<SCIMUserRecord>;
 
   getById(tenantId: string, userId: string): Promise<SCIMUserRecord | null>;
 
   getByExternalId(tenantId: string, externalId: string): Promise<SCIMUserRecord | null>;
 
-  list(tenantId: string, options?: {
-    readonly startIndex?: number;
-    readonly count?: number;
-    readonly filter?: string;
-  }): Promise<{ readonly users: readonly SCIMUserRecord[]; readonly totalCount: number }>;
+  list(
+    tenantId: string,
+    options?: {
+      readonly startIndex?: number;
+      readonly count?: number;
+      readonly filter?: string;
+    },
+  ): Promise<{ readonly users: readonly SCIMUserRecord[]; readonly totalCount: number }>;
 
-  update(tenantId: string, userId: string, fields: Partial<{
-    readonly email: string;
-    readonly name: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly active: boolean;
-  }>): Promise<SCIMUserRecord | null>;
+  update(
+    tenantId: string,
+    userId: string,
+    fields: Partial<{
+      readonly email: string;
+      readonly name: string;
+      readonly firstName: string;
+      readonly lastName: string;
+      readonly active: boolean;
+    }>,
+  ): Promise<SCIMUserRecord | null>;
 
   deactivate(tenantId: string, userId: string): Promise<void>;
 }
@@ -147,19 +157,26 @@ export interface SCIMGroupRecord {
 }
 
 export interface GroupStore {
-  create(tenantId: string, group: {
-    readonly displayName: string;
-    readonly members: readonly string[];
-  }): Promise<SCIMGroupRecord>;
+  create(
+    tenantId: string,
+    group: {
+      readonly displayName: string;
+      readonly members: readonly string[];
+    },
+  ): Promise<SCIMGroupRecord>;
 
   getById(tenantId: string, groupId: string): Promise<SCIMGroupRecord | null>;
 
   list(tenantId: string): Promise<readonly SCIMGroupRecord[]>;
 
-  update(tenantId: string, groupId: string, fields: Partial<{
-    readonly displayName: string;
-    readonly members: readonly string[];
-  }>): Promise<SCIMGroupRecord | null>;
+  update(
+    tenantId: string,
+    groupId: string,
+    fields: Partial<{
+      readonly displayName: string;
+      readonly members: readonly string[];
+    }>,
+  ): Promise<SCIMGroupRecord | null>;
 }
 
 // ─── Session Revoker Interface (DI) ──────────────────────────────
@@ -222,13 +239,16 @@ export class InMemoryUserStore implements UserStore {
   private readonly users = new Map<string, SCIMUserRecord>();
   private counter = 0;
 
-  async create(tenantId: string, user: {
-    readonly email: string;
-    readonly name: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly externalId: string;
-  }): Promise<SCIMUserRecord> {
+  create(
+    tenantId: string,
+    user: {
+      readonly email: string;
+      readonly name: string;
+      readonly firstName: string;
+      readonly lastName: string;
+      readonly externalId: string;
+    },
+  ): Promise<SCIMUserRecord> {
     this.counter += 1;
     const id = `scim-user-${String(this.counter)}`;
     const now = new Date();
@@ -245,34 +265,38 @@ export class InMemoryUserStore implements UserStore {
       updatedAt: now,
     };
     this.users.set(`${tenantId}:${id}`, record);
-    return record;
+    return Promise.resolve(record);
   }
 
-  async getById(tenantId: string, userId: string): Promise<SCIMUserRecord | null> {
-    return this.users.get(`${tenantId}:${userId}`) ?? null;
+  getById(tenantId: string, userId: string): Promise<SCIMUserRecord | null> {
+    return Promise.resolve(this.users.get(`${tenantId}:${userId}`) ?? null);
   }
 
-  async getByExternalId(tenantId: string, externalId: string): Promise<SCIMUserRecord | null> {
+  getByExternalId(tenantId: string, externalId: string): Promise<SCIMUserRecord | null> {
     for (const user of this.users.values()) {
       if (user.tenantId === tenantId && user.externalId === externalId) {
-        return user;
+        return Promise.resolve(user);
       }
     }
-    return null;
+    return Promise.resolve(null);
   }
 
-  async list(tenantId: string, options?: {
-    readonly startIndex?: number;
-    readonly count?: number;
-    readonly filter?: string;
-  }): Promise<{ readonly users: readonly SCIMUserRecord[]; readonly totalCount: number }> {
+  list(
+    tenantId: string,
+    options?: {
+      readonly startIndex?: number;
+      readonly count?: number;
+      readonly filter?: string;
+    },
+  ): Promise<{ readonly users: readonly SCIMUserRecord[]; readonly totalCount: number }> {
     let allUsers = Array.from(this.users.values()).filter((u) => u.tenantId === tenantId);
 
     // Basic filter support: userName eq "value"
-    if (options?.filter) {
+    if (options?.filter !== undefined && options.filter.length > 0) {
       const match = /^userName\s+eq\s+"([^"]+)"$/i.exec(options.filter);
-      if (match?.[1]) {
-        const filterValue = match[1];
+      const matchValue = match?.[1];
+      if (matchValue !== undefined && matchValue.length > 0) {
+        const filterValue = matchValue;
         allUsers = allUsers.filter((u) => u.email === filterValue);
       }
     }
@@ -283,19 +307,23 @@ export class InMemoryUserStore implements UserStore {
     const startOffset = Math.max(0, startIndex - 1);
     const paged = allUsers.slice(startOffset, startOffset + count);
 
-    return { users: paged, totalCount };
+    return Promise.resolve({ users: paged, totalCount });
   }
 
-  async update(tenantId: string, userId: string, fields: Partial<{
-    readonly email: string;
-    readonly name: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly active: boolean;
-  }>): Promise<SCIMUserRecord | null> {
+  update(
+    tenantId: string,
+    userId: string,
+    fields: Partial<{
+      readonly email: string;
+      readonly name: string;
+      readonly firstName: string;
+      readonly lastName: string;
+      readonly active: boolean;
+    }>,
+  ): Promise<SCIMUserRecord | null> {
     const key = `${tenantId}:${userId}`;
     const existing = this.users.get(key);
-    if (!existing) return null;
+    if (!existing) return Promise.resolve(null);
 
     const updated: SCIMUserRecord = {
       ...existing,
@@ -303,15 +331,16 @@ export class InMemoryUserStore implements UserStore {
       updatedAt: new Date(),
     };
     this.users.set(key, updated);
-    return updated;
+    return Promise.resolve(updated);
   }
 
-  async deactivate(tenantId: string, userId: string): Promise<void> {
+  deactivate(tenantId: string, userId: string): Promise<void> {
     const key = `${tenantId}:${userId}`;
     const existing = this.users.get(key);
     if (existing) {
       this.users.set(key, { ...existing, active: false, updatedAt: new Date() });
     }
+    return Promise.resolve();
   }
 }
 
@@ -319,10 +348,13 @@ export class InMemoryGroupStore implements GroupStore {
   private readonly groups = new Map<string, SCIMGroupRecord>();
   private counter = 0;
 
-  async create(tenantId: string, group: {
-    readonly displayName: string;
-    readonly members: readonly string[];
-  }): Promise<SCIMGroupRecord> {
+  create(
+    tenantId: string,
+    group: {
+      readonly displayName: string;
+      readonly members: readonly string[];
+    },
+  ): Promise<SCIMGroupRecord> {
     this.counter += 1;
     const id = `scim-group-${String(this.counter)}`;
     const now = new Date();
@@ -335,30 +367,34 @@ export class InMemoryGroupStore implements GroupStore {
       updatedAt: now,
     };
     this.groups.set(`${tenantId}:${id}`, record);
-    return record;
+    return Promise.resolve(record);
   }
 
-  async getById(tenantId: string, groupId: string): Promise<SCIMGroupRecord | null> {
-    return this.groups.get(`${tenantId}:${groupId}`) ?? null;
+  getById(tenantId: string, groupId: string): Promise<SCIMGroupRecord | null> {
+    return Promise.resolve(this.groups.get(`${tenantId}:${groupId}`) ?? null);
   }
 
-  async list(tenantId: string): Promise<readonly SCIMGroupRecord[]> {
+  list(tenantId: string): Promise<readonly SCIMGroupRecord[]> {
     const results: SCIMGroupRecord[] = [];
     for (const group of this.groups.values()) {
       if (group.tenantId === tenantId) {
         results.push(group);
       }
     }
-    return results;
+    return Promise.resolve(results);
   }
 
-  async update(tenantId: string, groupId: string, fields: Partial<{
-    readonly displayName: string;
-    readonly members: readonly string[];
-  }>): Promise<SCIMGroupRecord | null> {
+  update(
+    tenantId: string,
+    groupId: string,
+    fields: Partial<{
+      readonly displayName: string;
+      readonly members: readonly string[];
+    }>,
+  ): Promise<SCIMGroupRecord | null> {
     const key = `${tenantId}:${groupId}`;
     const existing = this.groups.get(key);
-    if (!existing) return null;
+    if (!existing) return Promise.resolve(null);
 
     const updated: SCIMGroupRecord = {
       ...existing,
@@ -366,7 +402,7 @@ export class InMemoryGroupStore implements GroupStore {
       updatedAt: new Date(),
     };
     this.groups.set(key, updated);
-    return updated;
+    return Promise.resolve(updated);
   }
 }
 
@@ -377,12 +413,13 @@ export class InMemorySCIMTokenStore implements SCIMTokenStore {
     this.tokens.set(record.tokenHash, record);
   }
 
-  async getByHash(tokenHash: string): Promise<SCIMTokenRecord | null> {
-    return this.tokens.get(tokenHash) ?? null;
+  getByHash(tokenHash: string): Promise<SCIMTokenRecord | null> {
+    return Promise.resolve(this.tokens.get(tokenHash) ?? null);
   }
 
-  async updateLastUsed(_tokenId: string): Promise<void> {
+  updateLastUsed(_tokenId: string): Promise<void> {
     // No-op for testing
+    return Promise.resolve();
   }
 }
 
@@ -412,10 +449,7 @@ export class SCIMHandler {
    * Creates a user from a SCIM payload.
    * Maps SCIM attributes to ORDR user fields.
    */
-  async handleCreateUser(
-    tenantId: string,
-    scimUser: SCIMUser,
-  ): Promise<Result<SCIMUserResponse, AppError>> {
+  async handleCreateUser(tenantId: string, scimUser: SCIMUser): Promise<Result<SCIMUserResponse>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -428,7 +462,9 @@ export class SCIMHandler {
     if (scimUser.externalId) {
       const existing = await this.userStore.getByExternalId(tenantId, scimUser.externalId);
       if (existing) {
-        return err(new AppError('User with this externalId already exists', ERROR_CODES.CONFLICT, 409));
+        return err(
+          new AppError('User with this externalId already exists', ERROR_CODES.CONFLICT, 409),
+        );
       }
     }
 
@@ -466,7 +502,7 @@ export class SCIMHandler {
     tenantId: string,
     userId: string,
     scimUser: SCIMUser,
-  ): Promise<Result<SCIMUserResponse, AppError>> {
+  ): Promise<Result<SCIMUserResponse>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -511,10 +547,7 @@ export class SCIMHandler {
    * Deactivates a user (NOT delete — soft deactivate for audit compliance).
    * Revokes ALL active sessions immediately.
    */
-  async handleDeactivateUser(
-    tenantId: string,
-    userId: string,
-  ): Promise<Result<void, AppError>> {
+  async handleDeactivateUser(tenantId: string, userId: string): Promise<Result<void>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -554,16 +587,17 @@ export class SCIMHandler {
     filter?: string,
     startIndex?: number,
     count?: number,
-  ): Promise<Result<SCIMListResponse, AppError>> {
+  ): Promise<Result<SCIMListResponse>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
 
-    const result = await this.userStore.list(tenantId, {
+    const opts = {
       startIndex: startIndex ?? 1,
       count: count ?? 100,
-      filter,
-    });
+      ...(filter !== undefined ? { filter } : {}),
+    };
+    const result = await this.userStore.list(tenantId, opts);
 
     const response: SCIMListResponse = {
       schemas: [SCIM_SCHEMAS.LIST],
@@ -579,10 +613,7 @@ export class SCIMHandler {
   /**
    * Gets a single user by ID.
    */
-  async handleGetUser(
-    tenantId: string,
-    userId: string,
-  ): Promise<Result<SCIMUserResponse, AppError>> {
+  async handleGetUser(tenantId: string, userId: string): Promise<Result<SCIMUserResponse>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -601,7 +632,7 @@ export class SCIMHandler {
   async handleCreateGroup(
     tenantId: string,
     scimGroup: SCIMGroup,
-  ): Promise<Result<SCIMGroupResponse, AppError>> {
+  ): Promise<Result<SCIMGroupResponse>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -640,7 +671,7 @@ export class SCIMHandler {
     tenantId: string,
     groupId: string,
     scimGroup: SCIMGroup,
-  ): Promise<Result<SCIMGroupResponse, AppError>> {
+  ): Promise<Result<SCIMGroupResponse>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }

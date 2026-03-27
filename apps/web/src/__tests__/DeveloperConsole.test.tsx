@@ -170,7 +170,8 @@ describe('DeveloperConsole', () => {
 
     const revokeButtons = screen.getAllByText('Revoke');
     act(() => {
-      fireEvent.click(revokeButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(revokeButtons[0]!);
     });
 
     await waitFor(() => {

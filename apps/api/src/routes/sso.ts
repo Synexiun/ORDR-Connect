@@ -17,12 +17,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { SSOManager } from '@ordr/auth';
 import type { AuditLogger } from '@ordr/audit';
-import {
-  AuthenticationError,
-  ValidationError,
-} from '@ordr/core';
+import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -57,12 +55,12 @@ const ssoRouter = new Hono<Env>();
 
 // ─── GET /authorize ───────────────────────────────────────────────
 
-ssoRouter.get('/authorize', async (c) => {
+ssoRouter.get('/authorize', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SSO routes not configured');
   }
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const query = authorizeQuerySchema.safeParse({
     connectionId: c.req.query('connectionId'),
@@ -89,15 +87,15 @@ ssoRouter.get('/authorize', async (c) => {
   // For the authorize flow, we derive tenantId from the connection context.
   // In production, a tenant lookup is done via connection ID mapping.
   // Here, we pass a placeholder that the SSOManager resolves.
-  const tenantId = c.req.query('tenantId') ?? '';
-  if (!tenantId) {
+  const tenantId = c.req.query('tenantId');
+  if (tenantId === undefined || tenantId.length === 0) {
     throw new ValidationError('tenantId query parameter is required', {}, requestId);
   }
 
   const result = await deps.ssoManager.getAuthorizationUrl(tenantId, connectionId, state);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.redirect(result.data, 302);
@@ -105,24 +103,24 @@ ssoRouter.get('/authorize', async (c) => {
 
 // ─── GET /callback ────────────────────────────────────────────────
 
-ssoRouter.get('/callback', async (c) => {
+ssoRouter.get('/callback', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SSO routes not configured');
   }
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const code = c.req.query('code');
   const state = c.req.query('state');
 
-  if (!code || !state) {
+  if (code === undefined || state === undefined) {
     throw new AuthenticationError('Missing code or state parameter', requestId);
   }
 
   const result = await deps.ssoManager.handleCallback(code, state);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   // Audit log successful SSO authentication
@@ -158,21 +156,21 @@ ssoRouter.get('/callback', async (c) => {
 
 // ─── GET /connections ─────────────────────────────────────────────
 
-ssoRouter.get('/connections', requireAuth(), async (c) => {
+ssoRouter.get('/connections', requireAuth(), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SSO routes not configured');
   }
 
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 
   const result = await deps.ssoManager.getSSOConnections(ctx.tenantId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -187,17 +185,18 @@ ssoRouter.post(
   '/connections',
   requireAuth(),
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] SSO routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const body = await c.req.json().catch(() => null);
     const parsed = createConnectionSchema.safeParse(body);
 
@@ -218,7 +217,7 @@ ssoRouter.post(
     const result = await deps.ssoManager.createSSOConnection(ctx.tenantId, parsed.data);
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     // Audit log
@@ -238,10 +237,13 @@ ssoRouter.post(
       timestamp: new Date(),
     });
 
-    return c.json({
-      success: true as const,
-      data: result.data,
-    }, 201);
+    return c.json(
+      {
+        success: true as const,
+        data: result.data,
+      },
+      201,
+    );
   },
 );
 
@@ -251,12 +253,12 @@ ssoRouter.delete(
   '/connections/:id',
   requireAuth(),
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] SSO routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
@@ -266,7 +268,7 @@ ssoRouter.delete(
     const result = await deps.ssoManager.deleteSSOConnection(ctx.tenantId, connectionId);
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     // Audit log

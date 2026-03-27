@@ -18,12 +18,7 @@ import type { FieldEncryptor } from '@ordr/crypto';
 import type { AuditLogger } from '@ordr/audit';
 import type { EventProducer } from '@ordr/events';
 import { createEventEnvelope, TOPICS, EventType } from '@ordr/events';
-import {
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-  PAGINATION,
-} from '@ordr/core';
+import { ValidationError, NotFoundError, AuthorizationError, PAGINATION } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -42,7 +37,9 @@ const createCustomerSchema = z.object({
   email: z.string().email().max(255).optional(),
   phone: z.string().max(50).optional(),
   metadata: z.record(z.unknown()).optional(),
-  lifecycleStage: z.enum(['lead', 'qualified', 'opportunity', 'customer', 'churning', 'churned']).optional(),
+  lifecycleStage: z
+    .enum(['lead', 'qualified', 'opportunity', 'customer', 'churning', 'churned'])
+    .optional(),
   assignedUserId: z.string().uuid().optional(),
 });
 
@@ -52,20 +49,26 @@ const updateCustomerSchema = z.object({
   phone: z.string().max(50).nullable().optional(),
   metadata: z.record(z.unknown()).optional(),
   status: z.enum(['active', 'inactive', 'churned']).optional(),
-  lifecycleStage: z.enum(['lead', 'qualified', 'opportunity', 'customer', 'churning', 'churned']).optional(),
+  lifecycleStage: z
+    .enum(['lead', 'qualified', 'opportunity', 'customer', 'churning', 'churned'])
+    .optional(),
   healthScore: z.number().int().min(0).max(100).optional(),
   assignedUserId: z.string().uuid().nullable().optional(),
 });
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(PAGINATION.DEFAULT_PAGE),
-  pageSize: z.coerce.number().int()
+  pageSize: z.coerce
+    .number()
+    .int()
     .min(PAGINATION.MIN_PAGE_SIZE)
     .max(PAGINATION.MAX_PAGE_SIZE)
     .default(PAGINATION.DEFAULT_PAGE_SIZE),
   status: z.enum(['active', 'inactive', 'churned']).optional(),
   type: z.enum(['individual', 'company']).optional(),
-  lifecycleStage: z.enum(['lead', 'qualified', 'opportunity', 'customer', 'churning', 'churned']).optional(),
+  lifecycleStage: z
+    .enum(['lead', 'qualified', 'opportunity', 'customer', 'churning', 'churned'])
+    .optional(),
   search: z.string().max(255).optional(),
 });
 
@@ -92,7 +95,10 @@ interface CustomerDependencies {
   readonly fieldEncryptor: FieldEncryptor;
   readonly auditLogger: AuditLogger;
   readonly eventProducer: EventProducer;
-  readonly findCustomerById: (tenantId: string, customerId: string) => Promise<CustomerRecord | null>;
+  readonly findCustomerById: (
+    tenantId: string,
+    customerId: string,
+  ) => Promise<CustomerRecord | null>;
   readonly listCustomers: (
     tenantId: string,
     filters: {
@@ -104,8 +110,15 @@ interface CustomerDependencies {
       readonly search?: string;
     },
   ) => Promise<{ readonly data: CustomerRecord[]; readonly total: number }>;
-  readonly createCustomer: (tenantId: string, data: Record<string, unknown>) => Promise<CustomerRecord>;
-  readonly updateCustomer: (tenantId: string, customerId: string, data: Record<string, unknown>) => Promise<CustomerRecord | null>;
+  readonly createCustomer: (
+    tenantId: string,
+    data: Record<string, unknown>,
+  ) => Promise<CustomerRecord>;
+  readonly updateCustomer: (
+    tenantId: string,
+    customerId: string,
+    data: Record<string, unknown>,
+  ) => Promise<CustomerRecord | null>;
   readonly softDeleteCustomer: (tenantId: string, customerId: string) => Promise<boolean>;
 }
 
@@ -146,7 +159,10 @@ function encryptPiiFields(
   return encrypted;
 }
 
-function ensureTenantContext(c: { get(key: 'tenantContext'): TenantContext | undefined; get(key: 'requestId'): string }): TenantContext {
+function ensureTenantContext(c: {
+  get(key: 'tenantContext'): TenantContext | undefined;
+  get(key: 'requestId'): string;
+}): TenantContext {
   const ctx = c.get('tenantContext');
   if (!ctx) {
     throw new AuthorizationError('Tenant context required');
@@ -167,7 +183,7 @@ customersRouter.get('/', requirePermissionMiddleware('customers', 'read'), async
   if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Parse and validate query params
   const queryParsed = listQuerySchema.safeParse({
@@ -194,12 +210,19 @@ customersRouter.get('/', requirePermissionMiddleware('customers', 'read'), async
   }
 
   const filters = queryParsed.data;
-  const result = await deps.listCustomers(ctx.tenantId, filters);
+  const result = await deps.listCustomers(ctx.tenantId, {
+    page: filters.page,
+    pageSize: filters.pageSize,
+    ...(filters.status !== undefined ? { status: filters.status } : {}),
+    ...(filters.type !== undefined ? { type: filters.type } : {}),
+    ...(filters.lifecycleStage !== undefined ? { lifecycleStage: filters.lifecycleStage } : {}),
+    ...(filters.search !== undefined ? { search: filters.search } : {}),
+  });
 
   // Decrypt PII fields for authorized users
-  const decryptedData = result.data.map((record) =>
-    decryptCustomer(record, deps!.fieldEncryptor),
-  );
+
+  const d = deps;
+  const decryptedData = result.data.map((record) => decryptCustomer(record, d.fieldEncryptor));
 
   return c.json({
     success: true as const,
@@ -219,7 +242,7 @@ customersRouter.get('/:id', requirePermissionMiddleware('customers', 'read'), as
   if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const customerId = c.req.param('id');
 
   const customer = await deps.findCustomerById(ctx.tenantId, customerId);
@@ -242,9 +265,10 @@ customersRouter.post('/', requirePermissionMiddleware('customers', 'create'), as
   if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = createCustomerSchema.safeParse(body);
   if (!parsed.success) {
@@ -324,10 +348,11 @@ customersRouter.patch('/:id', requirePermissionMiddleware('customers', 'update')
   if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const customerId = c.req.param('id');
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = updateCustomerSchema.safeParse(body);
   if (!parsed.success) {
@@ -413,7 +438,7 @@ customersRouter.delete('/:id', requirePermissionMiddleware('customers', 'delete'
   if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const customerId = c.req.param('id');
 
   // Check existence (tenant-isolated)

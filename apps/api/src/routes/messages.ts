@@ -21,7 +21,7 @@ import type { AuditLogger } from '@ordr/audit';
 import type { EventProducer } from '@ordr/events';
 import { createEventEnvelope, TOPICS, EventType } from '@ordr/events';
 import type { ConsentManager, ConsentStore, SmsProvider, EmailProvider } from '@ordr/channels';
-import type { MessageStatus, Channel } from '@ordr/channels';
+import type { Channel } from '@ordr/channels';
 import type { ComplianceGate } from '@ordr/compliance';
 import {
   ValidationError,
@@ -38,13 +38,27 @@ import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js'
 
 const listMessagesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(PAGINATION.DEFAULT_PAGE),
-  pageSize: z.coerce.number().int()
+  pageSize: z.coerce
+    .number()
+    .int()
     .min(PAGINATION.MIN_PAGE_SIZE)
     .max(PAGINATION.MAX_PAGE_SIZE)
     .default(PAGINATION.DEFAULT_PAGE_SIZE),
   customerId: z.string().uuid().optional(),
   channel: z.enum(['sms', 'email', 'voice', 'whatsapp']).optional(),
-  status: z.enum(['pending', 'queued', 'sent', 'delivered', 'failed', 'bounced', 'opted_out', 'retrying', 'dlq']).optional(),
+  status: z
+    .enum([
+      'pending',
+      'queued',
+      'sent',
+      'delivered',
+      'failed',
+      'bounced',
+      'opted_out',
+      'retrying',
+      'dlq',
+    ])
+    .optional(),
   direction: z.enum(['inbound', 'outbound']).optional(),
 });
 
@@ -79,7 +93,10 @@ interface MessageDependencies {
   readonly complianceGate: ComplianceGate;
   readonly smsProvider: SmsProvider;
   readonly emailProvider: EmailProvider;
-  readonly findMessageById: (tenantId: string, messageId: string) => Promise<MessageMetadata | null>;
+  readonly findMessageById: (
+    tenantId: string,
+    messageId: string,
+  ) => Promise<MessageMetadata | null>;
   readonly listMessages: (
     tenantId: string,
     filters: {
@@ -115,7 +132,10 @@ export function configureMessageRoutes(dependencies: MessageDependencies): void 
 
 // ---- Helpers ----------------------------------------------------------------
 
-function ensureTenantContext(c: { get(key: 'tenantContext'): TenantContext | undefined; get(key: 'requestId'): string }): TenantContext {
+function ensureTenantContext(c: {
+  get(key: 'tenantContext'): TenantContext | undefined;
+  get(key: 'requestId'): string;
+}): TenantContext {
   const ctx = c.get('tenantContext');
   if (!ctx) {
     throw new AuthorizationError('Tenant context required');
@@ -165,240 +185,235 @@ messagesRouter.use('*', requireAuth());
 
 // ---- GET / — list messages for tenant (metadata only) ----------------------
 
-messagesRouter.get(
-  '/',
-  requirePermissionMiddleware('messages', 'read'),
-  async (c) => {
-    if (!deps) throw new Error('[ORDR:API] Message routes not configured');
+messagesRouter.get('/', requirePermissionMiddleware('messages', 'read'), async (c) => {
+  if (!deps) throw new Error('[ORDR:API] Message routes not configured');
 
-    const ctx = ensureTenantContext(c);
-    const requestId = c.get('requestId') ?? 'unknown';
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
 
-    const queryParsed = listMessagesQuerySchema.safeParse({
-      page: c.req.query('page'),
-      pageSize: c.req.query('pageSize'),
-      customerId: c.req.query('customerId'),
-      channel: c.req.query('channel'),
-      status: c.req.query('status'),
-      direction: c.req.query('direction'),
-    });
+  const queryParsed = listMessagesQuerySchema.safeParse({
+    page: c.req.query('page'),
+    pageSize: c.req.query('pageSize'),
+    customerId: c.req.query('customerId'),
+    channel: c.req.query('channel'),
+    status: c.req.query('status'),
+    direction: c.req.query('direction'),
+  });
 
-    if (!queryParsed.success) {
-      throw new ValidationError(
-        'Invalid query parameters',
-        parseValidationErrors(queryParsed.error.issues),
-        requestId,
-      );
-    }
+  if (!queryParsed.success) {
+    throw new ValidationError(
+      'Invalid query parameters',
+      parseValidationErrors(queryParsed.error.issues),
+      requestId,
+    );
+  }
 
-    const filters = queryParsed.data;
-    const result = await deps.listMessages(ctx.tenantId, filters);
+  const filters = queryParsed.data;
+  const result = await deps.listMessages(ctx.tenantId, {
+    page: filters.page,
+    pageSize: filters.pageSize,
+    ...(filters.customerId !== undefined ? { customerId: filters.customerId } : {}),
+    ...(filters.channel !== undefined ? { channel: filters.channel } : {}),
+    ...(filters.status !== undefined ? { status: filters.status } : {}),
+    ...(filters.direction !== undefined ? { direction: filters.direction } : {}),
+  });
 
-    // SECURITY: Strip content — return metadata only
-    const safeData = result.data.map(toSafeMetadata);
+  // SECURITY: Strip content — return metadata only
+  const safeData = result.data.map(toSafeMetadata);
 
-    return c.json({
-      success: true as const,
-      data: safeData,
-      pagination: {
-        page: filters.page,
-        pageSize: filters.pageSize,
-        total: result.total,
-        totalPages: Math.ceil(result.total / filters.pageSize),
-      },
-    });
-  },
-);
+  return c.json({
+    success: true as const,
+    data: safeData,
+    pagination: {
+      page: filters.page,
+      pageSize: filters.pageSize,
+      total: result.total,
+      totalPages: Math.ceil(result.total / filters.pageSize),
+    },
+  });
+});
 
 // ---- GET /:id — get message detail (metadata only) -------------------------
 
-messagesRouter.get(
-  '/:id',
-  requirePermissionMiddleware('messages', 'read'),
-  async (c) => {
-    if (!deps) throw new Error('[ORDR:API] Message routes not configured');
+messagesRouter.get('/:id', requirePermissionMiddleware('messages', 'read'), async (c) => {
+  if (!deps) throw new Error('[ORDR:API] Message routes not configured');
 
-    const ctx = ensureTenantContext(c);
-    const requestId = c.get('requestId') ?? 'unknown';
-    const messageId = c.req.param('id');
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
+  const messageId = c.req.param('id');
 
-    const message = await deps.findMessageById(ctx.tenantId, messageId);
-    if (!message) {
-      throw new NotFoundError('Message not found', requestId);
-    }
+  const message = await deps.findMessageById(ctx.tenantId, messageId);
+  if (!message) {
+    throw new NotFoundError('Message not found', requestId);
+  }
 
-    // SECURITY: Strip content — return metadata only
-    return c.json({
-      success: true as const,
-      data: toSafeMetadata(message),
-    });
-  },
-);
+  // SECURITY: Strip content — return metadata only
+  return c.json({
+    success: true as const,
+    data: toSafeMetadata(message),
+  });
+});
 
 // ---- POST /send — manual message send (not agent-triggered) ----------------
 
-messagesRouter.post(
-  '/send',
-  requirePermissionMiddleware('messages', 'create'),
-  async (c) => {
-    if (!deps) throw new Error('[ORDR:API] Message routes not configured');
+messagesRouter.post('/send', requirePermissionMiddleware('messages', 'create'), async (c) => {
+  if (!deps) throw new Error('[ORDR:API] Message routes not configured');
 
-    const ctx = ensureTenantContext(c);
-    const requestId = c.get('requestId') ?? 'unknown';
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
 
-    // Validate input
-    const body = await c.req.json().catch(() => null);
-    const parsed = sendMessageSchema.safeParse(body);
-    if (!parsed.success) {
-      throw new ValidationError(
-        'Invalid message send request',
-        parseValidationErrors(parsed.error.issues),
-        requestId,
-      );
-    }
-
-    const { customerId, channel, contentRef } = parsed.data;
-
-    // 1. Consent check — MUST pass before any outbound message
-    const consentResult = await deps.consentManager.verifyConsentForSend(
-      customerId,
-      channel as Channel,
-      deps.consentStore,
+  // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const body = await c.req.json().catch(() => null);
+  const parsed = sendMessageSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(
+      'Invalid message send request',
+      parseValidationErrors(parsed.error.issues),
+      requestId,
     );
+  }
 
-    if (!consentResult.success) {
-      // Audit log consent failure
-      await deps.auditLogger.log({
-        tenantId: ctx.tenantId,
-        eventType: 'compliance.violation',
-        actorType: 'user',
-        actorId: ctx.userId,
-        resource: 'message',
-        resourceId: requestId,
-        action: 'consent_check_failed',
-        details: { customerId, channel },
-        timestamp: new Date(),
-      });
+  const { customerId, channel, contentRef } = parsed.data;
 
-      throw consentResult.error;
-    }
+  // 1. Consent check — MUST pass before any outbound message
+  const consentResult = await deps.consentManager.verifyConsentForSend(
+    customerId,
+    channel as Channel,
+    deps.consentStore,
+  );
 
-    // 2. Compliance gate — MUST pass before any customer-facing action
-    const complianceResult = deps.complianceGate.check(
-      `send_${channel}`,
-      {
-        tenantId: ctx.tenantId,
-        customerId,
-        channel,
-        data: { contentRef },
-        timestamp: new Date(),
-      },
-    );
-
-    if (!complianceResult.allowed) {
-      const violationMessages = complianceResult.violations
-        .map((v) => v.violation?.message ?? 'Unknown violation')
-        .join('; ');
-
-      // Audit log compliance failure
-      await deps.auditLogger.log({
-        tenantId: ctx.tenantId,
-        eventType: 'compliance.violation',
-        actorType: 'user',
-        actorId: ctx.userId,
-        resource: 'message',
-        resourceId: requestId,
-        action: 'compliance_check_failed',
-        details: { customerId, channel, violations: violationMessages },
-        timestamp: new Date(),
-      });
-
-      throw new ComplianceViolationError(
-        `Message blocked by compliance gate: ${violationMessages}`,
-        'SOC2',
-      );
-    }
-
-    // 3. Resolve customer contact info and retrieve content
-    const contactInfo = await deps.getCustomerContact(ctx.tenantId, customerId, channel);
-    if (!contactInfo) {
-      throw new NotFoundError('Customer contact information not found for channel', requestId);
-    }
-
-    // 4. Create message record
-    const messageId = randomUUID();
-    const messageRecord = await deps.createMessage({
-      id: messageId,
-      tenantId: ctx.tenantId,
-      customerId,
-      channel,
-      direction: 'outbound',
-      status: 'pending',
-      contentRef,
-    });
-
-    // 5. Send via appropriate channel provider
-    let sendSuccess = false;
-    if (channel === 'sms') {
-      const sendResult = await deps.smsProvider.send(contactInfo.contact, contactInfo.contentBody);
-      sendSuccess = sendResult.success;
-    } else if (channel === 'email') {
-      const sendResult = await deps.emailProvider.send(
-        contactInfo.contact,
-        'Message from ORDR-Connect',
-        contactInfo.contentBody,
-      );
-      sendSuccess = sendResult.success;
-    }
-
-    // 6. Audit log
+  if (!consentResult.success) {
+    // Audit log consent failure
     await deps.auditLogger.log({
       tenantId: ctx.tenantId,
-      eventType: 'data.created',
+      eventType: 'compliance.violation',
       actorType: 'user',
       actorId: ctx.userId,
       resource: 'message',
-      resourceId: messageId,
-      action: 'send',
-      details: {
-        customerId,
-        channel,
-        success: sendSuccess,
-      },
+      resourceId: requestId,
+      action: 'consent_check_failed',
+      details: { customerId, channel },
       timestamp: new Date(),
     });
 
-    // 7. Publish event
-    const event = createEventEnvelope(
-      EventType.INTERACTION_LOGGED,
-      ctx.tenantId,
-      {
-        interactionId: messageId,
-        customerId,
-        channel,
-        direction: 'outbound',
-        type: 'message',
-      },
-      {
-        correlationId: requestId,
-        userId: ctx.userId,
-        source: 'api',
-      },
-    );
+    throw consentResult.error;
+  }
 
-    await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, event).catch((publishErr: unknown) => {
+  // 2. Compliance gate — MUST pass before any customer-facing action
+  const complianceResult = deps.complianceGate.check(`send_${channel}`, {
+    tenantId: ctx.tenantId,
+    customerId,
+    channel,
+    data: { contentRef },
+    timestamp: new Date(),
+  });
+
+  if (!complianceResult.allowed) {
+    const violationMessages = complianceResult.violations
+      .map((v) => v.violation?.message ?? 'Unknown violation')
+      .join('; ');
+
+    // Audit log compliance failure
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'compliance.violation',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'message',
+      resourceId: requestId,
+      action: 'compliance_check_failed',
+      details: { customerId, channel, violations: violationMessages },
+      timestamp: new Date(),
+    });
+
+    throw new ComplianceViolationError(
+      `Message blocked by compliance gate: ${violationMessages}`,
+      'SOC2',
+    );
+  }
+
+  // 3. Resolve customer contact info and retrieve content
+  const contactInfo = await deps.getCustomerContact(ctx.tenantId, customerId, channel);
+  if (!contactInfo) {
+    throw new NotFoundError('Customer contact information not found for channel', requestId);
+  }
+
+  // 4. Create message record
+  const messageId = randomUUID();
+  const messageRecord = await deps.createMessage({
+    id: messageId,
+    tenantId: ctx.tenantId,
+    customerId,
+    channel,
+    direction: 'outbound',
+    status: 'pending',
+    contentRef,
+  });
+
+  // 5. Send via appropriate channel provider
+  let sendSuccess = false;
+  if (channel === 'sms') {
+    const sendResult = await deps.smsProvider.send(contactInfo.contact, contactInfo.contentBody);
+    sendSuccess = sendResult.success;
+  } else {
+    const sendResult = await deps.emailProvider.send(
+      contactInfo.contact,
+      'Message from ORDR-Connect',
+      contactInfo.contentBody,
+    );
+    sendSuccess = sendResult.success;
+  }
+
+  // 6. Audit log
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'data.created',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'message',
+    resourceId: messageId,
+    action: 'send',
+    details: {
+      customerId,
+      channel,
+      success: sendSuccess,
+    },
+    timestamp: new Date(),
+  });
+
+  // 7. Publish event
+  const event = createEventEnvelope(
+    EventType.INTERACTION_LOGGED,
+    ctx.tenantId,
+    {
+      interactionId: messageId,
+      customerId,
+      channel,
+      direction: 'outbound',
+      type: 'message',
+    },
+    {
+      correlationId: requestId,
+      userId: ctx.userId,
+      source: 'api',
+    },
+  );
+
+  await deps.eventProducer
+    .publish(TOPICS.INTERACTION_EVENTS, event)
+    .catch((publishErr: unknown) => {
       console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
     });
 
-    // SECURITY: Return metadata only — NO content
-    return c.json(
-      {
-        success: true as const,
-        data: toSafeMetadata(messageRecord),
-      },
-      201,
-    );
-  },
-);
+  // SECURITY: Return metadata only — NO content
+  return c.json(
+    {
+      success: true as const,
+      data: toSafeMetadata(messageRecord),
+    },
+    201,
+  );
+});
 
 export { messagesRouter };

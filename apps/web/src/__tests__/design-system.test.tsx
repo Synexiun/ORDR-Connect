@@ -357,11 +357,11 @@ describe('Tabs component', () => {
 describe('TabPanel component', () => {
   it('renders children when id matches activeTab', () => {
     render(
-      createElement(
-        TabPanel,
-        { id: 'overview', activeTab: 'overview' },
-        createElement('p', null, 'Panel content'),
-      ),
+      createElement(TabPanel, {
+        id: 'overview',
+        activeTab: 'overview',
+        children: createElement('p', null, 'Panel content'),
+      }),
     );
 
     expect(screen.getByText('Panel content')).toBeDefined();
@@ -369,11 +369,11 @@ describe('TabPanel component', () => {
 
   it('does not render when id does not match activeTab', () => {
     render(
-      createElement(
-        TabPanel,
-        { id: 'details', activeTab: 'overview' },
-        createElement('p', null, 'Hidden content'),
-      ),
+      createElement(TabPanel, {
+        id: 'details',
+        activeTab: 'overview',
+        children: createElement('p', null, 'Hidden content'),
+      }),
     );
 
     expect(screen.queryByText('Hidden content')).toBeNull();
@@ -381,11 +381,11 @@ describe('TabPanel component', () => {
 
   it('sets tabpanel role', () => {
     render(
-      createElement(
-        TabPanel,
-        { id: 'overview', activeTab: 'overview' },
-        createElement('p', null, 'Content'),
-      ),
+      createElement(TabPanel, {
+        id: 'overview',
+        activeTab: 'overview',
+        children: createElement('p', null, 'Content'),
+      }),
     );
 
     expect(screen.getByRole('tabpanel')).toBeDefined();
@@ -393,11 +393,11 @@ describe('TabPanel component', () => {
 
   it('sets aria-labelledby pointing to tab', () => {
     render(
-      createElement(
-        TabPanel,
-        { id: 'overview', activeTab: 'overview' },
-        createElement('p', null, 'Content'),
-      ),
+      createElement(TabPanel, {
+        id: 'overview',
+        activeTab: 'overview',
+        children: createElement('p', null, 'Content'),
+      }),
     );
 
     const panel = screen.getByRole('tabpanel');
@@ -716,7 +716,10 @@ describe('EmptyState component', () => {
 describe('Tooltip component', () => {
   it('renders children', () => {
     render(
-      createElement(Tooltip, { content: 'Hint text' }, createElement('button', null, 'Hover me')),
+      createElement(Tooltip, {
+        content: 'Hint text',
+        children: createElement('button', null, 'Hover me'),
+      }),
     );
 
     expect(screen.getByText('Hover me')).toBeDefined();
@@ -724,7 +727,10 @@ describe('Tooltip component', () => {
 
   it('does not show tooltip content initially', () => {
     render(
-      createElement(Tooltip, { content: 'Hint text' }, createElement('button', null, 'Hover me')),
+      createElement(Tooltip, {
+        content: 'Hint text',
+        children: createElement('button', null, 'Hover me'),
+      }),
     );
 
     expect(screen.queryByRole('tooltip')).toBeNull();
@@ -733,7 +739,10 @@ describe('Tooltip component', () => {
   it('shows tooltip on mouse enter after delay', () => {
     vi.useFakeTimers();
     render(
-      createElement(Tooltip, { content: 'Tip content' }, createElement('button', null, 'Target')),
+      createElement(Tooltip, {
+        content: 'Tip content',
+        children: createElement('button', null, 'Target'),
+      }),
     );
 
     const wrapper = screen.getByText('Target').parentElement as HTMLElement;
@@ -752,7 +761,9 @@ describe('Tooltip component', () => {
 
   it('hides tooltip on mouse leave', () => {
     vi.useFakeTimers();
-    render(createElement(Tooltip, { content: 'Tip' }, createElement('button', null, 'Btn')));
+    render(
+      createElement(Tooltip, { content: 'Tip', children: createElement('button', null, 'Btn') }),
+    );
 
     const wrapper = screen.getByText('Btn').parentElement as HTMLElement;
     fireEvent.mouseEnter(wrapper);
@@ -772,7 +783,10 @@ describe('Tooltip component', () => {
   it('shows tooltip on focus', () => {
     vi.useFakeTimers();
     render(
-      createElement(Tooltip, { content: 'Focus tip' }, createElement('button', null, 'Focusable')),
+      createElement(Tooltip, {
+        content: 'Focus tip',
+        children: createElement('button', null, 'Focusable'),
+      }),
     );
 
     const wrapper = screen.getByText('Focusable').parentElement as HTMLElement;

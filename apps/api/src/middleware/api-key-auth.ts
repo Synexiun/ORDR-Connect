@@ -22,11 +22,7 @@
 import { createMiddleware } from 'hono/factory';
 import { extractApiKeyPrefix, verifyApiKey, isApiKeyExpired } from '@ordr/auth';
 import type { RateLimiter, RateLimitConfig } from '@ordr/auth';
-import {
-  AuthenticationError,
-  RateLimitError,
-  API_KEY_PREFIX,
-} from '@ordr/core';
+import { AuthenticationError, RateLimitError, API_KEY_PREFIX } from '@ordr/core';
 import type { Env } from '../types.js';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -72,11 +68,11 @@ export function requireApiKeyAuth() {
       throw new Error('[ORDR:API] API key auth middleware not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
 
     // 1. Extract API key from Authorization header
     const authHeader = c.req.header('authorization');
-    if (!authHeader) {
+    if (authHeader === undefined || authHeader.length === 0) {
       throw new AuthenticationError('API key required', requestId);
     }
 
@@ -86,7 +82,7 @@ export function requireApiKeyAuth() {
     }
 
     const rawKey = parts[1];
-    if (!rawKey.startsWith(API_KEY_PREFIX)) {
+    if (rawKey === undefined || rawKey.length === 0 || !rawKey.startsWith(API_KEY_PREFIX)) {
       throw new AuthenticationError('Invalid API key format', requestId);
     }
 
@@ -127,17 +123,11 @@ export function requireApiKeyAuth() {
     );
 
     if (!rateLimitResult.allowed) {
-      const retryAfter = Math.ceil(
-        (rateLimitResult.resetAt.getTime() - Date.now()) / 1000,
-      );
+      const retryAfter = Math.ceil((rateLimitResult.resetAt.getTime() - Date.now()) / 1000);
       c.header('Retry-After', String(retryAfter));
       c.header('X-RateLimit-Remaining', '0');
       c.header('X-RateLimit-Reset', rateLimitResult.resetAt.toISOString());
-      throw new RateLimitError(
-        'Rate limit exceeded',
-        retryAfter,
-        requestId,
-      );
+      throw new RateLimitError('Rate limit exceeded', retryAfter, requestId);
     }
 
     // 8. Set rate limit headers

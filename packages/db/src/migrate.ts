@@ -42,10 +42,7 @@ export interface MigrationStatus {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MIGRATIONS_DIR = resolve(
-  fileURLToPath(import.meta.url),
-  '../../migrations',
-);
+const MIGRATIONS_DIR = resolve(fileURLToPath(import.meta.url), '../../migrations');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,9 +101,7 @@ async function getAppliedMigrations(sql: postgres.Sql): Promise<MigrationRecord[
  *   changed, an error is raised (tamper detection).
  * - Each migration runs inside its own transaction.
  */
-export async function runMigrations(
-  connectionUrl: string,
-): Promise<MigrationResult> {
+export async function runMigrations(connectionUrl: string): Promise<MigrationResult> {
   const sql = postgres(connectionUrl, { max: 1 });
   const result: MigrationResult = { applied: [], skipped: [], errors: [] };
 
@@ -117,6 +112,7 @@ export async function runMigrations(
     const migrations = await discoverMigrations();
 
     for (const migration of migrations) {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       const content = await readFile(migration.path, 'utf8');
       const checksum = computeChecksum(content);
 
@@ -138,7 +134,7 @@ export async function runMigrations(
       try {
         await sql.begin(async (tx) => {
           await tx.unsafe(content);
-          await tx`
+          await (tx as unknown as postgres.Sql)`
             INSERT INTO _migrations (name, checksum)
             VALUES (${migration.name}, ${checksum})
           `;
@@ -162,9 +158,7 @@ export async function runMigrations(
 /**
  * Returns the status of all migrations (applied vs pending).
  */
-export async function getMigrationStatus(
-  connectionUrl: string,
-): Promise<MigrationStatus> {
+export async function getMigrationStatus(connectionUrl: string): Promise<MigrationStatus> {
   const sql = postgres(connectionUrl, { max: 1 });
 
   try {
@@ -172,9 +166,7 @@ export async function getMigrationStatus(
     const applied = await getAppliedMigrations(sql);
     const appliedNames = new Set(applied.map((m) => m.name));
     const all = await discoverMigrations();
-    const pending = all
-      .filter((m) => !appliedNames.has(m.name))
-      .map((m) => m.name);
+    const pending = all.filter((m) => !appliedNames.has(m.name)).map((m) => m.name);
 
     return { pending, applied };
   } finally {
@@ -187,13 +179,13 @@ export async function getMigrationStatus(
 // ---------------------------------------------------------------------------
 
 const isDirectRun =
-  process.argv[1] &&
-  (process.argv[1].endsWith('migrate.ts') ||
-    process.argv[1].endsWith('migrate.js'));
+  process.argv[1] !== undefined &&
+  process.argv[1] !== '' &&
+  (process.argv[1].endsWith('migrate.ts') || process.argv[1].endsWith('migrate.js'));
 
 if (isDirectRun) {
   const url = process.env['DATABASE_URL'];
-  if (!url) {
+  if (url === undefined || url.length === 0) {
     console.error('[ORDR:DB] DATABASE_URL is required');
     process.exit(1);
   }
@@ -202,24 +194,26 @@ if (isDirectRun) {
 
   if (command === 'status') {
     const status = await getMigrationStatus(url);
-    console.log('\n=== Migration Status ===');
-    console.log(`Applied: ${String(status.applied.length)}`);
+    console.warn('\n=== Migration Status ===');
+    console.warn(`Applied: ${String(status.applied.length)}`);
     for (const m of status.applied) {
-      console.log(`  [x] ${m.name} (${m.checksum.slice(0, 8)}...) @ ${m.applied_at.toISOString()}`);
+      console.warn(
+        `  [x] ${m.name} (${m.checksum.slice(0, 8)}...) @ ${m.applied_at.toISOString()}`,
+      );
     }
-    console.log(`Pending: ${String(status.pending.length)}`);
+    console.warn(`Pending: ${String(status.pending.length)}`);
     for (const name of status.pending) {
-      console.log(`  [ ] ${name}`);
+      console.warn(`  [ ] ${name}`);
     }
   } else {
-    console.log('[ORDR:DB] Running migrations...');
+    console.warn('[ORDR:DB] Running migrations...');
     const result = await runMigrations(url);
-    console.log(`Applied: ${String(result.applied.length)}`);
+    console.warn(`Applied: ${String(result.applied.length)}`);
     for (const name of result.applied) {
-      console.log(`  [+] ${name}`);
+      console.warn(`  [+] ${name}`);
     }
     if (result.skipped.length > 0) {
-      console.log(`Skipped: ${String(result.skipped.length)}`);
+      console.warn(`Skipped: ${String(result.skipped.length)}`);
     }
     if (result.errors.length > 0) {
       console.error(`Errors: ${String(result.errors.length)}`);
@@ -228,6 +222,6 @@ if (isDirectRun) {
       }
       process.exit(1);
     }
-    console.log('[ORDR:DB] Migrations complete.');
+    console.warn('[ORDR:DB] Migrations complete.');
   }
 }

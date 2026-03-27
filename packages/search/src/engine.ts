@@ -20,7 +20,6 @@ import type {
   SearchFilter,
   SearchFacet,
   FacetResult,
-  FacetBucket,
   AggregatedResults,
   Highlight,
   SearchSort,
@@ -145,28 +144,29 @@ export class SearchEngine {
       };
     }
 
+    const entityType = this.extractEntityTypeFilter(mergedOptions.filters);
     const storeResult = await this.store.search({
       tenantId,
       queryText: sanitizedQuery,
-      entityType: this.extractEntityTypeFilter(mergedOptions.filters),
+      ...(entityType !== undefined ? { entityType } : {}),
       filters: mergedOptions.filters,
       sort: mergedOptions.sort,
       limit: mergedOptions.limit,
       offset: mergedOptions.offset,
-      cursor: mergedOptions.cursor,
+      ...(mergedOptions.cursor !== undefined ? { cursor: mergedOptions.cursor } : {}),
       fuzzy: mergedOptions.fuzzy,
     });
 
-    const results = storeResult.results.map((row) =>
-      this.mapRowToResult(row, sanitizedQuery),
-    );
+    const results = storeResult.results.map((row) => this.mapRowToResult(row, sanitizedQuery));
 
     const took = Date.now() - startTime;
 
     // Build cursor for next page (cursor-based pagination)
     const lastResult = results[results.length - 1];
     const nextCursor =
-      mergedOptions.paginationMode === 'cursor' && lastResult && results.length === mergedOptions.limit
+      mergedOptions.paginationMode === 'cursor' &&
+      lastResult &&
+      results.length === mergedOptions.limit
         ? Buffer.from(lastResult.id).toString('base64')
         : undefined;
 
@@ -174,7 +174,7 @@ export class SearchEngine {
       results,
       total: storeResult.total,
       facets: [],
-      nextCursor,
+      ...(nextCursor !== undefined ? { nextCursor } : {}),
       took,
     };
   }
@@ -202,7 +202,7 @@ export class SearchEngine {
     return this.store.suggest({
       tenantId,
       prefix: sanitizedPrefix,
-      entityType,
+      ...(entityType !== undefined ? { entityType } : {}),
       limit: MAX_SUGGESTION_LIMIT,
     });
   }
@@ -245,9 +245,7 @@ export class SearchEngine {
       offset: mergedOptions.offset,
     });
 
-    const results = storeResult.results.map((row) =>
-      this.mapRowToResult(row, sanitizedQuery),
-    );
+    const results = storeResult.results.map((row) => this.mapRowToResult(row, sanitizedQuery));
 
     const took = Date.now() - startTime;
 
@@ -274,13 +272,15 @@ export class SearchEngine {
   private sanitizeQueryText(query: string): string {
     if (!query) return '';
 
-    return query
-      .trim()
-      // Remove tsquery special chars that could be used for injection
-      .replace(/[!&|():*\\<>]/g, ' ')
-      // Collapse multiple spaces
-      .replace(/\s+/g, ' ')
-      .trim();
+    return (
+      query
+        .trim()
+        // Remove tsquery special chars that could be used for injection
+        .replace(/[!&|():*\\<>]/g, ' ')
+        // Collapse multiple spaces
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
   }
 
   /**
@@ -297,7 +297,7 @@ export class SearchEngine {
     return {
       limit,
       offset,
-      cursor: partial.cursor,
+      ...(partial.cursor !== undefined ? { cursor: partial.cursor } : {}),
       paginationMode: partial.paginationMode ?? DEFAULT_SEARCH_OPTIONS.paginationMode,
       sort: partial.sort ?? DEFAULT_SEARCH_OPTIONS.sort,
       fuzzy: partial.fuzzy ?? DEFAULT_SEARCH_OPTIONS.fuzzy,
@@ -346,7 +346,10 @@ export class SearchEngine {
    */
   private generateHighlights(row: SearchStoreRow, query: string): readonly Highlight[] {
     const highlights: Highlight[] = [];
-    const queryTerms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
+    const queryTerms = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 0);
 
     // Check title for matches
     const titleLower = row.displayTitle.toLowerCase();
@@ -393,6 +396,7 @@ export class SearchEngine {
    */
   private highlightText(text: string, term: string): string {
     const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // eslint-disable-next-line security/detect-non-literal-regexp
     const regex = new RegExp(`(${escapedTerm})`, 'gi');
     return text.replace(regex, '<mark>$1</mark>');
   }

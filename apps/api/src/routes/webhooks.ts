@@ -23,7 +23,6 @@ import type { ConsentManager } from '@ordr/channels';
 import type { MessageStateMachine } from '@ordr/channels';
 import type { ConsentStore, Channel, MessageStatus, MessageEvent } from '@ordr/channels';
 import { MESSAGE_EVENTS, MESSAGE_STATUSES } from '@ordr/channels';
-import { ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 
 // ---- Dependencies (injected at startup) ------------------------------------
@@ -40,7 +39,11 @@ interface WebhookDependencies {
   readonly updateMessageStatus: (
     providerMessageId: string,
     status: MessageStatus,
-  ) => Promise<{ readonly messageId: string; readonly tenantId: string; readonly customerId: string } | null>;
+  ) => Promise<{
+    readonly messageId: string;
+    readonly tenantId: string;
+    readonly customerId: string;
+  } | null>;
   readonly findCustomerByPhone: (
     phone: string,
   ) => Promise<{ readonly customerId: string; readonly tenantId: string } | null>;
@@ -84,7 +87,7 @@ const webhooksRouter = new Hono<Env>();
 webhooksRouter.post('/twilio', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Webhook routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Parse the form-encoded body
   const rawBody = await c.req.text();
@@ -125,9 +128,10 @@ webhooksRouter.post('/twilio', async (c) => {
   const messageStatus = params['MessageStatus'] ?? params['SmsStatus'] ?? '';
 
   // Determine if this is a delivery status update or an inbound message
-  const isInbound = params['Direction'] === 'inbound' || (
-    params['Body'] !== undefined && !params['MessageStatus']
-  );
+  const isInbound =
+    params['Direction'] === 'inbound' ||
+    (params['Body'] !== undefined &&
+      (params['MessageStatus'] === undefined || params['MessageStatus'].length === 0));
 
   if (isInbound) {
     // ── Inbound SMS message ──
@@ -188,17 +192,17 @@ webhooksRouter.post('/twilio', async (c) => {
         },
       );
 
-      await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
-      });
+      await deps.eventProducer
+        .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+        .catch((publishErr: unknown) => {
+          console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+        });
     }
 
     // Return TwiML response (empty — no auto-reply)
-    return c.text(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      200,
-      { 'Content-Type': 'text/xml' },
-    );
+    return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+      'Content-Type': 'text/xml',
+    });
   }
 
   // ── Delivery status update ──
@@ -228,17 +232,17 @@ webhooksRouter.post('/twilio', async (c) => {
         },
       );
 
-      await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
-      });
+      await deps.eventProducer
+        .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+        .catch((publishErr: unknown) => {
+          console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+        });
     }
   }
 
-  return c.text(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    200,
-    { 'Content-Type': 'text/xml' },
-  );
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+    'Content-Type': 'text/xml',
+  });
 });
 
 // ---- POST /sendgrid — SendGrid email event webhooks ------------------------
@@ -246,16 +250,18 @@ webhooksRouter.post('/twilio', async (c) => {
 webhooksRouter.post('/sendgrid', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Webhook routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Parse the JSON body — SendGrid sends arrays of event objects
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
-  if (!body || !Array.isArray(body)) {
+  if (body === null || !Array.isArray(body as unknown)) {
     return c.json({ received: true }, 200);
   }
 
   // Parse webhook events
-  const parseResult = deps.emailProvider.parseWebhook(body);
+
+  const parseResult = deps.emailProvider.parseWebhook(body as unknown[]);
   if (!parseResult.success) {
     return c.json({ received: true }, 200);
   }
@@ -316,9 +322,11 @@ webhooksRouter.post('/sendgrid', async (c) => {
         },
       );
 
-      await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
-      });
+      await deps.eventProducer
+        .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+        .catch((publishErr: unknown) => {
+          console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+        });
     }
   }
 

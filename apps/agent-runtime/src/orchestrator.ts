@@ -28,25 +28,17 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import {
-  type Result,
-  ok,
-  err,
-  type AppError,
-  AppError as AppErrorClass,
-  InternalError,
-} from '@ordr/core';
-import type { AgentRole, AutonomyLevel } from '@ordr/core';
+import { type Result, err, AppError as AppErrorClass, InternalError } from '@ordr/core';
+import type { AgentRole } from '@ordr/core';
 import { createAgentRole } from '@ordr/core';
 import type { AgentContext, AgentOutcome, AgentEngineDeps } from './types.js';
 import { AgentEngine } from './engine.js';
 import { AgentMemory } from './memory.js';
 import { HitlQueue } from './hitl.js';
-import type { AgentRegistry, PromptBuilder } from './agent-registry.js';
-import { MessageBus, type AgentMessage } from './message-protocol.js';
+import type { AgentRegistry } from './agent-registry.js';
+import { MessageBus } from './message-protocol.js';
 import type { MemoryManager } from './memory/manager.js';
-import { CheckpointManager, CHECKPOINT_AUTO_SAVE_INTERVAL } from './checkpoint.js';
-import { buildCollectionsPrompt, buildGenericPrompt } from './prompts.js';
+import { CheckpointManager } from './checkpoint.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -98,17 +90,22 @@ export interface NBAPipelineInterface {
     readonly constraints: Record<string, unknown>;
     readonly timestamp: Date;
     readonly correlationId: string;
-  }) => Promise<Result<{
-    readonly id: string;
-    readonly tenantId: string;
-    readonly customerId: string;
-    readonly action: string;
-    readonly channel: string | undefined;
-    readonly parameters: Record<string, unknown>;
-    readonly score: number;
-    readonly confidence: number;
-    readonly reasoning: string;
-  }, AppError>>;
+  }) => Promise<
+    Result<
+      {
+        readonly id: string;
+        readonly tenantId: string;
+        readonly customerId: string;
+        readonly action: string;
+        readonly channel: string | undefined;
+        readonly parameters: Record<string, unknown>;
+        readonly score: number;
+        readonly confidence: number;
+        readonly reasoning: string;
+      },
+      AppError
+    >
+  >;
 }
 
 /**
@@ -203,11 +200,7 @@ export class AgentOrchestrator {
     // ── Map action to agent role ──
     const agentRole = ACTION_TO_ROLE[decision.action];
     if (agentRole === undefined) {
-      return err(
-        new InternalError(
-          `No agent role mapped for action: ${decision.action}`,
-        ),
-      );
+      return err(new InternalError(`No agent role mapped for action: ${decision.action}`));
     }
 
     // ── Verify role is enabled for tenant ──
@@ -225,15 +218,8 @@ export class AgentOrchestrator {
     // ── Get agent config ──
     const config = this.registry.getConfig(agentRole);
     if (config === undefined) {
-      return err(
-        new InternalError(`No configuration found for agent role: ${agentRole}`),
-      );
+      return err(new InternalError(`No configuration found for agent role: ${agentRole}`));
     }
-
-    // ── Build tools from registry allowlist ──
-    const roleTools = this.registry.getToolsForRole(agentRole, this.engine.getHitlQueue() !== undefined
-      ? this.getEngineTools()
-      : new Map());
 
     // ── Start agent session ──
     const sessionResult = await this.engine.startSession(
@@ -318,11 +304,11 @@ export class AgentOrchestrator {
     if (outcome.data.result === 'escalated') {
       const handoffResult = await this.handoff(
         context.sessionId,
-        'escalation',
+        createAgentRole('escalation'),
         'Agent session escalated',
         {
           fromAgent: agentRole,
-          toAgent: 'escalation',
+          toAgent: createAgentRole('escalation'),
           reason: outcome.data.description,
           preservedMemory: this.extractPreservedMemory(context),
           conversationHistory: [],
@@ -394,8 +380,10 @@ export class AgentOrchestrator {
       );
     }
 
-    const tenantId = sourceSession?.tenantId ?? handoffContext.customerContext['tenantId'] as string;
-    const customerId = sourceSession?.context.customerId ?? handoffContext.customerContext['customerId'] as string;
+    const tenantId =
+      sourceSession?.tenantId ?? (handoffContext.customerContext['tenantId'] as string);
+    const customerId =
+      sourceSession?.context.customerId ?? (handoffContext.customerContext['customerId'] as string);
     const correlationId = sourceSession?.correlationId ?? randomUUID();
 
     // ── Verify target role is enabled ──
@@ -413,9 +401,7 @@ export class AgentOrchestrator {
     // ── Get target config ──
     const targetConfig = this.registry.getConfig(toAgentRole);
     if (targetConfig === undefined) {
-      return err(
-        new InternalError(`No configuration found for agent role: ${toAgentRole}`),
-      );
+      return err(new InternalError(`No configuration found for agent role: ${toAgentRole}`));
     }
 
     // ── Calculate remaining budget from source session ──
@@ -470,13 +456,7 @@ export class AgentOrchestrator {
     const newContext = sessionResult.data;
 
     // ── Track the new session ──
-    this.trackSession(
-      newContext,
-      tenantId,
-      currentDepth + 1,
-      fromSessionId,
-      correlationId,
-    );
+    this.trackSession(newContext, tenantId, currentDepth + 1, fromSessionId, correlationId);
 
     // ── Initialize memory with handoff context ──
     const memory = AgentMemory.fromState(newContext.memory);
@@ -492,18 +472,20 @@ export class AgentOrchestrator {
 
     // ── Send handoff message via bus ──
     const bus = this.getOrCreateBus(tenantId);
-    await bus.send(MessageBus.createMessage(
-      handoffContext.fromAgent,
-      fromSessionId,
-      toAgentRole,
-      'handoff_request',
-      {
-        reason,
-        handoffDepth: currentDepth + 1,
-        preservedMemoryCount: handoffContext.preservedMemory.length,
-      },
-      correlationId,
-    ));
+    await bus.send(
+      MessageBus.createMessage(
+        handoffContext.fromAgent,
+        fromSessionId,
+        toAgentRole,
+        'handoff_request',
+        {
+          reason,
+          handoffDepth: currentDepth + 1,
+          preservedMemoryCount: handoffContext.preservedMemory.length,
+        },
+        correlationId,
+      ),
+    );
 
     // ── Run target agent loop ──
     const outcome = await this.engine.runLoop(newContext, targetConfig.maxSteps);
@@ -669,23 +651,11 @@ export class AgentOrchestrator {
 
     for (const step of steps) {
       if (step.type === 'act' && step.toolUsed !== undefined) {
-        preserved.push(
-          `Tool "${step.toolUsed}" executed (confidence: ${String(step.confidence)})`,
-        );
+        preserved.push(`Tool "${step.toolUsed}" executed (confidence: ${String(step.confidence)})`);
       }
     }
 
     return preserved;
-  }
-
-  /**
-   * Get the tools from the engine's deps.
-   * Used for building role-specific tool sets.
-   */
-  private getEngineTools(): ReadonlyMap<string, import('./types.js').AgentTool> {
-    // Access via the engine's startSession which injects tools
-    // For now, return empty — tools are injected per-session via registry
-    return new Map();
   }
 
   /**

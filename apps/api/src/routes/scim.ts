@@ -26,6 +26,7 @@ import { createMiddleware } from 'hono/factory';
 import type { SCIMHandler, SCIMTokenStore } from '@ordr/auth';
 import { verifySCIMToken, SCIM_SCHEMAS } from '@ordr/auth';
 import { AuthenticationError } from '@ordr/core';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Env } from '../types.js';
 
 // ─── Dependencies ─────────────────────────────────────────────────
@@ -53,10 +54,10 @@ const scimAuth = createMiddleware<Env & { Variables: { scimTenantId: string } }>
       throw new Error('[ORDR:API] SCIM routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const authHeader = c.req.header('authorization');
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (authHeader === undefined || authHeader.length === 0 || !authHeader.startsWith('Bearer ')) {
       throw new AuthenticationError('SCIM bearer token required', requestId);
     }
 
@@ -66,7 +67,7 @@ const scimAuth = createMiddleware<Env & { Variables: { scimTenantId: string } }>
     }
 
     const tenantId = await verifySCIMToken(token, deps.tokenStore);
-    if (!tenantId) {
+    if (tenantId === null) {
       throw new AuthenticationError('Invalid or expired SCIM token', requestId);
     }
 
@@ -90,33 +91,29 @@ scimRouter.use('*', scimAuth);
 
 // ─── GET /Users ───────────────────────────────────────────────────
 
-scimRouter.get('/Users', async (c) => {
+scimRouter.get('/Users', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
 
   const tenantId = getScimTenantId(c);
   const filter = c.req.query('filter');
-  const startIndex = c.req.query('startIndex')
-    ? parseInt(c.req.query('startIndex') ?? '1', 10)
-    : 1;
-  const count = c.req.query('count')
-    ? parseInt(c.req.query('count') ?? '100', 10)
-    : 100;
+  const startIndexRaw = c.req.query('startIndex');
+  const startIndex = startIndexRaw !== undefined ? parseInt(startIndexRaw, 10) : 1;
+  const countRaw = c.req.query('count');
+  const count = countRaw !== undefined ? parseInt(countRaw, 10) : 100;
 
-  const result = await deps.scimHandler.handleListUsers(
-    tenantId,
-    filter,
-    startIndex,
-    count,
-  );
+  const result = await deps.scimHandler.handleListUsers(tenantId, filter, startIndex, count);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   return c.json(result.data);
@@ -124,7 +121,7 @@ scimRouter.get('/Users', async (c) => {
 
 // ─── GET /Users/:id ───────────────────────────────────────────────
 
-scimRouter.get('/Users/:id', async (c) => {
+scimRouter.get('/Users/:id', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -135,11 +132,14 @@ scimRouter.get('/Users/:id', async (c) => {
   const result = await deps.scimHandler.handleGetUser(tenantId, userId);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   return c.json(result.data);
@@ -147,30 +147,38 @@ scimRouter.get('/Users/:id', async (c) => {
 
 // ─── POST /Users ──────────────────────────────────────────────────
 
-scimRouter.post('/Users', async (c) => {
+scimRouter.post('/Users', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
 
   const tenantId = getScimTenantId(c);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
 
-  if (!body) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: 'Invalid JSON body',
-      status: 400,
-    }, 400);
+  if (body === null) {
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: 'Invalid JSON body',
+        status: 400,
+      },
+      400,
+    );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const result = await deps.scimHandler.handleCreateUser(tenantId, body);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   return c.json(result.data, 201);
@@ -178,31 +186,39 @@ scimRouter.post('/Users', async (c) => {
 
 // ─── PATCH /Users/:id ─────────────────────────────────────────────
 
-scimRouter.patch('/Users/:id', async (c) => {
+scimRouter.patch('/Users/:id', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
 
   const tenantId = getScimTenantId(c);
   const userId = c.req.param('id');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
 
-  if (!body) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: 'Invalid JSON body',
-      status: 400,
-    }, 400);
+  if (body === null) {
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: 'Invalid JSON body',
+        status: 400,
+      },
+      400,
+    );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const result = await deps.scimHandler.handleUpdateUser(tenantId, userId, body);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   return c.json(result.data);
@@ -210,7 +226,7 @@ scimRouter.patch('/Users/:id', async (c) => {
 
 // ─── DELETE /Users/:id ────────────────────────────────────────────
 
-scimRouter.delete('/Users/:id', async (c) => {
+scimRouter.delete('/Users/:id', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -221,11 +237,14 @@ scimRouter.delete('/Users/:id', async (c) => {
   const result = await deps.scimHandler.handleDeactivateUser(tenantId, userId);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   // SCIM spec: 204 No Content on successful DELETE
@@ -234,12 +253,10 @@ scimRouter.delete('/Users/:id', async (c) => {
 
 // ─── GET /Groups ──────────────────────────────────────────────────
 
-scimRouter.get('/Groups', async (c) => {
+scimRouter.get('/Groups', (c): Response => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
-
-  const tenantId = getScimTenantId(c);
 
   // Groups don't use the same handler pattern — call group store directly
   // For now, return an empty list response until group listing is wired
@@ -254,30 +271,38 @@ scimRouter.get('/Groups', async (c) => {
 
 // ─── POST /Groups ─────────────────────────────────────────────────
 
-scimRouter.post('/Groups', async (c) => {
+scimRouter.post('/Groups', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
 
   const tenantId = getScimTenantId(c);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
 
-  if (!body) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: 'Invalid JSON body',
-      status: 400,
-    }, 400);
+  if (body === null) {
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: 'Invalid JSON body',
+        status: 400,
+      },
+      400,
+    );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const result = await deps.scimHandler.handleCreateGroup(tenantId, body);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   return c.json(result.data, 201);
@@ -285,31 +310,39 @@ scimRouter.post('/Groups', async (c) => {
 
 // ─── PATCH /Groups/:id ────────────────────────────────────────────
 
-scimRouter.patch('/Groups/:id', async (c) => {
+scimRouter.patch('/Groups/:id', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
 
   const tenantId = getScimTenantId(c);
   const groupId = c.req.param('id');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
 
-  if (!body) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: 'Invalid JSON body',
-      status: 400,
-    }, 400);
+  if (body === null) {
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: 'Invalid JSON body',
+        status: 400,
+      },
+      400,
+    );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
   const result = await deps.scimHandler.handleUpdateGroup(tenantId, groupId, body);
 
   if (!result.success) {
-    return c.json({
-      schemas: [SCIM_SCHEMAS.ERROR],
-      detail: result.error.message,
-      status: result.error.statusCode,
-    }, result.error.statusCode);
+    return c.json(
+      {
+        schemas: [SCIM_SCHEMAS.ERROR],
+        detail: result.error.message,
+        status: result.error.statusCode,
+      },
+      result.error.statusCode as ContentfulStatusCode,
+    );
   }
 
   return c.json(result.data);

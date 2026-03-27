@@ -215,7 +215,8 @@ describe('Marketplace', () => {
 
     const installButtons = screen.getAllByText('Install');
     act(() => {
-      fireEvent.click(installButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(installButtons[0]!);
     });
 
     expect(mockPost).toHaveBeenCalledWith('/v1/marketplace/a1/install');
@@ -234,7 +235,8 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      fireEvent.click(detailButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(detailButtons[0]!);
     });
 
     await waitFor(() => {
@@ -257,7 +259,8 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      fireEvent.click(detailButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(detailButtons[0]!);
     });
 
     await waitFor(() => {
@@ -328,7 +331,8 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      fireEvent.click(detailButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(detailButtons[0]!);
     });
 
     await waitFor(() => {
@@ -349,7 +353,8 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      fireEvent.click(detailButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(detailButtons[0]!);
     });
 
     await waitFor(() => {
@@ -389,7 +394,8 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      fireEvent.click(detailButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(detailButtons[0]!);
     });
 
     await waitFor(() => {

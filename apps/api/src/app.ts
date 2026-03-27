@@ -77,9 +77,10 @@ export function createApp(config: AppConfig): Hono<Env> {
   app.use('*', createTracingMiddleware({ serviceName: 'ordr-api' }));
 
   // ── 3. CORS — configurable origins, NO wildcard in production ───────────
-  const allowedOrigins = config.nodeEnv === 'production'
-    ? [...config.corsOrigins]
-    : ['http://localhost:3000', 'http://localhost:5173', ...config.corsOrigins];
+  const allowedOrigins =
+    config.nodeEnv === 'production'
+      ? [...config.corsOrigins]
+      : ['http://localhost:3000', 'http://localhost:5173', ...config.corsOrigins];
 
   app.use(
     '*',
@@ -106,7 +107,7 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // ── 7. 404 handler — structured response for unknown routes ─────────────
   app.notFound((c) => {
-    const requestIdValue = c.get('requestId') ?? 'unknown';
+    const requestIdValue = c.get('requestId');
     return c.json(
       {
         success: false as const,

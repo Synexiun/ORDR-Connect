@@ -73,7 +73,7 @@ const whatsappWebhooksRouter = new Hono<Env>();
 whatsappWebhooksRouter.post('/', async (c) => {
   if (!deps) throw new Error('[ORDR:API] WhatsApp webhook routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const rawBody = await c.req.text();
   const params = parseFormBody(rawBody);
@@ -113,11 +113,9 @@ whatsappWebhooksRouter.post('/', async (c) => {
     // ── Inbound WhatsApp message ──
     const parseResult = deps.whatsAppProvider.parseWebhook(params);
     if (!parseResult.success) {
-      return c.text(
-        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-        200,
-        { 'Content-Type': 'text/xml' },
-      );
+      return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+        'Content-Type': 'text/xml',
+      });
     }
 
     const inbound = parseResult.data;
@@ -170,31 +168,34 @@ whatsappWebhooksRouter.post('/', async (c) => {
         },
       );
 
-      await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish whatsapp interaction.logged event:', publishErr);
-      });
+      await deps.eventProducer
+        .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+        .catch((publishErr: unknown) => {
+          console.error(
+            '[ORDR:API] Failed to publish whatsapp interaction.logged event:',
+            publishErr,
+          );
+        });
     }
 
-    return c.text(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      200,
-      { 'Content-Type': 'text/xml' },
-    );
+    return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+      'Content-Type': 'text/xml',
+    });
   }
 
   // ── Status update ──
   if (messageStatus && messageSid) {
     const parseResult = deps.whatsAppProvider.parseStatusWebhook(params);
     if (!parseResult.success) {
-      return c.text(
-        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-        200,
-        { 'Content-Type': 'text/xml' },
-      );
+      return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+        'Content-Type': 'text/xml',
+      });
     }
 
     const statusEvent = parseResult.data;
-    const newStatus = deps.whatsAppProvider.mapTwilioStatusToMessageStatus(statusEvent.messageStatus);
+    const newStatus = deps.whatsAppProvider.mapTwilioStatusToMessageStatus(
+      statusEvent.messageStatus,
+    );
 
     const messageRecord = await deps.updateMessageStatus(messageSid, newStatus);
 
@@ -217,17 +218,17 @@ whatsappWebhooksRouter.post('/', async (c) => {
         },
       );
 
-      await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish whatsapp status event:', publishErr);
-      });
+      await deps.eventProducer
+        .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+        .catch((publishErr: unknown) => {
+          console.error('[ORDR:API] Failed to publish whatsapp status event:', publishErr);
+        });
     }
   }
 
-  return c.text(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    200,
-    { 'Content-Type': 'text/xml' },
-  );
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+    'Content-Type': 'text/xml',
+  });
 });
 
 export { whatsappWebhooksRouter };

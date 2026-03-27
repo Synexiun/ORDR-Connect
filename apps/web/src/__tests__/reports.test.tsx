@@ -1186,7 +1186,8 @@ describe('ScheduledReports', () => {
     expect(initialPauseButtons.length).toBe(2);
 
     act(() => {
-      fireEvent.click(initialPauseButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(initialPauseButtons[0]!);
     });
 
     await waitFor(() => {
@@ -1207,7 +1208,8 @@ describe('ScheduledReports', () => {
 
     const editButtons = screen.getAllByText('Edit');
     act(() => {
-      fireEvent.click(editButtons[0]);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      fireEvent.click(editButtons[0]!);
     });
 
     await waitFor(() => {

@@ -75,7 +75,7 @@ const voiceWebhooksRouter = new Hono<Env>();
 voiceWebhooksRouter.post('/status', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Voice webhook routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const rawBody = await c.req.text();
   const params = parseFormBody(rawBody);
@@ -107,11 +107,9 @@ voiceWebhooksRouter.post('/status', async (c) => {
   // Parse the status webhook
   const parseResult = deps.voiceProvider.parseStatusWebhook(params);
   if (!parseResult.success) {
-    return c.text(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      200,
-      { 'Content-Type': 'text/xml' },
-    );
+    return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+      'Content-Type': 'text/xml',
+    });
   }
 
   const statusEvent = parseResult.data;
@@ -140,16 +138,16 @@ voiceWebhooksRouter.post('/status', async (c) => {
       },
     );
 
-    await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-      console.error('[ORDR:API] Failed to publish voice interaction.logged event:', publishErr);
-    });
+    await deps.eventProducer
+      .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+      .catch((publishErr: unknown) => {
+        console.error('[ORDR:API] Failed to publish voice interaction.logged event:', publishErr);
+      });
   }
 
-  return c.text(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    200,
-    { 'Content-Type': 'text/xml' },
-  );
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+    'Content-Type': 'text/xml',
+  });
 });
 
 // ---- POST /recording — Recording completed callback ------------------------
@@ -157,7 +155,7 @@ voiceWebhooksRouter.post('/status', async (c) => {
 voiceWebhooksRouter.post('/recording', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Voice webhook routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const rawBody = await c.req.text();
   const params = parseFormBody(rawBody);
@@ -189,11 +187,9 @@ voiceWebhooksRouter.post('/recording', async (c) => {
   // Parse the recording webhook
   const parseResult = deps.voiceProvider.parseRecordingWebhook(params);
   if (!parseResult.success) {
-    return c.text(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      200,
-      { 'Content-Type': 'text/xml' },
-    );
+    return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+      'Content-Type': 'text/xml',
+    });
   }
 
   const recording = parseResult.data;
@@ -223,11 +219,9 @@ voiceWebhooksRouter.post('/recording', async (c) => {
     timestamp: new Date(),
   });
 
-  return c.text(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    200,
-    { 'Content-Type': 'text/xml' },
-  );
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+    'Content-Type': 'text/xml',
+  });
 });
 
 // ---- POST /gather — DTMF/speech input from IVR ----------------------------
@@ -235,7 +229,7 @@ voiceWebhooksRouter.post('/recording', async (c) => {
 voiceWebhooksRouter.post('/gather', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Voice webhook routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const rawBody = await c.req.text();
   const params = parseFormBody(rawBody);
@@ -268,11 +262,9 @@ voiceWebhooksRouter.post('/gather', async (c) => {
   const parseResult = deps.voiceProvider.parseGatherWebhook(params);
   if (!parseResult.success) {
     // Return empty TwiML on parse failure
-    return c.text(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      200,
-      { 'Content-Type': 'text/xml' },
-    );
+    return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+      'Content-Type': 'text/xml',
+    });
   }
 
   const gather = parseResult.data;
@@ -296,16 +288,16 @@ voiceWebhooksRouter.post('/gather', async (c) => {
     },
   );
 
-  await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-    console.error('[ORDR:API] Failed to publish gather interaction.logged event:', publishErr);
-  });
+  await deps.eventProducer
+    .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+    .catch((publishErr: unknown) => {
+      console.error('[ORDR:API] Failed to publish gather interaction.logged event:', publishErr);
+    });
 
   // Return empty TwiML — downstream processor handles the IVR flow
-  return c.text(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-    200,
-    { 'Content-Type': 'text/xml' },
-  );
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', 200, {
+    'Content-Type': 'text/xml',
+  });
 });
 
 export { voiceWebhooksRouter };

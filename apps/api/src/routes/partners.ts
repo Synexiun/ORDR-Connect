@@ -24,12 +24,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AuditLogger } from '@ordr/audit';
-import {
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-  ConflictError,
-} from '@ordr/core';
+import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -92,10 +87,13 @@ interface PartnerDependencies {
     company: string;
     tier: string;
   }) => Promise<PartnerRecord>;
-  readonly updatePartner: (id: string, data: {
-    name?: string;
-    company?: string;
-  }) => Promise<PartnerRecord | null>;
+  readonly updatePartner: (
+    id: string,
+    data: {
+      name?: string;
+      company?: string;
+    },
+  ) => Promise<PartnerRecord | null>;
   readonly getEarnings: (partnerId: string) => Promise<EarningsSummary>;
   readonly listPayouts: (partnerId: string) => Promise<PayoutRecord[]>;
 }
@@ -142,10 +140,11 @@ const partnersRouter = new Hono<Env>();
 partnersRouter.post('/register', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensurePartnerContext(c);
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
@@ -199,7 +198,7 @@ partnersRouter.post('/register', requireAuth(), async (c) => {
 partnersRouter.get('/me', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensurePartnerContext(c);
 
   const partner = await deps.findPartnerById(userId);
@@ -228,10 +227,11 @@ partnersRouter.get('/me', requireAuth(), async (c) => {
 partnersRouter.put('/me', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensurePartnerContext(c);
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
@@ -244,7 +244,10 @@ partnersRouter.put('/me', requireAuth(), async (c) => {
     throw new NotFoundError('Partner account not found', requestId);
   }
 
-  const updated = await deps.updatePartner(userId, parsed.data);
+  const updated = await deps.updatePartner(userId, {
+    ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+    ...(parsed.data.company !== undefined ? { company: parsed.data.company } : {}),
+  });
   if (!updated) {
     throw new NotFoundError('Partner account not found', requestId);
   }
@@ -283,7 +286,7 @@ partnersRouter.put('/me', requireAuth(), async (c) => {
 partnersRouter.get('/earnings', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensurePartnerContext(c);
 
   // Verify partner exists
@@ -305,7 +308,7 @@ partnersRouter.get('/earnings', requireAuth(), async (c) => {
 partnersRouter.get('/payouts', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensurePartnerContext(c);
 
   // Verify partner exists

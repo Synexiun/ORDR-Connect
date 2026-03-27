@@ -27,6 +27,8 @@ import {
   err,
   AppError,
   ValidationError,
+  createAgentRole,
+  type AutonomyLevel,
 } from '@ordr/core';
 import type { AgentTool, AgentBudget, KillSwitch } from './types.js';
 
@@ -126,79 +128,77 @@ export class AgentSandbox {
     params: Record<string, unknown>,
     tokensUsed: number = 0,
     costCents: number = 0,
-  ): Promise<Result<SandboxStepResult, AppError>> {
+  ): Promise<Result<SandboxStepResult>> {
     const stepId = randomUUID();
     const startTime = Date.now();
 
     // ── Kill switch check ──
     if (this.killSwitch.active) {
-      return err(new AppError(
-        `Sandbox killed: ${this.killSwitch.reason}`,
-        'AGENT_SAFETY_BLOCK',
-        403,
-        true,
-      ));
+      return err(
+        new AppError(`Sandbox killed: ${this.killSwitch.reason}`, 'AGENT_SAFETY_BLOCK', 403, true),
+      );
     }
 
     // ── Active check ──
     if (!this.active) {
-      return err(new AppError(
-        'Sandbox is not active',
-        'AGENT_SAFETY_BLOCK',
-        403,
-        true,
-      ));
+      return err(new AppError('Sandbox is not active', 'AGENT_SAFETY_BLOCK', 403, true));
     }
 
     // ── Budget check — tokens ──
     if (this.budget.usedTokens + tokensUsed > this.budget.maxTokens) {
       await this.auditBudgetExceeded('tokens');
-      return err(new AppError(
-        `Token budget exceeded: ${String(this.budget.usedTokens + tokensUsed)}/${String(this.budget.maxTokens)}`,
-        'AGENT_SAFETY_BLOCK',
-        403,
-        true,
-      ));
+      return err(
+        new AppError(
+          `Token budget exceeded: ${String(this.budget.usedTokens + tokensUsed)}/${String(this.budget.maxTokens)}`,
+          'AGENT_SAFETY_BLOCK',
+          403,
+          true,
+        ),
+      );
     }
 
     // ── Budget check — cost ──
     if (this.budget.usedCostCents + costCents > this.budget.maxCostCents) {
       await this.auditBudgetExceeded('cost');
-      return err(new AppError(
-        `Cost budget exceeded: ${String(this.budget.usedCostCents + costCents)}/${String(this.budget.maxCostCents)} cents`,
-        'AGENT_SAFETY_BLOCK',
-        403,
-        true,
-      ));
+      return err(
+        new AppError(
+          `Cost budget exceeded: ${String(this.budget.usedCostCents + costCents)}/${String(this.budget.maxCostCents)} cents`,
+          'AGENT_SAFETY_BLOCK',
+          403,
+          true,
+        ),
+      );
     }
 
     // ── Budget check — actions ──
     if (this.budget.usedActions >= this.budget.maxActions) {
       await this.auditBudgetExceeded('actions');
-      return err(new AppError(
-        `Action budget exceeded: ${String(this.budget.usedActions)}/${String(this.budget.maxActions)}`,
-        'AGENT_SAFETY_BLOCK',
-        403,
-        true,
-      ));
+      return err(
+        new AppError(
+          `Action budget exceeded: ${String(this.budget.usedActions)}/${String(this.budget.maxActions)}`,
+          'AGENT_SAFETY_BLOCK',
+          403,
+          true,
+        ),
+      );
     }
 
     // ── Tool allowlist check ──
     if (!this.allowedTools.has(action)) {
       await this.auditToolBlocked(action);
-      return err(new ValidationError(
-        `Tool "${action}" is not in the agent allowlist`,
-        { tool: [`Not allowed: ${action}`] },
-      ));
+      return err(
+        new ValidationError(`Tool "${action}" is not in the agent allowlist`, {
+          tool: [`Not allowed: ${action}`],
+        }),
+      );
     }
 
     // ── Resolve tool ──
     const tool = this.tools.get(action);
     if (!tool) {
-      return err(new ValidationError(
-        `Tool "${action}" not found`,
-        { tool: [`Not found: ${action}`] },
-      ));
+      return err(
+        new ValidationError(`Tool "${action}" not found`, { tool: [`Not found: ${action}`] }),
+      );
     }
 
     // ── Execute with timeout ──
@@ -208,7 +208,8 @@ export class AgentSandbox {
         sessionId: this.sandboxId,
         tenantId: this.config.tenantId,
         customerId: '',
-        agentRole: this.config.agentName,
+        agentRole: createAgentRole(this.config.agentName),
+        autonomyLevel: 'rule_based' as AutonomyLevel,
         tools: this.tools,
         memory: { observations: new Map(), steps: [] },
         budget: this.budget,
@@ -220,12 +221,14 @@ export class AgentSandbox {
       const toolPromise = tool.execute(params, toolContext);
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
-          reject(new AppError(
-            `Tool execution timed out after ${String(STEP_TIMEOUT_MS)}ms`,
-            'AGENT_SAFETY_BLOCK',
-            408,
-            true,
-          ));
+          reject(
+            new AppError(
+              `Tool execution timed out after ${String(STEP_TIMEOUT_MS)}ms`,
+              'AGENT_SAFETY_BLOCK',
+              408,
+              true,
+            ),
+          );
         }, STEP_TIMEOUT_MS);
       });
 
@@ -245,12 +248,7 @@ export class AgentSandbox {
       if (error instanceof AppError) {
         return err(error);
       }
-      return err(new AppError(
-        'Tool execution failed',
-        'INTERNAL_ERROR',
-        500,
-        false,
-      ));
+      return err(new AppError('Tool execution failed', 'INTERNAL_ERROR', 500, false));
     }
 
     // ── Output validation ──
@@ -376,29 +374,36 @@ export class AgentSandbox {
    * Validate agent output against the configured JSON schema.
    * Performs structural type checks (not full JSON Schema — keep it simple).
    */
-  private validateOutput(output: unknown): Result<void, AppError> {
+  private validateOutput(output: unknown): Result<void> {
     if (output === null || output === undefined) {
-      return err(new ValidationError(
-        'Agent output is null or undefined',
-        { output: ['Output must not be null or undefined'] },
-      ));
+      return err(
+        new ValidationError('Agent output is null or undefined', {
+          output: ['Output must not be null or undefined'],
+        }),
+      );
     }
 
     // If output schema requires an object, check that
     if (this.config.outputSchema && typeof this.config.outputSchema['type'] === 'string') {
       const expectedType = this.config.outputSchema['type'];
       if (expectedType === 'object' && (typeof output !== 'object' || Array.isArray(output))) {
-        return err(new ValidationError(
-          'Agent output does not match expected schema',
-          { output: ['Expected object output'] },
-        ));
+        return err(
+          new ValidationError('Agent output does not match expected schema', {
+            output: ['Expected object output'],
+          }),
+        );
       }
     }
 
     return ok(undefined);
   }
 
-  private async auditStepExecution(stepId: string, action: string, success: boolean, durationMs: number): Promise<void> {
+  private async auditStepExecution(
+    stepId: string,
+    action: string,
+    success: boolean,
+    durationMs: number,
+  ): Promise<void> {
     await this.auditLog({
       tenantId: this.config.tenantId,
       eventType: 'agent.action',

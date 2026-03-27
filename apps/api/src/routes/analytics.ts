@@ -15,15 +15,13 @@ import { z } from 'zod';
 import type { AnalyticsQueries } from '@ordr/analytics';
 import type { RealTimeCounters } from '@ordr/analytics';
 import { METRIC_NAMES, GRANULARITIES } from '@ordr/analytics';
-import type { MetricName, Granularity } from '@ordr/analytics';
-import {
-  ValidationError,
-  AuthorizationError,
-} from '@ordr/core';
+import type { MetricName } from '@ordr/analytics';
+import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
+import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ───────────────────────────────────────────────
 
@@ -34,12 +32,7 @@ const timeRangeSchema = z.object({
 });
 
 const trendParamSchema = z.object({
-  metric: z.enum([
-    'delivery',
-    'agent_performance',
-    'compliance',
-    'customer_engagement',
-  ] as const),
+  metric: z.enum(['delivery', 'agent_performance', 'compliance', 'customer_engagement'] as const),
 });
 
 const trendQuerySchema = z.object({
@@ -56,10 +49,10 @@ const realTimeQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => {
-      if (!val) return [...METRIC_NAMES];
-      return val.split(',').filter((m): m is MetricName =>
-        (METRIC_NAMES as readonly string[]).includes(m),
-      );
+      if (val === undefined || val.length === 0) return [...METRIC_NAMES];
+      return val
+        .split(',')
+        .filter((m): m is MetricName => (METRIC_NAMES as readonly string[]).includes(m));
     }),
 });
 
@@ -72,9 +65,7 @@ interface AnalyticsDependencies {
 
 let deps: AnalyticsDependencies | null = null;
 
-export function configureAnalyticsRoutes(
-  dependencies: AnalyticsDependencies,
-): void {
+export function configureAnalyticsRoutes(dependencies: AnalyticsDependencies): void {
   deps = dependencies;
 }
 
@@ -114,14 +105,14 @@ analyticsRouter.use('*', requirePermissionMiddleware('analytics', 'read'));
 
 // ─── GET /dashboard — Dashboard summary ──────────────────────────
 
-analyticsRouter.get('/dashboard', async (c) => {
+analyticsRouter.get('/dashboard', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Analytics routes not configured');
 
   const ctx = ensureTenantContext(c);
   const result = await deps.queries.getDashboardSummary(ctx.tenantId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -132,11 +123,11 @@ analyticsRouter.get('/dashboard', async (c) => {
 
 // ─── GET /channels — Channel metrics with time range ─────────────
 
-analyticsRouter.get('/channels', async (c) => {
+analyticsRouter.get('/channels', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Analytics routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const parsed = timeRangeSchema.safeParse({
     from: c.req.query('from'),
@@ -155,7 +146,7 @@ analyticsRouter.get('/channels', async (c) => {
   const result = await deps.queries.getChannelMetrics(ctx.tenantId, parsed.data);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -171,11 +162,11 @@ analyticsRouter.get('/channels', async (c) => {
 
 // ─── GET /agents — Agent performance metrics ─────────────────────
 
-analyticsRouter.get('/agents', async (c) => {
+analyticsRouter.get('/agents', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Analytics routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const parsed = timeRangeSchema.safeParse({
     from: c.req.query('from'),
@@ -194,7 +185,7 @@ analyticsRouter.get('/agents', async (c) => {
   const result = await deps.queries.getAgentMetrics(ctx.tenantId, parsed.data);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -210,11 +201,11 @@ analyticsRouter.get('/agents', async (c) => {
 
 // ─── GET /compliance — Compliance metrics ────────────────────────
 
-analyticsRouter.get('/compliance', async (c) => {
+analyticsRouter.get('/compliance', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Analytics routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const parsed = timeRangeSchema.safeParse({
     from: c.req.query('from'),
@@ -233,7 +224,7 @@ analyticsRouter.get('/compliance', async (c) => {
   const result = await deps.queries.getComplianceMetrics(ctx.tenantId, parsed.data);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -249,22 +240,18 @@ analyticsRouter.get('/compliance', async (c) => {
 
 // ─── GET /trends/:metric — Trend data for specific metric ────────
 
-analyticsRouter.get('/trends/:metric', async (c) => {
+analyticsRouter.get('/trends/:metric', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Analytics routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const paramParsed = trendParamSchema.safeParse({
     metric: c.req.param('metric'),
   });
 
   if (!paramParsed.success) {
-    throw new ValidationError(
-      'Invalid trend metric',
-      parseZodErrors(paramParsed.error),
-      requestId,
-    );
+    throw new ValidationError('Invalid trend metric', parseZodErrors(paramParsed.error), requestId);
   }
 
   const queryParsed = trendQuerySchema.safeParse({
@@ -287,6 +274,7 @@ analyticsRouter.get('/trends/:metric', async (c) => {
   const timeRange = {
     from: queryParsed.data.from,
     to: queryParsed.data.to,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     granularity: queryParsed.data.granularity as Granularity,
   };
 
@@ -314,15 +302,12 @@ analyticsRouter.get('/trends/:metric', async (c) => {
       );
       break;
     case 'customer_engagement':
-      result = await deps.queries.getCustomerEngagementTrend(
-        ctx.tenantId,
-        timeRange,
-      );
+      result = await deps.queries.getCustomerEngagementTrend(ctx.tenantId, timeRange);
       break;
   }
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -332,6 +317,7 @@ analyticsRouter.get('/trends/:metric', async (c) => {
     timeRange: {
       from: timeRange.from.toISOString(),
       to: timeRange.to.toISOString(),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       granularity: timeRange.granularity,
     },
   });
@@ -343,18 +329,14 @@ analyticsRouter.get('/real-time', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Analytics routes not configured');
 
   const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const parsed = realTimeQuerySchema.safeParse({
     metrics: c.req.query('metrics'),
   });
 
   if (!parsed.success) {
-    throw new ValidationError(
-      'Invalid metrics parameter',
-      parseZodErrors(parsed.error),
-      requestId,
-    );
+    throw new ValidationError('Invalid metrics parameter', parseZodErrors(parsed.error), requestId);
   }
 
   const metricsToFetch = parsed.data.metrics;
@@ -365,10 +347,7 @@ analyticsRouter.get('/real-time', async (c) => {
     });
   }
 
-  const counters = await deps.realTimeCounters.getMultiple(
-    ctx.tenantId,
-    metricsToFetch,
-  );
+  const counters = await deps.realTimeCounters.getMultiple(ctx.tenantId, metricsToFetch);
 
   return c.json({
     success: true as const,

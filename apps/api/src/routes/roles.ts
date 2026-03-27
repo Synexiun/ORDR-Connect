@@ -19,12 +19,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { CustomRoleManager } from '@ordr/auth';
-import {
-  AuthenticationError,
-  ValidationError,
-} from '@ordr/core';
+import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -80,21 +78,21 @@ rolesRouter.use('*', requireAuth());
 
 // ─── GET / ────────────────────────────────────────────────────────
 
-rolesRouter.get('/', async (c) => {
+rolesRouter.get('/', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] Role routes not configured');
   }
 
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 
   const result = await deps.roleManager.listRoles(ctx.tenantId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -105,64 +103,60 @@ rolesRouter.get('/', async (c) => {
 
 // ─── POST / ───────────────────────────────────────────────────────
 
-rolesRouter.post(
-  '/',
-  requireRoleMiddleware('tenant_admin'),
-  async (c) => {
-    if (!deps) {
-      throw new Error('[ORDR:API] Role routes not configured');
-    }
+rolesRouter.post('/', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
+  if (!deps) {
+    throw new Error('[ORDR:API] Role routes not configured');
+  }
 
-    const requestId = c.get('requestId') ?? 'unknown';
-    const ctx = c.get('tenantContext');
-    if (!ctx) {
-      throw new AuthenticationError('Authentication required', requestId);
-    }
+  const requestId = c.get('requestId');
+  const ctx = c.get('tenantContext');
+  if (!ctx) {
+    throw new AuthenticationError('Authentication required', requestId);
+  }
 
-    const body = await c.req.json().catch(() => null);
-    const parsed = createRoleSchema.safeParse(body);
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const body = await c.req.json().catch(() => null);
+  const parsed = createRoleSchema.safeParse(body);
 
-    if (!parsed.success) {
-      const fieldErrors: Record<string, string[]> = {};
-      for (const issue of parsed.error.issues) {
-        const field = issue.path.join('.');
-        const existing = fieldErrors[field];
-        if (existing) {
-          existing.push(issue.message);
-        } else {
-          fieldErrors[field] = [issue.message];
-        }
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path.join('.');
+      const existing = fieldErrors[field];
+      if (existing) {
+        existing.push(issue.message);
+      } else {
+        fieldErrors[field] = [issue.message];
       }
-      throw new ValidationError('Invalid role data', fieldErrors, requestId);
     }
+    throw new ValidationError('Invalid role data', fieldErrors, requestId);
+  }
 
-    const result = await deps.roleManager.createRole(
-      ctx.tenantId,
-      ctx.userId,
-      parsed.data,
-    );
+  const result = await deps.roleManager.createRole(ctx.tenantId, ctx.userId, parsed.data);
 
-    if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
-    }
+  if (!result.success) {
+    return jsonErr(c, result.error);
+  }
 
-    return c.json({
+  return c.json(
+    {
       success: true as const,
       data: result.data,
-    }, 201);
-  },
-);
+    },
+    201,
+  );
+});
 
 // ─── GET /:id ─────────────────────────────────────────────────────
 
-rolesRouter.get('/:id', async (c) => {
+rolesRouter.get('/:id', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] Role routes not configured');
   }
 
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 
@@ -170,7 +164,7 @@ rolesRouter.get('/:id', async (c) => {
   const result = await deps.roleManager.getRole(ctx.tenantId, roleId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -181,104 +175,93 @@ rolesRouter.get('/:id', async (c) => {
 
 // ─── PATCH /:id ───────────────────────────────────────────────────
 
-rolesRouter.patch(
-  '/:id',
-  requireRoleMiddleware('tenant_admin'),
-  async (c) => {
-    if (!deps) {
-      throw new Error('[ORDR:API] Role routes not configured');
-    }
+rolesRouter.patch('/:id', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
+  if (!deps) {
+    throw new Error('[ORDR:API] Role routes not configured');
+  }
 
-    const requestId = c.get('requestId') ?? 'unknown';
-    const ctx = c.get('tenantContext');
-    if (!ctx) {
-      throw new AuthenticationError('Authentication required', requestId);
-    }
+  const requestId = c.get('requestId');
+  const ctx = c.get('tenantContext');
+  if (!ctx) {
+    throw new AuthenticationError('Authentication required', requestId);
+  }
 
-    const roleId = c.req.param('id');
-    const body = await c.req.json().catch(() => null);
-    const parsed = updateRoleSchema.safeParse(body);
+  const roleId = c.req.param('id');
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const body = await c.req.json().catch(() => null);
+  const parsed = updateRoleSchema.safeParse(body);
 
-    if (!parsed.success) {
-      const fieldErrors: Record<string, string[]> = {};
-      for (const issue of parsed.error.issues) {
-        const field = issue.path.join('.');
-        const existing = fieldErrors[field];
-        if (existing) {
-          existing.push(issue.message);
-        } else {
-          fieldErrors[field] = [issue.message];
-        }
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path.join('.');
+      const existing = fieldErrors[field];
+      if (existing) {
+        existing.push(issue.message);
+      } else {
+        fieldErrors[field] = [issue.message];
       }
-      throw new ValidationError('Invalid update data', fieldErrors, requestId);
     }
+    throw new ValidationError('Invalid update data', fieldErrors, requestId);
+  }
 
-    const result = await deps.roleManager.updateRole(
-      ctx.tenantId,
-      roleId,
-      ctx.userId,
-      parsed.data,
-    );
+  const result = await deps.roleManager.updateRole(ctx.tenantId, roleId, ctx.userId, {
+    ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+    ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+    ...(parsed.data.permissions !== undefined ? { permissions: parsed.data.permissions } : {}),
+  });
 
-    if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
-    }
+  if (!result.success) {
+    return jsonErr(c, result.error);
+  }
 
-    return c.json({
-      success: true as const,
-      data: result.data,
-    });
-  },
-);
+  return c.json({
+    success: true as const,
+    data: result.data,
+  });
+});
 
 // ─── DELETE /:id ──────────────────────────────────────────────────
 
-rolesRouter.delete(
-  '/:id',
-  requireRoleMiddleware('tenant_admin'),
-  async (c) => {
-    if (!deps) {
-      throw new Error('[ORDR:API] Role routes not configured');
-    }
+rolesRouter.delete('/:id', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
+  if (!deps) {
+    throw new Error('[ORDR:API] Role routes not configured');
+  }
 
-    const requestId = c.get('requestId') ?? 'unknown';
-    const ctx = c.get('tenantContext');
-    if (!ctx) {
-      throw new AuthenticationError('Authentication required', requestId);
-    }
+  const requestId = c.get('requestId');
+  const ctx = c.get('tenantContext');
+  if (!ctx) {
+    throw new AuthenticationError('Authentication required', requestId);
+  }
 
-    const roleId = c.req.param('id');
-    const result = await deps.roleManager.deleteRole(
-      ctx.tenantId,
-      roleId,
-      ctx.userId,
-    );
+  const roleId = c.req.param('id');
+  const result = await deps.roleManager.deleteRole(ctx.tenantId, roleId, ctx.userId);
 
-    if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
-    }
+  if (!result.success) {
+    return jsonErr(c, result.error);
+  }
 
-    return c.json({ success: true as const });
-  },
-);
+  return c.json({ success: true as const });
+});
 
 // ─── POST /:id/assign ────────────────────────────────────────────
 
 rolesRouter.post(
   '/:id/assign',
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Role routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
     }
 
     const roleId = c.req.param('id');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const body = await c.req.json().catch(() => null);
     const parsed = assignRevokeSchema.safeParse(body);
 
@@ -294,7 +277,7 @@ rolesRouter.post(
     );
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     return c.json({ success: true as const });
@@ -306,18 +289,19 @@ rolesRouter.post(
 rolesRouter.post(
   '/:id/revoke',
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Role routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
     }
 
     const roleId = c.req.param('id');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const body = await c.req.json().catch(() => null);
     const parsed = assignRevokeSchema.safeParse(body);
 
@@ -333,7 +317,7 @@ rolesRouter.post(
     );
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     return c.json({ success: true as const });

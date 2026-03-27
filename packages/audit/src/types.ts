@@ -24,7 +24,18 @@ export type AuditEventType =
   | 'system.deployment'
   | 'phi.accessed'
   | 'phi.exported'
-  | 'api.request';
+  | 'api.request'
+  | 'user.provisioned'
+  | 'user.updated'
+  | 'user.deactivated'
+  | 'group.created'
+  | 'group.updated'
+  | 'config.updated'
+  | 'organization.created'
+  | 'organization.deleted'
+  | 'auth.sso.success'
+  | 'sso.connection.created'
+  | 'sso.connection.deleted';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

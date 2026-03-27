@@ -951,7 +951,7 @@ export function Settings(): ReactNode {
                 <div className="flex h-20 w-20 items-center justify-center rounded-xl border-2 border-dashed border-border bg-surface text-content-tertiary">
                   {tenantSettings?.logoUrl !== null ? (
                     <img
-                      src={tenantSettings.logoUrl}
+                      src={tenantSettings?.logoUrl}
                       alt="Logo"
                       className="h-full w-full rounded-xl object-contain p-2"
                     />

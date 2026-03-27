@@ -28,11 +28,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AuditLogger } from '@ordr/audit';
-import {
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-} from '@ordr/core';
+import { ValidationError, NotFoundError, AuthorizationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -107,7 +103,9 @@ interface MarketplaceReviewDependencies {
 
 let deps: MarketplaceReviewDependencies | null = null;
 
-export function configureMarketplaceReviewRoutes(dependencies: MarketplaceReviewDependencies): void {
+export function configureMarketplaceReviewRoutes(
+  dependencies: MarketplaceReviewDependencies,
+): void {
   deps = dependencies;
 }
 
@@ -132,7 +130,7 @@ function ensureAdminContext(c: {
   get(key: 'requestId'): string;
 }): { userId: string; tenantId: string } {
   const ctx = c.get('tenantContext');
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   if (!ctx) {
     throw new AuthorizationError('Authentication required', requestId);
   }
@@ -157,16 +155,33 @@ function runSecurityReview(agent: MarketplaceAgentRecord): string[] {
   }
 
   // Check budget within platform limits
-  const budget = manifest['maxBudget'] as { maxTokens?: number; maxCostCents?: number; maxActions?: number } | undefined;
+  const budget = manifest['maxBudget'] as
+    | { maxTokens?: number; maxCostCents?: number; maxActions?: number }
+    | undefined;
   if (budget) {
-    if (typeof budget.maxTokens === 'number' && budget.maxTokens > PLATFORM_BUDGET_LIMITS.maxTokens) {
-      issues.push(`maxTokens (${String(budget.maxTokens)}) exceeds platform limit (${String(PLATFORM_BUDGET_LIMITS.maxTokens)})`);
+    if (
+      typeof budget.maxTokens === 'number' &&
+      budget.maxTokens > PLATFORM_BUDGET_LIMITS.maxTokens
+    ) {
+      issues.push(
+        `maxTokens (${String(budget.maxTokens)}) exceeds platform limit (${String(PLATFORM_BUDGET_LIMITS.maxTokens)})`,
+      );
     }
-    if (typeof budget.maxCostCents === 'number' && budget.maxCostCents > PLATFORM_BUDGET_LIMITS.maxCostCents) {
-      issues.push(`maxCostCents (${String(budget.maxCostCents)}) exceeds platform limit (${String(PLATFORM_BUDGET_LIMITS.maxCostCents)})`);
+    if (
+      typeof budget.maxCostCents === 'number' &&
+      budget.maxCostCents > PLATFORM_BUDGET_LIMITS.maxCostCents
+    ) {
+      issues.push(
+        `maxCostCents (${String(budget.maxCostCents)}) exceeds platform limit (${String(PLATFORM_BUDGET_LIMITS.maxCostCents)})`,
+      );
     }
-    if (typeof budget.maxActions === 'number' && budget.maxActions > PLATFORM_BUDGET_LIMITS.maxActions) {
-      issues.push(`maxActions (${String(budget.maxActions)}) exceeds platform limit (${String(PLATFORM_BUDGET_LIMITS.maxActions)})`);
+    if (
+      typeof budget.maxActions === 'number' &&
+      budget.maxActions > PLATFORM_BUDGET_LIMITS.maxActions
+    ) {
+      issues.push(
+        `maxActions (${String(budget.maxActions)}) exceeds platform limit (${String(PLATFORM_BUDGET_LIMITS.maxActions)})`,
+      );
     }
   }
 
@@ -234,7 +249,7 @@ marketplaceReviewRouter.get('/queue', requireAuth(), async (c) => {
 marketplaceReviewRouter.post('/:agentId/approve', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace review routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureAdminContext(c);
   const agentId = c.req.param('agentId');
 
@@ -246,9 +261,13 @@ marketplaceReviewRouter.post('/:agentId/approve', requireAuth(), async (c) => {
   // Run security review checks
   const issues = runSecurityReview(agent);
   if (issues.length > 0) {
-    throw new ValidationError('Agent failed security review', {
-      security: issues,
-    }, requestId);
+    throw new ValidationError(
+      'Agent failed security review',
+      {
+        security: issues,
+      },
+      requestId,
+    );
   }
 
   const updated = await deps.updateAgentStatus(agentId, 'published');
@@ -285,10 +304,11 @@ marketplaceReviewRouter.post('/:agentId/approve', requireAuth(), async (c) => {
 marketplaceReviewRouter.post('/:agentId/reject', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace review routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureAdminContext(c);
   const agentId = c.req.param('agentId');
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = rejectSchema.safeParse(body);
   if (!parsed.success) {
@@ -337,10 +357,11 @@ marketplaceReviewRouter.post('/:agentId/reject', requireAuth(), async (c) => {
 marketplaceReviewRouter.post('/:agentId/suspend', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace review routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureAdminContext(c);
   const agentId = c.req.param('agentId');
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = suspendSchema.safeParse(body);
   if (!parsed.success) {

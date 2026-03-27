@@ -21,8 +21,7 @@ import type {
   UsageSummary,
   PaymentMethod,
 } from './types.js';
-import { PLAN_TIER_RANK } from './types.js';
-import { getPlanByTier, getPlanLimits, compareTiers, getResourceLimit } from './plans.js';
+import { getPlanLimits, compareTiers, getResourceLimit } from './plans.js';
 import type { StripeClient } from './stripe-client.js';
 
 // ─── Error Classes ───────────────────────────────────────────────
@@ -57,11 +56,8 @@ export class PlanLimitExceededError extends BillingError {
 }
 
 export class SubscriptionNotFoundError extends BillingError {
-  constructor(tenantId: string) {
-    super(
-      `No active subscription found for tenant`,
-      'SUBSCRIPTION_NOT_FOUND',
-    );
+  constructor(_tenantId: string) {
+    super(`No active subscription found for tenant`, 'SUBSCRIPTION_NOT_FOUND');
     this.name = 'SubscriptionNotFoundError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -69,10 +65,7 @@ export class SubscriptionNotFoundError extends BillingError {
 
 export class InvalidPlanTransitionError extends BillingError {
   constructor(fromTier: PlanTier, toTier: PlanTier, reason: string) {
-    super(
-      `Cannot transition from ${fromTier} to ${toTier}: ${reason}`,
-      'INVALID_PLAN_TRANSITION',
-    );
+    super(`Cannot transition from ${fromTier} to ${toTier}: ${reason}`, 'INVALID_PLAN_TRANSITION');
     this.name = 'InvalidPlanTransitionError';
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -136,18 +129,12 @@ export class SubscriptionManager {
     // Check for existing active subscription
     const existing = await this.store.findSubscriptionByTenantId(tenantId);
     if (existing && existing.status === 'active') {
-      throw new BillingError(
-        'Tenant already has an active subscription',
-        'SUBSCRIPTION_EXISTS',
-      );
+      throw new BillingError('Tenant already has an active subscription', 'SUBSCRIPTION_EXISTS');
     }
 
     // Paid plans require a payment method
-    if (planTier !== 'free' && !paymentMethodId) {
-      throw new BillingError(
-        'Payment method required for paid plans',
-        'PAYMENT_METHOD_REQUIRED',
-      );
+    if (planTier !== 'free' && paymentMethodId === null) {
+      throw new BillingError('Payment method required for paid plans', 'PAYMENT_METHOD_REQUIRED');
     }
 
     // Create or find Stripe customer
@@ -177,7 +164,7 @@ export class SubscriptionManager {
     const stripeSubscription = await this.stripe.createSubscription({
       customer: customer.stripe_customer_id,
       price_id: STRIPE_PRICE_IDS[planTier],
-      payment_method: paymentMethodId ?? undefined,
+      ...(paymentMethodId !== null ? { payment_method: paymentMethodId } : {}),
     });
 
     const now = new Date();
@@ -435,10 +422,7 @@ export class SubscriptionManager {
    * Enforce plan limits — throws PlanLimitExceededError if over limit.
    * Used in middleware to gate resource access.
    */
-  async enforceLimit(
-    tenantId: string,
-    resource: UsageResource,
-  ): Promise<void> {
+  async enforceLimit(tenantId: string, resource: UsageResource): Promise<void> {
     const result = await this.checkLimit(tenantId, resource);
     if (!result.within_limit) {
       throw new PlanLimitExceededError(resource, result.current, result.limit);

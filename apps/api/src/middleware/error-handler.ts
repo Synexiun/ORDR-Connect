@@ -14,11 +14,7 @@
  */
 
 import type { ErrorHandler } from 'hono';
-import {
-  AppError,
-  InternalError,
-  isAppError,
-} from '@ordr/core';
+import { AppError, InternalError, isAppError } from '@ordr/core';
 import type { Env } from '../types.js';
 
 /**
@@ -27,7 +23,7 @@ import type { Env } from '../types.js';
  * Returns: `{ success: false, error: { code, message, correlationId } }`
  */
 export const globalErrorHandler: ErrorHandler<Env> = (error, c) => {
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // ---- Classify the error ---------------------------------------------------
 
@@ -36,7 +32,7 @@ export const globalErrorHandler: ErrorHandler<Env> = (error, c) => {
   if (isAppError(error)) {
     appError = error;
     // Attach correlation ID if not already set
-    if (!appError.correlationId) {
+    if (appError.correlationId === undefined || appError.correlationId.length === 0) {
       appError = new AppError(
         appError.message,
         appError.code,

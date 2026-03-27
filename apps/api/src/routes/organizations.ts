@@ -18,25 +18,34 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { OrganizationManager } from '@ordr/auth';
 import type { AuditLogger } from '@ordr/audit';
-import {
-  AuthenticationError,
-  ValidationError,
-} from '@ordr/core';
+import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
 const createOrgSchema = z.object({
   name: z.string().min(1).max(255),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  // eslint-disable-next-line security/detect-unsafe-regex
+  slug: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   parentId: z.string().uuid().nullable().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
 const updateOrgSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  slug: z.string().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
+  // eslint-disable-next-line security/detect-unsafe-regex
+  slug: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -62,14 +71,14 @@ organizationsRouter.use('*', requireAuth());
 
 // ─── GET / ────────────────────────────────────────────────────────
 
-organizationsRouter.get('/', async (c) => {
+organizationsRouter.get('/', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] Organization routes not configured');
   }
 
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 
@@ -77,7 +86,7 @@ organizationsRouter.get('/', async (c) => {
   const result = await deps.orgManager.listOrganizations(ctx.tenantId, parentId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -91,17 +100,18 @@ organizationsRouter.get('/', async (c) => {
 organizationsRouter.post(
   '/',
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Organization routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const body = await c.req.json().catch(() => null);
     const parsed = createOrgSchema.safeParse(body);
 
@@ -119,10 +129,15 @@ organizationsRouter.post(
       throw new ValidationError('Invalid organization data', fieldErrors, requestId);
     }
 
-    const result = await deps.orgManager.createOrganization(ctx.tenantId, parsed.data);
+    const result = await deps.orgManager.createOrganization(ctx.tenantId, {
+      name: parsed.data.name,
+      slug: parsed.data.slug,
+      ...(parsed.data.parentId !== undefined ? { parentId: parsed.data.parentId } : {}),
+      ...(parsed.data.metadata !== undefined ? { metadata: parsed.data.metadata } : {}),
+    });
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     // Audit log
@@ -138,23 +153,26 @@ organizationsRouter.post(
       timestamp: new Date(),
     });
 
-    return c.json({
-      success: true as const,
-      data: result.data,
-    }, 201);
+    return c.json(
+      {
+        success: true as const,
+        data: result.data,
+      },
+      201,
+    );
   },
 );
 
 // ─── GET /:id ─────────────────────────────────────────────────────
 
-organizationsRouter.get('/:id', async (c) => {
+organizationsRouter.get('/:id', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] Organization routes not configured');
   }
 
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 
@@ -162,7 +180,7 @@ organizationsRouter.get('/:id', async (c) => {
   const result = await deps.orgManager.getOrganization(ctx.tenantId, orgId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({
@@ -176,18 +194,19 @@ organizationsRouter.get('/:id', async (c) => {
 organizationsRouter.patch(
   '/:id',
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Organization routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
     }
 
     const orgId = c.req.param('id');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const body = await c.req.json().catch(() => null);
     const parsed = updateOrgSchema.safeParse(body);
 
@@ -205,14 +224,14 @@ organizationsRouter.patch(
       throw new ValidationError('Invalid update data', fieldErrors, requestId);
     }
 
-    const result = await deps.orgManager.updateOrganization(
-      ctx.tenantId,
-      orgId,
-      parsed.data,
-    );
+    const result = await deps.orgManager.updateOrganization(ctx.tenantId, orgId, {
+      ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+      ...(parsed.data.slug !== undefined ? { slug: parsed.data.slug } : {}),
+      ...(parsed.data.metadata !== undefined ? { metadata: parsed.data.metadata } : {}),
+    });
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     return c.json({
@@ -227,12 +246,12 @@ organizationsRouter.patch(
 organizationsRouter.delete(
   '/:id',
   requireRoleMiddleware('tenant_admin'),
-  async (c) => {
+  async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Organization routes not configured');
     }
 
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) {
       throw new AuthenticationError('Authentication required', requestId);
@@ -242,7 +261,7 @@ organizationsRouter.delete(
     const result = await deps.orgManager.deleteOrganization(ctx.tenantId, orgId);
 
     if (!result.success) {
-      return c.json(result.error.toSafeResponse(), result.error.statusCode);
+      return jsonErr(c, result.error);
     }
 
     // Audit log
@@ -264,14 +283,14 @@ organizationsRouter.delete(
 
 // ─── GET /:id/hierarchy ──────────────────────────────────────────
 
-organizationsRouter.get('/:id/hierarchy', async (c) => {
+organizationsRouter.get('/:id/hierarchy', async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] Organization routes not configured');
   }
 
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 
@@ -279,7 +298,7 @@ organizationsRouter.get('/:id/hierarchy', async (c) => {
   const result = await deps.orgManager.getOrgHierarchy(ctx.tenantId, orgId);
 
   if (!result.success) {
-    return c.json(result.error.toSafeResponse(), result.error.statusCode);
+    return jsonErr(c, result.error);
   }
 
   return c.json({

@@ -24,6 +24,7 @@ import type {
 } from './engine.js';
 import type {
   SearchableEntityType,
+  SearchFacet,
   SearchIndexEntry,
   SearchSuggestion,
   FacetResult,
@@ -45,7 +46,7 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
 
   // ── SearchIndexStore ─────────────────────────────────────────
 
-  async upsert(input: IndexUpsertInput): Promise<SearchIndexEntry> {
+  upsert(input: IndexUpsertInput): Promise<SearchIndexEntry> {
     const key = makeKey(input.tenantId, input.entityType, input.entityId);
     const existing = this.entries.get(key);
     const now = new Date();
@@ -64,19 +65,15 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
     };
 
     this.entries.set(key, entry);
-    return entry;
+    return Promise.resolve(entry);
   }
 
-  async remove(
-    tenantId: string,
-    entityType: SearchableEntityType,
-    entityId: string,
-  ): Promise<boolean> {
+  remove(tenantId: string, entityType: SearchableEntityType, entityId: string): Promise<boolean> {
     const key = makeKey(tenantId, entityType, entityId);
-    return this.entries.delete(key);
+    return Promise.resolve(this.entries.delete(key));
   }
 
-  async removeAll(tenantId: string, entityType: SearchableEntityType): Promise<number> {
+  removeAll(tenantId: string, entityType: SearchableEntityType): Promise<number> {
     let removed = 0;
     for (const [key, entry] of this.entries) {
       if (entry.tenantId === tenantId && entry.entityType === entityType) {
@@ -84,33 +81,36 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
         removed++;
       }
     }
-    return removed;
+    return Promise.resolve(removed);
   }
 
-  async findEntry(
+  findEntry(
     tenantId: string,
     entityType: SearchableEntityType,
     entityId: string,
   ): Promise<SearchIndexEntry | null> {
     const key = makeKey(tenantId, entityType, entityId);
-    return this.entries.get(key) ?? null;
+    return Promise.resolve(this.entries.get(key) ?? null);
   }
 
-  async countEntries(tenantId: string, entityType: SearchableEntityType): Promise<number> {
+  countEntries(tenantId: string, entityType: SearchableEntityType): Promise<number> {
     let count = 0;
     for (const entry of this.entries.values()) {
       if (entry.tenantId === tenantId && entry.entityType === entityType) {
         count++;
       }
     }
-    return count;
+    return Promise.resolve(count);
   }
 
   // ── SearchStore ──────────────────────────────────────────────
 
-  async search(params: SearchStoreParams): Promise<SearchStoreResult> {
+  search(params: SearchStoreParams): Promise<SearchStoreResult> {
     const tenantEntries = this.getFilteredEntries(params.tenantId, params.entityType);
-    const queryTerms = params.queryText.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
+    const queryTerms = params.queryText
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 0);
 
     // Score and filter entries
     let scored = tenantEntries
@@ -143,10 +143,10 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
       indexedAt: item.entry.indexedAt,
     }));
 
-    return { results, total };
+    return Promise.resolve({ results, total });
   }
 
-  async suggest(params: SuggestStoreParams): Promise<readonly SearchSuggestion[]> {
+  suggest(params: SuggestStoreParams): Promise<readonly SearchSuggestion[]> {
     const tenantEntries = this.getFilteredEntries(params.tenantId, params.entityType);
     const prefixLower = params.prefix.toLowerCase();
 
@@ -166,18 +166,23 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
       .sort((a, b) => b.score - a.score)
       .slice(0, params.limit);
 
-    return matches.map((item) => ({
-      entityType: item.entry.entityType,
-      entityId: item.entry.entityId,
-      displayTitle: item.entry.displayTitle,
-      displaySubtitle: item.entry.displaySubtitle,
-      score: item.score,
-    }));
+    return Promise.resolve(
+      matches.map((item) => ({
+        entityType: item.entry.entityType,
+        entityId: item.entry.entityId,
+        displayTitle: item.entry.displayTitle,
+        displaySubtitle: item.entry.displaySubtitle,
+        score: item.score,
+      })),
+    );
   }
 
-  async facetedSearch(params: FacetedSearchStoreParams): Promise<FacetedSearchStoreResult> {
+  facetedSearch(params: FacetedSearchStoreParams): Promise<FacetedSearchStoreResult> {
     const tenantEntries = this.getFilteredEntries(params.tenantId, undefined);
-    const queryTerms = params.queryText.toLowerCase().split(/\s+/).filter((t) => t.length > 0);
+    const queryTerms = params.queryText
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 0);
 
     // Score and filter entries
     let scored = tenantEntries
@@ -213,7 +218,7 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
       indexedAt: item.entry.indexedAt,
     }));
 
-    return { results, total, facets };
+    return Promise.resolve({ results, total, facets });
   }
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -268,8 +273,8 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
 
       // Fuzzy matching (trigram similarity simulation)
       if (fuzzy && score === 0) {
-        const similarity = this.trigramSimilarity(term, title) +
-          this.trigramSimilarity(term, content);
+        const similarity =
+          this.trigramSimilarity(term, title) + this.trigramSimilarity(term, content);
         if (similarity > 0.3) {
           score += similarity;
         }
@@ -392,7 +397,7 @@ export class InMemorySearchStore implements SearchIndexStore, SearchStore {
       if (facet.type === 'status') {
         const counts = new Map<string, number>();
         for (const entry of entries) {
-          const status = (entry.metadata['status'] as string) ?? 'unknown';
+          const status = entry.metadata['status'] as string;
           const current = counts.get(status) ?? 0;
           counts.set(status, current + 1);
         }

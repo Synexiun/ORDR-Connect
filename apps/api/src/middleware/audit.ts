@@ -54,7 +54,7 @@ export const audit = createMiddleware<Env>(async (c, next) => {
   const method = c.req.method.toUpperCase();
   const status = c.res.status;
   const duration = Date.now() - startTime;
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const tenantContext = c.get('tenantContext');
 
   // Always audit state-changing methods; also audit reads for compliance trail

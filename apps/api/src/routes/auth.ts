@@ -16,13 +16,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { JwtConfig } from '@ordr/auth';
-import {
-  loadKeyPair,
-  createAccessToken,
-  verifyRefreshToken,
-  InMemoryRateLimiter,
-  AUTH_RATE_LIMIT,
-} from '@ordr/auth';
+import { createAccessToken, InMemoryRateLimiter, AUTH_RATE_LIMIT } from '@ordr/auth';
 import type { SessionManager } from '@ordr/auth';
 import type { AuditLogger } from '@ordr/audit';
 import {
@@ -42,7 +36,8 @@ import { requireAuth } from '../middleware/auth.js';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address').max(255),
-  password: z.string()
+  password: z
+    .string()
     .min(PASSWORD_MIN_LENGTH, `Password must be at least ${String(PASSWORD_MIN_LENGTH)} characters`)
     .max(PASSWORD_MAX_LENGTH),
 });
@@ -94,7 +89,7 @@ authRouter.post('/login', async (c) => {
     throw new Error('[ORDR:API] Auth routes not configured');
   }
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Rate limiting
   const clientIp = c.req.header('x-forwarded-for') ?? 'unknown';
@@ -102,7 +97,10 @@ authRouter.post('/login', async (c) => {
   const rateLimitResult = await rateLimiter.check(rateLimitKey, AUTH_RATE_LIMIT);
 
   if (!rateLimitResult.allowed) {
-    c.header('Retry-After', String(Math.ceil((rateLimitResult.resetAt.getTime() - Date.now()) / 1000)));
+    c.header(
+      'Retry-After',
+      String(Math.ceil((rateLimitResult.resetAt.getTime() - Date.now()) / 1000)),
+    );
     throw new RateLimitError(
       'Too many login attempts. Please try again later.',
       Math.ceil((rateLimitResult.resetAt.getTime() - Date.now()) / 1000),
@@ -111,6 +109,7 @@ authRouter.post('/login', async (c) => {
   }
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
@@ -173,9 +172,10 @@ authRouter.post('/login', async (c) => {
   if (!passwordValid) {
     // Increment failed attempts
     const newAttempts = user.failedLoginAttempts + 1;
-    const lockUntil = newAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
-      ? new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000)
-      : null;
+    const lockUntil =
+      newAttempts >= MAX_FAILED_LOGIN_ATTEMPTS
+        ? new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000)
+        : null;
 
     await deps.updateLoginAttempts(user.id, newAttempts, lockUntil);
 
@@ -198,12 +198,16 @@ authRouter.post('/login', async (c) => {
   await deps.resetLoginAttempts(user.id);
 
   // Create session + tokens
+  const sessionUserAgent = c.req.header('user-agent');
   const { sessionId, refreshToken } = await deps.sessionManager.createSession(
     user.id,
     user.tenantId,
     user.role as 'super_admin' | 'tenant_admin' | 'manager' | 'agent' | 'viewer',
     [], // Permissions from role defaults
-    { ipAddress: clientIp, userAgent: c.req.header('user-agent') },
+    {
+      ipAddress: clientIp,
+      ...(sessionUserAgent !== undefined ? { userAgent: sessionUserAgent } : {}),
+    },
   );
 
   const accessToken = await createAccessToken(deps.jwtConfig, {
@@ -244,9 +248,10 @@ authRouter.post('/refresh', async (c) => {
     throw new Error('[ORDR:API] Auth routes not configured');
   }
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = refreshSchema.safeParse(body);
   if (!parsed.success) {
@@ -281,7 +286,7 @@ authRouter.post('/logout', requireAuth(), async (c) => {
     throw new Error('[ORDR:API] Auth routes not configured');
   }
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) {
     throw new AuthenticationError('Authentication required', requestId);
@@ -308,10 +313,10 @@ authRouter.post('/logout', requireAuth(), async (c) => {
 
 // ---- GET /me ---------------------------------------------------------------
 
-authRouter.get('/me', requireAuth(), async (c) => {
+authRouter.get('/me', requireAuth(), (c) => {
   const ctx = c.get('tenantContext');
   if (!ctx) {
-    const requestId = c.get('requestId') ?? 'unknown';
+    const requestId = c.get('requestId');
     throw new AuthenticationError('Authentication required', requestId);
   }
 

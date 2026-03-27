@@ -26,12 +26,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AuditLogger } from '@ordr/audit';
-import {
-  ValidationError,
-  NotFoundError,
-  AuthorizationError,
-  ConflictError,
-} from '@ordr/core';
+import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -46,6 +41,7 @@ const listQuerySchema = z.object({
 
 const publishSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255),
+  // eslint-disable-next-line security/detect-unsafe-regex
   version: z.string().regex(/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?$/, 'Version must be valid semver'),
   description: z.string().min(1, 'Description is required').max(2000),
   author: z.string().min(1, 'Author is required').max(255),
@@ -114,7 +110,10 @@ interface MarketplaceDependencies {
     category?: string;
   }) => Promise<{ agents: MarketplaceAgentRecord[]; total: number }>;
   readonly findAgentById: (id: string) => Promise<MarketplaceAgentRecord | null>;
-  readonly findAgentByNameVersion: (name: string, version: string) => Promise<MarketplaceAgentRecord | null>;
+  readonly findAgentByNameVersion: (
+    name: string,
+    version: string,
+  ) => Promise<MarketplaceAgentRecord | null>;
   readonly createAgent: (data: {
     name: string;
     version: string;
@@ -125,18 +124,24 @@ interface MarketplaceDependencies {
     packageHash: string;
     publisherId: string;
   }) => Promise<MarketplaceAgentRecord>;
-  readonly updateAgent: (id: string, data: {
-    description?: string;
-    manifest?: Record<string, unknown>;
-    packageHash?: string;
-  }) => Promise<MarketplaceAgentRecord | null>;
+  readonly updateAgent: (
+    id: string,
+    data: {
+      description?: string;
+      manifest?: Record<string, unknown>;
+      packageHash?: string;
+    },
+  ) => Promise<MarketplaceAgentRecord | null>;
   readonly incrementDownloads: (id: string) => Promise<void>;
   readonly createInstall: (data: {
     tenantId: string;
     agentId: string;
     version: string;
   }) => Promise<MarketplaceInstallRecord>;
-  readonly findInstall: (tenantId: string, agentId: string) => Promise<MarketplaceInstallRecord | null>;
+  readonly findInstall: (
+    tenantId: string,
+    agentId: string,
+  ) => Promise<MarketplaceInstallRecord | null>;
   readonly removeInstall: (tenantId: string, agentId: string) => Promise<boolean>;
   readonly createReview: (data: {
     agentId: string;
@@ -144,7 +149,10 @@ interface MarketplaceDependencies {
     rating: number;
     comment: string | null;
   }) => Promise<MarketplaceReviewRecord>;
-  readonly findReviewByUser: (agentId: string, reviewerId: string) => Promise<MarketplaceReviewRecord | null>;
+  readonly findReviewByUser: (
+    agentId: string,
+    reviewerId: string,
+  ) => Promise<MarketplaceReviewRecord | null>;
   readonly listReviews: (agentId: string) => Promise<MarketplaceReviewRecord[]>;
 }
 
@@ -181,7 +189,11 @@ function ensureAuthContext(c: {
 }
 
 function requireRole(roles: string[], required: string, requestId: string): void {
-  if (!roles.includes(required) && !roles.includes('super_admin') && !roles.includes('tenant_admin')) {
+  if (
+    !roles.includes(required) &&
+    !roles.includes('super_admin') &&
+    !roles.includes('tenant_admin')
+  ) {
     throw new AuthorizationError(`Requires ${required} role`, requestId);
   }
 }
@@ -195,7 +207,7 @@ const marketplaceRouter = new Hono<Env>();
 marketplaceRouter.get('/', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   const raw = {
     limit: c.req.query('limit'),
@@ -211,7 +223,12 @@ marketplaceRouter.get('/', requireAuth(), async (c) => {
 
   const { limit, offset, search, category } = parsed.data;
 
-  const result = await deps.listPublishedAgents({ limit, offset, search, category });
+  const result = await deps.listPublishedAgents({
+    limit,
+    offset,
+    ...(search !== undefined ? { search } : {}),
+    ...(category !== undefined ? { category } : {}),
+  });
 
   return c.json({
     success: true as const,
@@ -240,7 +257,7 @@ marketplaceRouter.get('/', requireAuth(), async (c) => {
 marketplaceRouter.get('/:agentId', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const agentId = c.req.param('agentId');
 
   const agent = await deps.findAgentById(agentId);
@@ -274,9 +291,10 @@ marketplaceRouter.get('/:agentId', requireAuth(), async (c) => {
 marketplaceRouter.post('/', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureAuthContext(c);
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = publishSchema.safeParse(body);
   if (!parsed.success) {
@@ -335,7 +353,7 @@ marketplaceRouter.post('/', requireAuth(), async (c) => {
 marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureAuthContext(c);
   const agentId = c.req.param('agentId');
 
@@ -350,13 +368,18 @@ marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
     throw new AuthorizationError('Only the agent publisher can update this listing', requestId);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Invalid update data', parseZodErrors(parsed.error), requestId);
   }
 
-  const updated = await deps.updateAgent(agentId, parsed.data);
+  const updated = await deps.updateAgent(agentId, {
+    ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+    ...(parsed.data.manifest !== undefined ? { manifest: parsed.data.manifest } : {}),
+    ...(parsed.data.packageHash !== undefined ? { packageHash: parsed.data.packageHash } : {}),
+  });
   if (!updated) {
     throw new NotFoundError('Agent not found', requestId);
   }
@@ -392,7 +415,7 @@ marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
 marketplaceRouter.post('/:agentId/install', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId, tenantId, roles } = ensureAuthContext(c);
   const agentId = c.req.param('agentId');
 
@@ -406,9 +429,13 @@ marketplaceRouter.post('/:agentId/install', requireAuth(), async (c) => {
   }
 
   if (agent.status !== 'published') {
-    throw new ValidationError('Only published agents can be installed', {
-      status: ['Agent is not published'],
-    }, requestId);
+    throw new ValidationError(
+      'Only published agents can be installed',
+      {
+        status: ['Agent is not published'],
+      },
+      requestId,
+    );
   }
 
   // Check if already installed
@@ -460,7 +487,7 @@ marketplaceRouter.post('/:agentId/install', requireAuth(), async (c) => {
 marketplaceRouter.delete('/:agentId/install', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId, tenantId, roles } = ensureAuthContext(c);
   const agentId = c.req.param('agentId');
 
@@ -493,10 +520,11 @@ marketplaceRouter.delete('/:agentId/install', requireAuth(), async (c) => {
 marketplaceRouter.post('/:agentId/review', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureAuthContext(c);
   const agentId = c.req.param('agentId');
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = reviewSchema.safeParse(body);
   if (!parsed.success) {
@@ -557,7 +585,7 @@ marketplaceRouter.post('/:agentId/review', requireAuth(), async (c) => {
 marketplaceRouter.get('/:agentId/reviews', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const agentId = c.req.param('agentId');
 
   // Verify agent exists

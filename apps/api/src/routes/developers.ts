@@ -56,7 +56,8 @@ const SANDBOX_LIMITS: Record<string, number> = {
 const registerSchema = z.object({
   email: z.string().email('Invalid email address').max(255),
   name: z.string().min(1, 'Name is required').max(255),
-  password: z.string()
+  password: z
+    .string()
     .min(PASSWORD_MIN_LENGTH, `Password must be at least ${String(PASSWORD_MIN_LENGTH)} characters`)
     .max(PASSWORD_MAX_LENGTH),
   tier: z.enum(['free', 'pro', 'enterprise']).default('free'),
@@ -65,7 +66,8 @@ const registerSchema = z.object({
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address').max(255),
-  password: z.string()
+  password: z
+    .string()
     .min(PASSWORD_MIN_LENGTH, `Password must be at least ${String(PASSWORD_MIN_LENGTH)} characters`)
     .max(PASSWORD_MAX_LENGTH),
 });
@@ -149,7 +151,10 @@ interface DeveloperDependencies {
     expiresAt: Date;
   }) => Promise<SandboxRecord>;
   readonly listSandboxes: (developerId: string) => Promise<SandboxRecord[]>;
-  readonly findSandboxById: (developerId: string, sandboxId: string) => Promise<SandboxRecord | null>;
+  readonly findSandboxById: (
+    developerId: string,
+    sandboxId: string,
+  ) => Promise<SandboxRecord | null>;
   readonly destroySandbox: (developerId: string, sandboxId: string) => Promise<boolean>;
 }
 
@@ -195,9 +200,10 @@ const developersRouter = new Hono<Env>();
 developersRouter.post('/register', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {
@@ -258,9 +264,10 @@ developersRouter.post('/register', async (c) => {
 developersRouter.post('/login', async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
@@ -334,7 +341,7 @@ developersRouter.post('/login', async (c) => {
 developersRouter.get('/me', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureDeveloperContext(c);
 
   const developer = await deps.findDeveloperById(userId);
@@ -363,10 +370,11 @@ developersRouter.get('/me', requireAuth(), async (c) => {
 developersRouter.post('/keys', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureDeveloperContext(c);
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = createKeySchema.safeParse(body);
   if (!parsed.success) {
@@ -378,9 +386,8 @@ developersRouter.post('/keys', requireAuth(), async (c) => {
   // Generate API key — raw key shown ONCE, only hash stored (Rule 2)
   const keyResult = createApiKey(userId, userId, name, []);
 
-  const expiresAt = expiresInDays
-    ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
-    : null;
+  const expiresAt =
+    expiresInDays !== undefined ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) : null;
 
   // Store hashed key
   const keyRecord = await deps.createDeveloperKey({
@@ -451,7 +458,7 @@ developersRouter.get('/keys', requireAuth(), async (c) => {
 developersRouter.delete('/keys/:keyId', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureDeveloperContext(c);
   const keyId = c.req.param('keyId');
 
@@ -487,10 +494,11 @@ developersRouter.delete('/keys/:keyId', requireAuth(), async (c) => {
 developersRouter.post('/sandbox', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureDeveloperContext(c);
 
   // Validate input
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body = await c.req.json().catch(() => null);
   const parsed = createSandboxSchema.safeParse(body);
   if (!parsed.success) {
@@ -510,7 +518,9 @@ developersRouter.post('/sandbox', requireAuth(), async (c) => {
   if (activeSandboxes.length >= limit) {
     throw new ValidationError(
       `Sandbox limit reached for ${developer.tier} tier (max ${String(limit)})`,
-      { sandbox: [`Maximum ${String(limit)} active sandbox(es) allowed for ${developer.tier} tier`] },
+      {
+        sandbox: [`Maximum ${String(limit)} active sandbox(es) allowed for ${developer.tier} tier`],
+      },
       requestId,
     );
   }
@@ -587,7 +597,7 @@ developersRouter.get('/sandbox', requireAuth(), async (c) => {
 developersRouter.delete('/sandbox/:sandboxId', requireAuth(), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
-  const requestId = c.get('requestId') ?? 'unknown';
+  const requestId = c.get('requestId');
   const { userId } = ensureDeveloperContext(c);
   const sandboxId = c.req.param('sandboxId');
 

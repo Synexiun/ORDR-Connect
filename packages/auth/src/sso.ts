@@ -14,18 +14,13 @@
 
 import type { Result } from '@ordr/core';
 import { ok, err, AppError, ERROR_CODES } from '@ordr/core';
-import { encryptString, decryptString, randomToken, sha256 } from '@ordr/crypto';
+import { encryptString, decryptString, randomToken } from '@ordr/crypto';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
 export type SSOConnectionType = 'saml' | 'oidc';
 
-export type SSOProvider =
-  | 'okta'
-  | 'azure-ad'
-  | 'google'
-  | 'onelogin'
-  | 'custom';
+export type SSOProvider = 'okta' | 'azure-ad' | 'google' | 'onelogin' | 'custom';
 
 export type SSOConnectionStatus = 'active' | 'inactive' | 'validating';
 
@@ -104,39 +99,47 @@ export interface SSOConnectionStore {
 // ─── In-Memory SSO Client (Testing) ──────────────────────────────
 
 export class InMemorySSOClient implements WorkOSClient {
-  private readonly profiles = new Map<string, {
-    readonly id: string;
-    readonly email: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly idpId: string;
-    readonly connectionType: SSOConnectionType;
-    readonly rawAttributes: Readonly<Record<string, unknown>>;
-  }>();
+  private readonly profiles = new Map<
+    string,
+    {
+      readonly id: string;
+      readonly email: string;
+      readonly firstName: string;
+      readonly lastName: string;
+      readonly idpId: string;
+      readonly connectionType: SSOConnectionType;
+      readonly rawAttributes: Readonly<Record<string, unknown>>;
+    }
+  >();
 
-  addProfile(code: string, profile: {
-    readonly id: string;
-    readonly email: string;
-    readonly firstName: string;
-    readonly lastName: string;
-    readonly idpId: string;
-    readonly connectionType: SSOConnectionType;
-    readonly rawAttributes: Readonly<Record<string, unknown>>;
-  }): void {
+  addProfile(
+    code: string,
+    profile: {
+      readonly id: string;
+      readonly email: string;
+      readonly firstName: string;
+      readonly lastName: string;
+      readonly idpId: string;
+      readonly connectionType: SSOConnectionType;
+      readonly rawAttributes: Readonly<Record<string, unknown>>;
+    },
+  ): void {
     this.profiles.set(code, profile);
   }
 
-  async getAuthorizationUrl(params: {
+  getAuthorizationUrl(params: {
     readonly connectionId: string;
     readonly redirectUri: string;
     readonly state: string;
     readonly clientId: string;
   }): Promise<string> {
     const encodedState = encodeURIComponent(params.state);
-    return `https://auth.workos.test/sso/authorize?connection=${params.connectionId}&redirect_uri=${encodeURIComponent(params.redirectUri)}&state=${encodedState}&client_id=${params.clientId}`;
+    return Promise.resolve(
+      `https://auth.workos.test/sso/authorize?connection=${params.connectionId}&redirect_uri=${encodeURIComponent(params.redirectUri)}&state=${encodedState}&client_id=${params.clientId}`,
+    );
   }
 
-  async getProfileByCode(code: string): Promise<{
+  getProfileByCode(code: string): Promise<{
     readonly id: string;
     readonly email: string;
     readonly firstName: string;
@@ -147,9 +150,9 @@ export class InMemorySSOClient implements WorkOSClient {
   }> {
     const profile = this.profiles.get(code);
     if (!profile) {
-      throw new Error('Invalid authorization code');
+      return Promise.reject(new Error('Invalid authorization code'));
     }
-    return profile;
+    return Promise.resolve(profile);
   }
 }
 
@@ -158,35 +161,37 @@ export class InMemorySSOClient implements WorkOSClient {
 export class InMemorySSOConnectionStore implements SSOConnectionStore {
   private readonly connections = new Map<string, SSOConnection>();
 
-  async create(connection: SSOConnection): Promise<void> {
+  create(connection: SSOConnection): Promise<void> {
     this.connections.set(`${connection.tenantId}:${connection.id}`, connection);
+    return Promise.resolve();
   }
 
-  async getById(tenantId: string, connectionId: string): Promise<SSOConnection | null> {
-    return this.connections.get(`${tenantId}:${connectionId}`) ?? null;
+  getById(tenantId: string, connectionId: string): Promise<SSOConnection | null> {
+    return Promise.resolve(this.connections.get(`${tenantId}:${connectionId}`) ?? null);
   }
 
-  async listByTenant(tenantId: string): Promise<readonly SSOConnection[]> {
+  listByTenant(tenantId: string): Promise<readonly SSOConnection[]> {
     const results: SSOConnection[] = [];
     for (const conn of this.connections.values()) {
       if (conn.tenantId === tenantId) {
         results.push(conn);
       }
     }
-    return results;
+    return Promise.resolve(results);
   }
 
-  async delete(tenantId: string, connectionId: string): Promise<void> {
+  delete(tenantId: string, connectionId: string): Promise<void> {
     this.connections.delete(`${tenantId}:${connectionId}`);
+    return Promise.resolve();
   }
 
-  async getActiveByTenant(tenantId: string): Promise<SSOConnection | null> {
+  getActiveByTenant(tenantId: string): Promise<SSOConnection | null> {
     for (const conn of this.connections.values()) {
       if (conn.tenantId === tenantId && conn.status === 'active' && conn.enforceSso) {
-        return conn;
+        return Promise.resolve(conn);
       }
     }
-    return null;
+    return Promise.resolve(null);
   }
 }
 
@@ -229,7 +234,7 @@ export class SSOManager {
     tenantId: string,
     connectionId: string,
     state: string,
-  ): Promise<Result<string, AppError>> {
+  ): Promise<Result<string>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -259,7 +264,7 @@ export class SSOManager {
 
     const encryptedState = encryptString(
       JSON.stringify(ssoState),
-      this.stateEncryptionKey,
+      Buffer.from(this.stateEncryptionKey, 'hex'),
     );
 
     // Combine encrypted state with caller-provided state
@@ -280,12 +285,11 @@ export class SSOManager {
    *
    * Verifies the encrypted state parameter for integrity and expiration.
    */
-  async handleCallback(
-    code: string,
-    state: string,
-  ): Promise<Result<SSOProfile, AppError>> {
+  async handleCallback(code: string, state: string): Promise<Result<SSOProfile>> {
     if (!code || code.trim().length === 0) {
-      return err(new AppError('Authorization code is required', ERROR_CODES.VALIDATION_FAILED, 400));
+      return err(
+        new AppError('Authorization code is required', ERROR_CODES.VALIDATION_FAILED, 400),
+      );
     }
 
     if (!state || state.trim().length === 0) {
@@ -295,7 +299,9 @@ export class SSOManager {
     // Split combined state
     const pipeIndex = state.indexOf('|');
     if (pipeIndex === -1) {
-      return err(new AppError('Invalid state parameter format', ERROR_CODES.VALIDATION_FAILED, 400));
+      return err(
+        new AppError('Invalid state parameter format', ERROR_CODES.VALIDATION_FAILED, 400),
+      );
     }
 
     const encryptedPart = state.slice(0, pipeIndex);
@@ -303,10 +309,12 @@ export class SSOManager {
     // Decrypt and verify state
     let ssoState: SSOState;
     try {
-      const decrypted = decryptString(encryptedPart, this.stateEncryptionKey);
+      const decrypted = decryptString(encryptedPart, Buffer.from(this.stateEncryptionKey, 'hex'));
       ssoState = JSON.parse(decrypted) as SSOState;
     } catch {
-      return err(new AppError('State parameter tampered or corrupted', ERROR_CODES.AUTH_FAILED, 401));
+      return err(
+        new AppError('State parameter tampered or corrupted', ERROR_CODES.AUTH_FAILED, 401),
+      );
     }
 
     // Verify timestamp (max 10 minutes)
@@ -336,16 +344,16 @@ export class SSOManager {
 
       return ok(profile);
     } catch {
-      return err(new AppError('Failed to exchange authorization code', ERROR_CODES.AUTH_FAILED, 401));
+      return err(
+        new AppError('Failed to exchange authorization code', ERROR_CODES.AUTH_FAILED, 401),
+      );
     }
   }
 
   /**
    * Lists all SSO connections for a tenant.
    */
-  async getSSOConnections(
-    tenantId: string,
-  ): Promise<Result<readonly SSOConnection[], AppError>> {
+  async getSSOConnections(tenantId: string): Promise<Result<readonly SSOConnection[]>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -360,17 +368,13 @@ export class SSOManager {
   async createSSOConnection(
     tenantId: string,
     config: SSOConnectionConfig,
-  ): Promise<Result<SSOConnection, AppError>> {
+  ): Promise<Result<SSOConnection>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
 
     if (!config.name || config.name.trim().length === 0) {
       return err(new AppError('Connection name is required', ERROR_CODES.VALIDATION_FAILED, 400));
-    }
-
-    if (!config.type || (config.type !== 'saml' && config.type !== 'oidc')) {
-      return err(new AppError('Connection type must be saml or oidc', ERROR_CODES.VALIDATION_FAILED, 400));
     }
 
     const connection: SSOConnection = {
@@ -391,10 +395,7 @@ export class SSOManager {
   /**
    * Deletes an SSO connection.
    */
-  async deleteSSOConnection(
-    tenantId: string,
-    connectionId: string,
-  ): Promise<Result<void, AppError>> {
+  async deleteSSOConnection(tenantId: string, connectionId: string): Promise<Result<void>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }

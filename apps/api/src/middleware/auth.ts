@@ -14,10 +14,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import type { UserRole } from '@ordr/core';
-import {
-  AuthenticationError,
-  AuthorizationError,
-} from '@ordr/core';
+import { AuthenticationError, AuthorizationError } from '@ordr/core';
 import {
   authenticateRequest,
   requireRole as authRequireRole,
@@ -35,10 +32,7 @@ let apiKeyVerifier: ApiKeyVerifier | undefined;
  * Call once at startup to provide the JWT config and optional API key verifier.
  * Middleware will throw if this has not been called.
  */
-export function configureAuth(
-  jwt: JwtConfig,
-  verifier?: ApiKeyVerifier,
-): void {
+export function configureAuth(jwt: JwtConfig, verifier?: ApiKeyVerifier): void {
   jwtConfig = jwt;
   apiKeyVerifier = verifier;
 }
@@ -52,29 +46,25 @@ export function configureAuth(
 export function requireAuth() {
   return createMiddleware<Env>(async (c, next) => {
     if (!jwtConfig) {
-      const requestId = c.get('requestId') ?? 'unknown';
-      const err = new AuthenticationError(
-        'Authentication service unavailable',
-        requestId,
-      );
+      const requestId = c.get('requestId');
+      const err = new AuthenticationError('Authentication service unavailable', requestId);
       return c.json(err.toSafeResponse(), 401);
     }
 
+    const authorizationHeader = c.req.header('authorization');
+    const xApiKeyHeader = c.req.header('x-api-key');
     const result = await authenticateRequest(
       {
-        authorization: c.req.header('authorization'),
-        'x-api-key': c.req.header('x-api-key'),
+        ...(authorizationHeader !== undefined ? { authorization: authorizationHeader } : {}),
+        ...(xApiKeyHeader !== undefined ? { 'x-api-key': xApiKeyHeader } : {}),
       },
       jwtConfig,
       apiKeyVerifier,
     );
 
     if (!result.authenticated) {
-      const requestId = c.get('requestId') ?? 'unknown';
-      const err = new AuthenticationError(
-        'Authentication required',
-        requestId,
-      );
+      const requestId = c.get('requestId');
+      const err = new AuthenticationError('Authentication required', requestId);
       return c.json(err.toSafeResponse(), 401);
     }
 
@@ -91,7 +81,7 @@ export function requireRoleMiddleware(role: UserRole) {
   return createMiddleware<Env>(async (c, next) => {
     const ctx = c.get('tenantContext');
     if (!ctx) {
-      const requestId = c.get('requestId') ?? 'unknown';
+      const requestId = c.get('requestId');
       return c.json(
         new AuthenticationError('Authentication required', requestId).toSafeResponse(),
         401,
@@ -119,7 +109,7 @@ export function requirePermissionMiddleware(resource: string, action: string) {
   return createMiddleware<Env>(async (c, next) => {
     const ctx = c.get('tenantContext');
     if (!ctx) {
-      const requestId = c.get('requestId') ?? 'unknown';
+      const requestId = c.get('requestId');
       return c.json(
         new AuthenticationError('Authentication required', requestId).toSafeResponse(),
         401,

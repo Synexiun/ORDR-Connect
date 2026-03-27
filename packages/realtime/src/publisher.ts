@@ -12,11 +12,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { ChannelManager } from './channels.js';
-import type {
-  EventCategory,
-  RealtimeEvent,
-  PublishOptions,
-} from './types.js';
+import type { EventCategory, RealtimeEvent, PublishOptions } from './types.js';
 import { EVENT_CATEGORIES } from './types.js';
 
 // ─── Audit Logger Interface ─────────────────────────────────────
@@ -71,7 +67,7 @@ export class EventPublisher {
       type,
       data,
       timestamp: new Date().toISOString(),
-      targetUserIds: options?.targetUserIds,
+      ...(options?.targetUserIds !== undefined ? { targetUserIds: options.targetUserIds } : {}),
     };
 
     const delivered = this.channelManager.publish(event);
@@ -99,11 +95,11 @@ export class EventPublisher {
   /**
    * Publish a pre-built RealtimeEvent directly.
    */
-  async publishEvent(event: RealtimeEvent): Promise<number> {
+  publishEvent(event: RealtimeEvent): Promise<number> {
     this.validateTenantId(event.tenantId);
     this.validateCategory(event.category);
 
-    return this.channelManager.publish(event);
+    return Promise.resolve(this.channelManager.publish(event));
   }
 
   /**
