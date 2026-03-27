@@ -9,7 +9,13 @@ import { Modal } from '../components/ui/Modal';
 import { Spinner } from '../components/ui/Spinner';
 import { SparkLine } from '../components/charts/SparkLine';
 import { Avatar } from '../components/ui/Avatar';
-import { apiClient } from '../lib/api';
+import {
+  listCustomers,
+  createCustomer,
+  deleteCustomer,
+  type Customer as ApiCustomer,
+  type CustomerStatus,
+} from '../lib/customers-api';
 
 // --- Types ---
 
@@ -22,14 +28,6 @@ interface Customer {
   lifecycleStage: 'lead' | 'onboarding' | 'active' | 'at-risk' | 'churned';
   lastContact: string;
   createdAt: string;
-}
-
-interface CustomersResponse {
-  success: true;
-  data: Customer[];
-  total: number;
-  page: number;
-  pageSize: number;
 }
 
 type CustomerFormData = {
@@ -125,6 +123,31 @@ const mockCustomers: Customer[] = Array.from({ length: 47 }, (_, i) => ({
   createdAt: new Date(Date.now() - (i + 30) * 86400000).toISOString(),
 }));
 
+// --- Adapters ---
+
+const lifecycleMap: Record<string, Customer['lifecycleStage']> = {
+  lead: 'lead',
+  qualified: 'lead',
+  opportunity: 'onboarding',
+  customer: 'active',
+  churning: 'at-risk',
+  churned: 'churned',
+};
+
+function adaptApiCustomer(c: ApiCustomer): Customer {
+  return {
+    id: c.id,
+    name: c.name,
+    email: c.email ?? '',
+    status: (c.status as Customer['status'] | undefined) ?? 'active',
+    healthScore: c.healthScore ?? 75,
+    lifecycleStage:
+      (lifecycleMap[c.lifecycleStage] as Customer['lifecycleStage'] | undefined) ?? 'active',
+    lastContact: c.updatedAt,
+    createdAt: c.createdAt,
+  };
+}
+
 // --- Component ---
 
 export function Customers(): ReactNode {
@@ -149,15 +172,17 @@ export function Customers(): ReactNode {
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        pageSize: String(pageSize),
+      const apiStatus =
+        statusFilter !== 'all' && statusFilter !== 'prospect'
+          ? (statusFilter as CustomerStatus)
+          : undefined;
+      const res = await listCustomers({
+        page,
+        pageSize,
+        search: search.trim() !== '' ? search.trim() : undefined,
+        status: apiStatus,
       });
-      if (search.trim()) params.set('search', search.trim());
-      if (statusFilter !== 'all') params.set('status', statusFilter);
-
-      const res = await apiClient.get<CustomersResponse>(`/v1/customers?${params.toString()}`);
-      setCustomers(res.data);
+      setCustomers(res.data.map(adaptApiCustomer));
       setTotal(res.total);
     } catch {
       // Graceful degradation: filter mock data locally
@@ -208,7 +233,14 @@ export function Customers(): ReactNode {
 
   const handleAddCustomer = useCallback(async () => {
     try {
-      await apiClient.post('/v1/customers', formData);
+      const created = await createCustomer({
+        type: 'company',
+        name: formData.name,
+        email: formData.email,
+      });
+      const newCust = adaptApiCustomer(created.data);
+      setCustomers((prev) => [newCust, ...prev]);
+      setTotal((prev) => prev + 1);
     } catch {
       // Mock: add locally
       const newCust: Customer = {
@@ -231,7 +263,7 @@ export function Customers(): ReactNode {
   const handleDeleteCustomer = useCallback(
     async (customer: Customer) => {
       try {
-        await apiClient.delete(`/v1/customers/${customer.id}`);
+        await deleteCustomer(customer.id);
       } catch {
         // Mock: remove locally (soft delete)
       }

@@ -17,7 +17,8 @@ import { Avatar } from '../components/ui/Avatar';
 import { Tabs, TabPanel } from '../components/ui/Tabs';
 import { GaugeChart } from '../components/charts/GaugeChart';
 import { AreaChart } from '../components/charts/AreaChart';
-import { apiClient } from '../lib/api';
+import { getCustomer, type Customer as ApiCustomer } from '../lib/customers-api';
+import { listMessages, type MessageMetadata } from '../lib/messages-api';
 
 // --- Types ---
 
@@ -89,6 +90,57 @@ interface ContactPreference {
 interface HealthHistoryPoint {
   x: string;
   y: number;
+}
+
+// --- Adapters ---
+
+const apiLifecycleMap: Record<string, CustomerProfile['lifecycleStage']> = {
+  lead: 'lead',
+  qualified: 'lead',
+  opportunity: 'onboarding',
+  customer: 'active',
+  churning: 'at-risk',
+  churned: 'churned',
+};
+
+function adaptApiProfile(c: ApiCustomer): CustomerProfile {
+  return {
+    id: c.id,
+    name: c.name,
+    email: c.email ?? '',
+    status: (c.status as CustomerProfile['status'] | undefined) ?? 'active',
+    healthScore: c.healthScore ?? 75,
+    lifecycleStage:
+      (apiLifecycleMap[c.lifecycleStage] as CustomerProfile['lifecycleStage'] | undefined) ??
+      'active',
+    lastContact: c.updatedAt,
+    createdAt: c.createdAt,
+  };
+}
+
+const msgStatusMap: Record<string, InteractionRecord['status']> = {
+  sent: 'sent',
+  delivered: 'delivered',
+  failed: 'failed',
+  pending: 'pending',
+  queued: 'pending',
+  bounced: 'failed',
+  opted_out: 'failed',
+  retrying: 'pending',
+  dlq: 'failed',
+  received: 'received',
+};
+
+function adaptMessage(m: MessageMetadata): InteractionRecord {
+  return {
+    id: m.id,
+    channel: m.channel === 'whatsapp' ? 'chat' : m.channel,
+    direction: m.direction,
+    status: (msgStatusMap[m.status] as InteractionRecord['status'] | undefined) ?? 'pending',
+    timestamp: m.sentAt !== null ? m.sentAt : m.createdAt,
+    agentId: null,
+    correlationId: m.correlationId,
+  };
 }
 
 // --- Constants ---
@@ -393,21 +445,22 @@ export function CustomerDetail(): ReactNode {
     setLoading(true);
 
     try {
-      const [profileRes, interactionsRes, sessionsRes] = await Promise.allSettled([
-        apiClient.get<CustomerProfile>(`/v1/customers/${id}`),
-        apiClient.get<{ interactions: InteractionRecord[] }>(`/v1/messages?customerId=${id}`),
-        apiClient.get<{ sessions: AgentSessionRecord[] }>(`/v1/agents/sessions?customerId=${id}`),
+      const [profileRes, interactionsRes] = await Promise.allSettled([
+        getCustomer(id),
+        listMessages({ customerId: id, pageSize: 100 }),
       ]);
 
-      setProfile(profileRes.status === 'fulfilled' ? profileRes.value : { ...mockProfile, id: id });
+      setProfile(
+        profileRes.status === 'fulfilled'
+          ? adaptApiProfile(profileRes.value.data)
+          : { ...mockProfile, id: id },
+      );
       setInteractions(
         interactionsRes.status === 'fulfilled'
-          ? interactionsRes.value.interactions
+          ? interactionsRes.value.data.map(adaptMessage)
           : mockInteractions,
       );
-      setAgentSessions(
-        sessionsRes.status === 'fulfilled' ? sessionsRes.value.sessions : mockAgentSessions,
-      );
+      setAgentSessions(mockAgentSessions); // no customer-scoped sessions endpoint
 
       // These would be additional API calls in production
       setRelationships(mockRelationships);

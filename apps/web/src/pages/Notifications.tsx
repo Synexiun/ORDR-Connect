@@ -10,7 +10,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
-import { apiClient } from '../lib/api';
+import { listHitl, approveHitl, rejectHitl, type HitlItem as ApiHitlItem } from '../lib/agents-api';
 import { AlertTriangle, ShieldCheck, ArrowUpRight, Clock, Settings } from '../components/icons';
 
 // --- Types ---
@@ -199,6 +199,22 @@ const mockNotifications: Notification[] = [
   },
 ];
 
+// --- Adapters ---
+
+function adaptHitlItem(h: ApiHitlItem): HitlItem {
+  return {
+    id: h.id,
+    sessionId: h.sessionId,
+    agentType: typeof h.context['agentRole'] === 'string' ? h.context['agentRole'] : 'agent',
+    action: h.action,
+    reason: h.reason,
+    confidence: typeof h.context['confidence'] === 'number' ? h.context['confidence'] : 0,
+    customerName:
+      typeof h.context['customerId'] === 'string' ? h.context['customerId'] : h.sessionId,
+    createdAt: h.createdAt,
+  };
+}
+
 // --- Helpers ---
 
 function formatTimestamp(ts: string): string {
@@ -228,11 +244,11 @@ export function Notifications(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [hitlRes] = await Promise.allSettled([
-        apiClient.get<{ items: HitlItem[] }>('/v1/agents/hitl'),
-      ]);
+      const [hitlRes] = await Promise.allSettled([listHitl()]);
 
-      setHitlItems(hitlRes.status === 'fulfilled' ? hitlRes.value.items : mockHitlItems);
+      setHitlItems(
+        hitlRes.status === 'fulfilled' ? hitlRes.value.data.map(adaptHitlItem) : mockHitlItems,
+      );
       // Notifications are mock for MVP — would integrate with notification service
       setNotifications(mockNotifications);
     } catch {
@@ -249,7 +265,11 @@ export function Notifications(): ReactNode {
 
   const handleHitlAction = useCallback(async (item: HitlItem, action: 'approve' | 'reject') => {
     try {
-      await apiClient.post(`/v1/agents/hitl/${item.id}/${action}`);
+      if (action === 'approve') {
+        await approveHitl(item.id);
+      } else {
+        await rejectHitl(item.id, 'Rejected by operator');
+      }
     } catch {
       // Mock update
     }

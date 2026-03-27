@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import { GaugeChart } from '../components/charts/GaugeChart';
-import { apiClient } from '../lib/api';
+
 import {
   HeartPulse,
   Activity,
@@ -244,23 +244,11 @@ export function HealthcareDashboard(): ReactNode {
   const [agentActivity, setAgentActivity] = useState<AgentActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(() => {
     setLoading(true);
     try {
-      const [queueRes, apptRes, cpRes, compRes, actRes] = await Promise.allSettled([
-        apiClient.get<{ data: PatientQueueItem[] }>('/v1/healthcare/queue'),
-        apiClient.get<{ data: AppointmentItem[] }>('/v1/healthcare/appointments'),
-        apiClient.get<{ data: CarePlanStatus[] }>('/v1/healthcare/care-plans'),
-        apiClient.get<{ data: ComplianceStatus }>('/v1/healthcare/compliance'),
-        apiClient.get<{ data: AgentActivityItem[] }>('/v1/healthcare/agent-activity'),
-      ]);
-
-      setQueue(queueRes.status === 'fulfilled' ? queueRes.value.data : mockQueue);
-      setAppointments(apptRes.status === 'fulfilled' ? apptRes.value.data : mockAppointments);
-      setCarePlans(cpRes.status === 'fulfilled' ? cpRes.value.data : mockCarePlans);
-      setCompliance(compRes.status === 'fulfilled' ? compRes.value.data : mockCompliance);
-      setAgentActivity(actRes.status === 'fulfilled' ? actRes.value.data : mockAgentActivity);
-    } catch {
+      // Healthcare-specific backend routes are not yet implemented.
+      // This dashboard operates in demo mode with representative mock data.
       setQueue(mockQueue);
       setAppointments(mockAppointments);
       setCarePlans(mockCarePlans);
@@ -272,7 +260,7 @@ export function HealthcareDashboard(): ReactNode {
   }, []);
 
   useEffect(() => {
-    void fetchData();
+    fetchData();
   }, [fetchData]);
 
   if (loading) {
