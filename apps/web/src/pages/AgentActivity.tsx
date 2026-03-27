@@ -15,7 +15,15 @@ import { AgentFlowGraph, type FlowStep } from '../components/agent-graph/AgentFl
 import { GaugeChart } from '../components/charts/GaugeChart';
 import { BarChart } from '../components/charts/BarChart';
 import { SparkLine } from '../components/charts/SparkLine';
-import { apiClient } from '../lib/api';
+import {
+  listSessions,
+  listHitl,
+  killSession,
+  approveHitl,
+  rejectHitl,
+  type AgentSession as ApiSession,
+  type HitlItem as ApiHitlItem,
+} from '../lib/agents-api';
 
 // --- Types ---
 
@@ -212,6 +220,70 @@ const mockMetrics: AgentMetrics = {
   hitlPending: 3,
 };
 
+// --- API adapters ---
+
+const apiStatusMap: Record<string, AgentSession['status']> = {
+  active: 'running',
+  completed: 'completed',
+  killed: 'killed',
+  escalated: 'awaiting-review',
+  failed: 'failed',
+};
+
+function adaptSession(s: ApiSession): AgentSession {
+  const tools = s.steps.map((step) => step.toolUsed).filter((t): t is string => t !== null);
+  return {
+    id: s.id,
+    agentType: s.agentRole,
+    status: apiStatusMap[s.status] ?? 'failed',
+    customerId: s.customerId,
+    customerName: s.customerId,
+    stepsCompleted: s.steps.filter((step) => step.approved).length,
+    totalSteps: Math.max(s.steps.length, 1),
+    toolsUsed: tools.length > 0 ? tools : ['(no tools)'],
+    confidence: s.confidenceScore ?? 0,
+    costUsd: s.costCents / 100,
+    startedAt: s.startedAt,
+    completedAt: s.completedAt,
+  };
+}
+
+function adaptHitlItem(h: ApiHitlItem): HitlItem {
+  return {
+    id: h.id,
+    sessionId: h.sessionId,
+    agentType: typeof h.context['agentRole'] === 'string' ? h.context['agentRole'] : 'agent',
+    action: h.action,
+    reason: h.reason,
+    confidence: typeof h.context['confidence'] === 'number' ? h.context['confidence'] : 0,
+    customerName:
+      typeof h.context['customerId'] === 'string' ? h.context['customerId'] : h.sessionId,
+    createdAt: h.createdAt,
+  };
+}
+
+function deriveMetrics(
+  sessions: AgentSession[],
+  apiTotal: number,
+  hitlTotal: number,
+): AgentMetrics {
+  const activeSessions = sessions.filter((s) => s.status === 'running').length;
+  const completedSessions = sessions.filter((s) => s.status === 'completed').length;
+  const confidences = sessions.map((s) => s.confidence).filter((c) => c > 0);
+  const avgConfidence =
+    confidences.length > 0 ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0;
+  const successRate = sessions.length > 0 ? (completedSessions / sessions.length) * 100 : 0;
+  const totalCost = sessions.reduce((sum, s) => sum + s.costUsd, 0);
+  return {
+    totalSessions: apiTotal,
+    activeSessions,
+    avgConfidence,
+    successRate,
+    totalCost,
+    hitlPending: hitlTotal,
+  };
+}
+
 // --- Confidence histogram bucket helpers ---
 
 const confidenceBuckets: { label: string; min: number; max: number; color: string }[] = [
@@ -235,15 +307,23 @@ export function AgentActivity(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [sessRes, hitlRes, metricsRes] = await Promise.allSettled([
-        apiClient.get<{ sessions: AgentSession[] }>('/v1/agents/sessions'),
-        apiClient.get<{ items: HitlItem[] }>('/v1/agents/hitl-queue'),
-        apiClient.get<AgentMetrics>('/v1/agents/metrics'),
+      const [sessRes, hitlRes] = await Promise.allSettled([
+        listSessions({ pageSize: 50 }),
+        listHitl(),
       ]);
 
-      setSessions(sessRes.status === 'fulfilled' ? sessRes.value.sessions : mockSessions);
-      setHitlQueue(hitlRes.status === 'fulfilled' ? hitlRes.value.items : mockHitl);
-      setMetrics(metricsRes.status === 'fulfilled' ? metricsRes.value : mockMetrics);
+      const adapted =
+        sessRes.status === 'fulfilled' ? sessRes.value.data.map(adaptSession) : mockSessions;
+      const adaptedHitl =
+        hitlRes.status === 'fulfilled' ? hitlRes.value.data.map(adaptHitlItem) : mockHitl;
+      const apiTotal =
+        sessRes.status === 'fulfilled' ? sessRes.value.total : mockMetrics.totalSessions;
+      const hitlTotal =
+        hitlRes.status === 'fulfilled' ? hitlRes.value.total : mockMetrics.hitlPending;
+
+      setSessions(adapted);
+      setHitlQueue(adaptedHitl);
+      setMetrics(deriveMetrics(adapted, apiTotal, hitlTotal));
     } catch {
       setSessions(mockSessions);
       setHitlQueue(mockHitl);
@@ -259,9 +339,9 @@ export function AgentActivity(): ReactNode {
 
   const handleKillSession = useCallback(async (session: AgentSession) => {
     try {
-      await apiClient.post(`/v1/agents/sessions/${session.id}/kill`);
+      await killSession(session.id, 'Terminated by operator');
     } catch {
-      // Mock update
+      // Mock update — optimistic
     }
     setSessions((prev) =>
       prev.map((s) => (s.id === session.id ? { ...s, status: 'killed' as const } : s)),
@@ -272,9 +352,13 @@ export function AgentActivity(): ReactNode {
 
   const handleHitlAction = useCallback(async (item: HitlItem, action: 'approve' | 'reject') => {
     try {
-      await apiClient.post(`/v1/agents/hitl/${item.id}/${action}`);
+      if (action === 'approve') {
+        await approveHitl(item.id);
+      } else {
+        await rejectHitl(item.id, 'Rejected by operator');
+      }
     } catch {
-      // Mock update
+      // Mock update — optimistic
     }
     setHitlQueue((prev) => prev.filter((h) => h.id !== item.id));
   }, []);

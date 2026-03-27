@@ -14,7 +14,7 @@ import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import { SparkLine } from '../components/charts/SparkLine';
 import { Mail, Phone, MessageCircle, Smartphone, Headphones } from '../components/icons';
-import { apiClient } from '../lib/api';
+import { listMessages, type MessageMetadata, type MessageChannel } from '../lib/messages-api';
 
 // --- Types ---
 
@@ -110,6 +110,43 @@ function generateSparkData(seed: number, points: number, base: number): number[]
   return result;
 }
 
+// --- API adapter ---
+
+const apiChannelMap: Record<MessageChannel, InteractionMeta['channel']> = {
+  sms: 'sms',
+  email: 'email',
+  voice: 'voice',
+  whatsapp: 'chat',
+};
+
+const apiStatusMap: Record<string, InteractionMeta['status']> = {
+  sent: 'sent',
+  delivered: 'delivered',
+  failed: 'failed',
+  pending: 'pending',
+  queued: 'pending',
+  bounced: 'failed',
+  opted_out: 'failed',
+  retrying: 'pending',
+  dlq: 'failed',
+  received: 'received',
+};
+
+function adaptMessage(m: MessageMetadata): InteractionMeta {
+  return {
+    id: m.id,
+    customerId: m.customerId,
+    customerName: m.customerId,
+    channel: (apiChannelMap[m.channel] as InteractionMeta['channel'] | undefined) ?? 'email',
+    direction: m.direction,
+    status: (apiStatusMap[m.status] as InteractionMeta['status'] | undefined) ?? 'pending',
+    sentiment: 'neutral',
+    timestamp: m.sentAt !== null ? m.sentAt : m.createdAt,
+    correlationId: m.correlationId,
+    agentId: null,
+  };
+}
+
 // --- Mock data ---
 
 const channels: InteractionMeta['channel'][] = ['sms', 'email', 'voice', 'chat', 'ivr'];
@@ -161,16 +198,12 @@ export function Interactions(): ReactNode {
   const fetchInteractions = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (channelFilter !== 'all') params.set('channel', channelFilter);
-      if (search.trim()) params.set('customerId', search.trim());
-      if (dateFrom) params.set('from', dateFrom);
-      if (dateTo) params.set('to', dateTo);
-
-      const res = await apiClient.get<{ interactions: InteractionMeta[] }>(
-        `/v1/interactions?${params.toString()}`,
-      );
-      setInteractions(res.interactions);
+      const res = await listMessages({
+        pageSize: 100,
+        ...(channelFilter !== 'all' && { channel: channelFilter as MessageChannel }),
+        ...(search.trim().length > 0 && { customerId: search.trim() }),
+      });
+      setInteractions(res.data.map(adaptMessage));
     } catch {
       // Graceful degradation
       let filtered = mockInteractions;
@@ -193,9 +226,9 @@ export function Interactions(): ReactNode {
     void fetchInteractions();
   }, [fetchInteractions]);
 
-  /** KPI statistics computed from the loaded interaction set. */
+  /** KPI statistics computed from the loaded interaction set (or mock when loading). */
   const kpiStats = useMemo(() => {
-    const all = mockInteractions;
+    const all = interactions.length > 0 ? interactions : mockInteractions;
     const totalCount = all.length;
     const deliveredCount = all.filter((i) => i.status === 'delivered').length;
     const failedCount = all.filter((i) => i.status === 'failed').length;
@@ -210,7 +243,7 @@ export function Interactions(): ReactNode {
       sparkFailed: generateSparkData(3, 12, failedCount),
       sparkInbound: generateSparkData(4, 12, inboundCount),
     };
-  }, []);
+  }, [interactions]);
 
   return (
     <div className="space-y-6">

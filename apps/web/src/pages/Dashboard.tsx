@@ -9,7 +9,7 @@ import { ActivityFeed } from '../components/activity-feed/ActivityFeed';
 import { SparkLine } from '../components/charts/SparkLine';
 import { DonutChart } from '../components/charts/DonutChart';
 import { AreaChart } from '../components/charts/AreaChart';
-import { apiClient } from '../lib/api';
+import { fetchDashboardSummary } from '../lib/analytics-api';
 import {
   Users,
   Bot,
@@ -132,13 +132,14 @@ export function Dashboard(): ReactNode {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [kpiRes, agentRes] = await Promise.allSettled([
-        apiClient.get<KpiData>('/v1/dashboard/kpis'),
-        apiClient.get<AgentPerformance>('/v1/dashboard/agent-performance'),
-      ]);
-
-      setKpis(kpiRes.status === 'fulfilled' ? kpiRes.value : mockKpis);
-      setAgentPerf(agentRes.status === 'fulfilled' ? agentRes.value : mockAgentPerf);
+      const summary = await fetchDashboardSummary();
+      setKpis({
+        totalCustomers: summary.totalCustomers,
+        activeAgents: summary.activeAgents,
+        complianceScore: summary.complianceScore,
+        revenueCollected: summary.revenueCollected,
+      });
+      setAgentPerf({ ...mockAgentPerf, activeNow: summary.activeAgents });
       setDeliveryTrend(mockDeliveryTrend);
       setAgentSparkline(mockAgentSparkline);
     } catch {

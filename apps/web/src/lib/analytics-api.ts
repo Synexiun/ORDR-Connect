@@ -108,7 +108,10 @@ export interface RealTimeCounters {
 // --- API functions ---
 
 export async function fetchDashboardSummary(): Promise<DashboardSummary> {
-  return apiClient.get<DashboardSummary>('/v1/analytics/dashboard');
+  const res = await apiClient.get<{ readonly success: true; readonly data: DashboardSummary }>(
+    '/v1/analytics/dashboard',
+  );
+  return res.data;
 }
 
 export async function fetchChannelMetrics(timeRange: TimeRange): Promise<ChannelMetricsResponse> {
@@ -130,5 +133,8 @@ export async function fetchTrend(metric: string, timeRange: TimeRange): Promise<
 }
 
 export async function fetchRealTimeCounters(): Promise<RealTimeCounters> {
-  return apiClient.get<RealTimeCounters>('/v1/analytics/real-time');
+  const res = await apiClient.get<{ readonly success: true; readonly data: RealTimeCounters }>(
+    '/v1/analytics/real-time',
+  );
+  return res.data;
 }

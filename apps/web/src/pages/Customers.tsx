@@ -25,7 +25,8 @@ interface Customer {
 }
 
 interface CustomersResponse {
-  customers: Customer[];
+  success: true;
+  data: Customer[];
   total: number;
   page: number;
   pageSize: number;
@@ -156,7 +157,7 @@ export function Customers(): ReactNode {
       if (statusFilter !== 'all') params.set('status', statusFilter);
 
       const res = await apiClient.get<CustomersResponse>(`/v1/customers?${params.toString()}`);
-      setCustomers(res.customers);
+      setCustomers(res.data);
       setTotal(res.total);
     } catch {
       // Graceful degradation: filter mock data locally
