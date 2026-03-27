@@ -14,7 +14,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { DonutChart } from '../components/charts/DonutChart';
 import { ProgressBar } from '../components/charts/ProgressBar';
 import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from '../components/icons';
-import { apiClient } from '../lib/api';
+import { fetchComplianceMetrics } from '../lib/analytics-api';
 
 // --- Types ---
 
@@ -177,6 +177,15 @@ const mockConsent: ConsentStatus[] = [
   { channel: 'Chat', consented: 2156, total: 2847, percentage: 75.7 },
 ];
 
+const regulationColorMap: Record<string, string> = {
+  HIPAA: '#ef4444',
+  FDCPA: '#f59e0b',
+  TCPA: '#f97316',
+  GDPR: '#3b82f6',
+  SOC2: '#8b5cf6',
+  ISO27001: '#10b981',
+};
+
 const mockRegulationScores: RegulationScore[] = [
   { regulation: 'HIPAA', score: 94, color: '#ef4444' },
   { regulation: 'FDCPA', score: 98, color: '#f59e0b' },
@@ -199,16 +208,40 @@ export function Compliance(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [overRes, violRes, consentRes] = await Promise.allSettled([
-        apiClient.get<ComplianceOverview>('/v1/compliance/overview'),
-        apiClient.get<{ violations: Violation[] }>('/v1/compliance/violations'),
-        apiClient.get<{ channels: ConsentStatus[] }>('/v1/compliance/consent'),
-      ]);
+      const metrics = await fetchComplianceMetrics('30d');
 
-      setOverview(overRes.status === 'fulfilled' ? overRes.value : mockOverview);
-      setViolations(violRes.status === 'fulfilled' ? violRes.value.violations : mockViolations);
-      setConsent(consentRes.status === 'fulfilled' ? consentRes.value.channels : mockConsent);
-      setRegulationScores(mockRegulationScores);
+      // Derive overview from check ratios
+      const totalChecks = metrics.checkRatios.reduce((s, r) => s + r.passed + r.failed, 0);
+      const passingChecks = metrics.checkRatios.reduce((s, r) => s + r.passed, 0);
+      const latestScore =
+        metrics.scoreTrend.length > 0
+          ? (metrics.scoreTrend[metrics.scoreTrend.length - 1]?.score ?? mockOverview.score)
+          : mockOverview.score;
+
+      setOverview({
+        score: latestScore,
+        totalChecks: totalChecks > 0 ? totalChecks : mockOverview.totalChecks,
+        passingChecks: passingChecks > 0 ? passingChecks : mockOverview.passingChecks,
+        failingChecks: totalChecks > 0 ? totalChecks - passingChecks : mockOverview.failingChecks,
+        lastAudit: new Date().toISOString(),
+      });
+
+      // Map violation breakdown to per-regulation scores (score = 100 - violation%)
+      if (metrics.violationBreakdown.length > 0) {
+        setRegulationScores(
+          metrics.violationBreakdown.map((v) => ({
+            regulation: v.regulation,
+            score: Math.max(0, 100 - v.percentage),
+            color: regulationColorMap[v.regulation] ?? '#3b82f6',
+          })),
+        );
+      } else {
+        setRegulationScores(mockRegulationScores);
+      }
+
+      // Individual violations and consent: no dedicated backend endpoints yet
+      setViolations(mockViolations);
+      setConsent(mockConsent);
     } catch {
       setOverview(mockOverview);
       setViolations(mockViolations);

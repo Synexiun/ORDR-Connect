@@ -105,6 +105,46 @@ export interface RealTimeCounters {
   eventsPerMinute: number;
 }
 
+// --- Helpers ---
+
+/** Convert TimeRange shorthand to ISO from/to/granularity for the backend. */
+function timeRangeToDates(range: TimeRange): {
+  from: string;
+  to: string;
+  granularity: string;
+} {
+  const now = new Date();
+  const to = now.toISOString();
+  switch (range) {
+    case '24h':
+      return { from: new Date(now.getTime() - 86_400_000).toISOString(), to, granularity: 'hour' };
+    case '7d':
+      return {
+        from: new Date(now.getTime() - 7 * 86_400_000).toISOString(),
+        to,
+        granularity: 'day',
+      };
+    case '30d':
+      return {
+        from: new Date(now.getTime() - 30 * 86_400_000).toISOString(),
+        to,
+        granularity: 'day',
+      };
+    case '90d':
+      return {
+        from: new Date(now.getTime() - 90 * 86_400_000).toISOString(),
+        to,
+        granularity: 'week',
+      };
+    default:
+      return {
+        from: new Date(now.getTime() - 7 * 86_400_000).toISOString(),
+        to,
+        granularity: 'day',
+      };
+  }
+}
+
 // --- API functions ---
 
 export async function fetchDashboardSummary(): Promise<DashboardSummary> {
@@ -115,21 +155,50 @@ export async function fetchDashboardSummary(): Promise<DashboardSummary> {
 }
 
 export async function fetchChannelMetrics(timeRange: TimeRange): Promise<ChannelMetricsResponse> {
-  return apiClient.get<ChannelMetricsResponse>(`/v1/analytics/channels?range=${timeRange}`);
+  const { from, to, granularity } = timeRangeToDates(timeRange);
+  const res = await apiClient.get<{
+    readonly success: true;
+    readonly data: ChannelMetricsResponse;
+  }>(
+    `/v1/analytics/channels?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}`,
+  );
+  return res.data;
 }
 
 export async function fetchAgentMetrics(timeRange: TimeRange): Promise<AgentMetricsResponse> {
-  return apiClient.get<AgentMetricsResponse>(`/v1/analytics/agents?range=${timeRange}`);
+  const { from, to, granularity } = timeRangeToDates(timeRange);
+  const res = await apiClient.get<{
+    readonly success: true;
+    readonly data: AgentMetricsResponse;
+  }>(
+    `/v1/analytics/agents?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}`,
+  );
+  return res.data;
 }
 
 export async function fetchComplianceMetrics(
   timeRange: TimeRange,
 ): Promise<ComplianceMetricsResponse> {
-  return apiClient.get<ComplianceMetricsResponse>(`/v1/analytics/compliance?range=${timeRange}`);
+  const { from, to, granularity } = timeRangeToDates(timeRange);
+  const res = await apiClient.get<{
+    readonly success: true;
+    readonly data: ComplianceMetricsResponse;
+  }>(
+    `/v1/analytics/compliance?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}`,
+  );
+  return res.data;
 }
 
 export async function fetchTrend(metric: string, timeRange: TimeRange): Promise<TrendResponse> {
-  return apiClient.get<TrendResponse>(`/v1/analytics/trends/${metric}?range=${timeRange}`);
+  const { from, to, granularity } = timeRangeToDates(timeRange);
+  const res = await apiClient.get<{
+    readonly success: true;
+    readonly data: TrendPoint[];
+    readonly metric: string;
+  }>(
+    `/v1/analytics/trends/${metric}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&granularity=${granularity}`,
+  );
+  return { metric: res.metric, data: res.data };
 }
 
 export async function fetchRealTimeCounters(): Promise<RealTimeCounters> {
