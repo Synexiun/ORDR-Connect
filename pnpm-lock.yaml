@@ -90,6 +90,9 @@ importers:
       '@ordr/agent-runtime':
         specifier: workspace:*
         version: link:../agent-runtime
+      '@ordr/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@ordr/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics

@@ -274,8 +274,8 @@ analyticsRouter.get('/trends/:metric', async (c): Promise<Response> => {
   const timeRange = {
     from: queryParsed.data.from,
     to: queryParsed.data.to,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    granularity: queryParsed.data.granularity as Granularity,
+
+    granularity: queryParsed.data.granularity,
   };
 
   let result;
@@ -317,7 +317,7 @@ analyticsRouter.get('/trends/:metric', async (c): Promise<Response> => {
     timeRange: {
       from: timeRange.from.toISOString(),
       to: timeRange.to.toISOString(),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
       granularity: timeRange.granularity,
     },
   });

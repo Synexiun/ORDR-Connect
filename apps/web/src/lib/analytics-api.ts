@@ -108,7 +108,7 @@ export interface RealTimeCounters {
 // --- API functions ---
 
 export async function fetchDashboardSummary(): Promise<DashboardSummary> {
-  return apiClient.get<DashboardSummary>('/v1/analytics/summary');
+  return apiClient.get<DashboardSummary>('/v1/analytics/dashboard');
 }
 
 export async function fetchChannelMetrics(timeRange: TimeRange): Promise<ChannelMetricsResponse> {
@@ -119,7 +119,9 @@ export async function fetchAgentMetrics(timeRange: TimeRange): Promise<AgentMetr
   return apiClient.get<AgentMetricsResponse>(`/v1/analytics/agents?range=${timeRange}`);
 }
 
-export async function fetchComplianceMetrics(timeRange: TimeRange): Promise<ComplianceMetricsResponse> {
+export async function fetchComplianceMetrics(
+  timeRange: TimeRange,
+): Promise<ComplianceMetricsResponse> {
   return apiClient.get<ComplianceMetricsResponse>(`/v1/analytics/compliance?range=${timeRange}`);
 }
 
@@ -128,5 +130,5 @@ export async function fetchTrend(metric: string, timeRange: TimeRange): Promise<
 }
 
 export async function fetchRealTimeCounters(): Promise<RealTimeCounters> {
-  return apiClient.get<RealTimeCounters>('/v1/analytics/real-time-counters');
+  return apiClient.get<RealTimeCounters>('/v1/analytics/real-time');
 }

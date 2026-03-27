@@ -1,7 +1,4 @@
 /* eslint-disable
-   @typescript-eslint/no-unsafe-argument,
-   @typescript-eslint/no-unsafe-call,
-   @typescript-eslint/no-redundant-type-constituents,
    @typescript-eslint/no-non-null-assertion,
    @typescript-eslint/strict-boolean-expressions,
    @typescript-eslint/require-await
@@ -43,6 +40,7 @@ import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
 import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine } from '@ordr/compliance';
+import { LLMClient } from '@ordr/ai';
 import { eq } from 'drizzle-orm';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
@@ -56,7 +54,19 @@ import type postgres from 'postgres';
 let limbInstance: Limb | null = null;
 let dbConnection: postgres.Sql | null = null;
 let kafkaProducer: Producer | null = null;
+let llmClient: LLMClient | null = null;
 let server: ReturnType<typeof serve> | null = null;
+
+/**
+ * Returns the initialized LLMClient for use by route handlers.
+ * Throws if called before bootstrap() completes.
+ */
+export function getLlmClient(): LLMClient {
+  if (llmClient === null) {
+    throw new Error('[ORDR:API] LLMClient not initialized — call bootstrap() first');
+  }
+  return llmClient;
+}
 
 // ---- Bootstrap -------------------------------------------------------------
 
@@ -150,6 +160,25 @@ async function bootstrap(): Promise<void> {
   console.warn(
     `[ORDR:API] Compliance engine initialized — ${String(complianceEngine.getRules().length)} rules loaded`,
   );
+
+  // ── 5.5 LLM Client (Anthropic) ────────────────────────────────────────
+  // Required for all AI agent sessions. Skipped in test environments where
+  // ANTHROPIC_API_KEY is not set (agents will fail gracefully with a logged error).
+  // Rule 5: secrets from environment only — NEVER hardcoded.
+  const anthropicApiKey = process.env['ANTHROPIC_API_KEY'];
+  if (anthropicApiKey !== undefined && anthropicApiKey.length > 0) {
+    llmClient = new LLMClient({
+      anthropicApiKey,
+      defaultTier: 'standard', // claude-sonnet-4-6 for agent execution
+      defaultMaxTokens: 4096,
+      defaultTemperature: 0.1,
+      timeoutMs: 30_000,
+      maxRetries: 3,
+    });
+    console.warn('[ORDR:API] LLM client initialized — model: claude-sonnet-4-6 (standard tier)');
+  } else {
+    console.warn('[ORDR:API] LLM client skipped — ANTHROPIC_API_KEY not set (agents disabled)');
+  }
 
   // ── 6. JWT key pair ────────────────────────────────────────────────────
   let jwtConfig: JwtConfig;

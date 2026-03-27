@@ -363,7 +363,7 @@ export class AgentOrchestrator {
     toAgentRole: AgentRole,
     reason: string,
     handoffContext: HandoffContext,
-  ): Promise<Result<AgentOutcome, AppError>> {
+  ): Promise<Result<AgentOutcome>> {
     // ── Get source session ──
     const sourceSession = this.activeSessions.get(fromSessionId);
 

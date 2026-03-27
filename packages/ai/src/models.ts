@@ -22,7 +22,7 @@ export const MODEL_REGISTRY: Readonly<Record<ModelTier, ModelConfig>> = {
   },
   standard: {
     provider: 'anthropic',
-    modelName: 'claude-sonnet-4-5-20250514',
+    modelName: 'claude-sonnet-4-6',
     maxTokens: 8192,
     costPerMillionInput: 3,
     costPerMillionOutput: 15,
@@ -30,7 +30,7 @@ export const MODEL_REGISTRY: Readonly<Record<ModelTier, ModelConfig>> = {
   },
   premium: {
     provider: 'anthropic',
-    modelName: 'claude-opus-4-5-20250514',
+    modelName: 'claude-opus-4-6',
     maxTokens: 4096,
     costPerMillionInput: 15,
     costPerMillionOutput: 75,
@@ -55,11 +55,7 @@ export function selectModel(tier: ModelTier): ModelConfig {
  * Formula: (inputTokens * costPerMInput / 1_000_000 + outputTokens * costPerMOutput / 1_000_000) * 100
  * The multiplication by 100 converts dollars to cents.
  */
-export function calculateCost(
-  inputTokens: number,
-  outputTokens: number,
-  tier: ModelTier,
-): number {
+export function calculateCost(inputTokens: number, outputTokens: number, tier: ModelTier): number {
   const config = MODEL_REGISTRY[tier];
   const inputCostDollars = (inputTokens * config.costPerMillionInput) / 1_000_000;
   const outputCostDollars = (outputTokens * config.costPerMillionOutput) / 1_000_000;
