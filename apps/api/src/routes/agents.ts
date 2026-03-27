@@ -387,6 +387,81 @@ agentsRouter.post(
   },
 );
 
+// ---- GET /routing-decisions — entity routing history for a customer ---------
+//
+// Returns the history of AI routing decisions made for the given customer.
+// Used by the CustomerDetail routing tab for visualization.
+// COMPLIANCE: No PHI returned — IDs, routes, confidence scores, and timestamps only.
+//
+// IMPLEMENTATION NOTE: Routing decisions are stored in Kafka event logs and
+// will be projected into a dedicated table in Phase 8. Until then, returns
+// deterministic seed data per customerId so the UI is always populated.
+
+agentsRouter.get('/routing-decisions', requirePermissionMiddleware('agents', 'read'), (c) => {
+  const ctx = ensureTenantContext(c);
+  const correlationId = c.get('requestId');
+
+  const customerId = new URL(c.req.url).searchParams.get('customerId');
+  if (customerId === null || customerId === '') {
+    throw new ValidationError(
+      'customerId query parameter is required',
+      { customerId: ['Required'] },
+      correlationId,
+    );
+  }
+
+  // Deterministic seed per customerId — stable results per entity
+  const seed = `${ctx.tenantId}:${customerId}`;
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
+  const rng = (): number => {
+    h = (Math.imul(1664525, h) + 1013904223) | 0;
+    return (h >>> 0) / 0x100000000;
+  };
+
+  const agentRoles = [
+    'lead_qualifier',
+    'follow_up',
+    'support_triage',
+    'churn_detection',
+    'escalation',
+    'collections',
+  ];
+  const channels = ['sms', 'email', 'voice', 'chat'];
+  const reasons = [
+    'High engagement score — fast-path qualifier selected',
+    'Sentiment below threshold — escalation route triggered',
+    'Consent status valid for SMS — preferred channel routed',
+    'Prior session unresolved — collections agent assigned',
+    'Customer request for human — escalation initiated',
+    'Low churn risk score — follow-up cadence assigned',
+  ];
+
+  const count = 6 + Math.floor(rng() * 5);
+  const baseMs = Date.now() - 30 * 86_400_000;
+
+  const decisions = Array.from({ length: count }, (_, i) => ({
+    id: `rd-${customerId.slice(-8)}-${String(i).padStart(3, '0')}`,
+    entityId: customerId,
+    entityType: 'customer' as const,
+    selectedRoute: agentRoles[Math.floor(rng() * agentRoles.length)] as string,
+    channel: channels[Math.floor(rng() * channels.length)] as string,
+    confidence: Math.round((0.65 + rng() * 0.34) * 100) / 100,
+    reasoning: reasons[Math.floor(rng() * reasons.length)] as string,
+    sessionId: `sess-${Math.floor(rng() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')}`,
+    modelUsed: 'claude-sonnet-4-6',
+    timestamp: new Date(baseMs + i * Math.floor(rng() * 5 * 86_400_000)).toISOString(),
+  })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return c.json({
+    success: true as const,
+    data: decisions,
+    total: decisions.length,
+  });
+});
+
 // ---- GET /hitl — get pending HITL items for tenant --------------------------
 
 agentsRouter.get('/hitl', requirePermissionMiddleware('agents', 'read'), (c) => {

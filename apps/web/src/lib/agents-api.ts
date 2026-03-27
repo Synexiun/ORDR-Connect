@@ -125,3 +125,30 @@ export async function approveHitl(hitlId: string, notes?: string): Promise<void>
 export async function rejectHitl(hitlId: string, reason: string): Promise<void> {
   await apiClient.post(`/v1/agents/hitl/${hitlId}/reject`, { reason });
 }
+
+// ── Routing Decisions ────────────────────────────────────────────
+
+export interface RoutingDecision {
+  readonly id: string;
+  readonly entityId: string;
+  readonly entityType: 'customer' | 'interaction' | 'session';
+  readonly selectedRoute: string;
+  readonly channel: string;
+  readonly confidence: number;
+  readonly reasoning: string;
+  readonly sessionId: string;
+  readonly modelUsed: string;
+  readonly timestamp: string;
+}
+
+export interface RoutingDecisionsResponse {
+  readonly success: true;
+  readonly data: RoutingDecision[];
+  readonly total: number;
+}
+
+export function fetchRoutingDecisions(customerId: string): Promise<RoutingDecisionsResponse> {
+  return apiClient.get<RoutingDecisionsResponse>(
+    `/v1/agents/routing-decisions?customerId=${encodeURIComponent(customerId)}`,
+  );
+}

@@ -19,6 +19,7 @@ import { GaugeChart } from '../components/charts/GaugeChart';
 import { AreaChart } from '../components/charts/AreaChart';
 import { getCustomer, type Customer as ApiCustomer } from '../lib/customers-api';
 import { listMessages, type MessageMetadata } from '../lib/messages-api';
+import { fetchRoutingDecisions, type RoutingDecision } from '../lib/agents-api';
 
 // --- Types ---
 
@@ -209,6 +210,7 @@ const TAB_DEFS = [
   { id: 'overview', label: 'Overview' },
   { id: 'interactions', label: 'Interactions' },
   { id: 'agents', label: 'Agents' },
+  { id: 'routing', label: 'Routing' },
   { id: 'compliance', label: 'Compliance' },
   { id: 'notes', label: 'Notes' },
 ] as const;
@@ -437,6 +439,7 @@ export function CustomerDetail(): ReactNode {
   const [agentSessions, setAgentSessions] = useState<AgentSessionRecord[]>([]);
   const [payments, setPayments] = useState<PaymentSummary | null>(null);
   const [preferences, setPreferences] = useState<ContactPreference[]>([]);
+  const [routingDecisions, setRoutingDecisions] = useState<RoutingDecision[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -445,9 +448,10 @@ export function CustomerDetail(): ReactNode {
     setLoading(true);
 
     try {
-      const [profileRes, interactionsRes] = await Promise.allSettled([
+      const [profileRes, interactionsRes, routingRes] = await Promise.allSettled([
         getCustomer(id),
         listMessages({ customerId: id, pageSize: 100 }),
+        fetchRoutingDecisions(id),
       ]);
 
       setProfile(
@@ -460,6 +464,7 @@ export function CustomerDetail(): ReactNode {
           ? interactionsRes.value.data.map(adaptMessage)
           : mockInteractions,
       );
+      setRoutingDecisions(routingRes.status === 'fulfilled' ? routingRes.value.data : []);
       setAgentSessions(mockAgentSessions); // no customer-scoped sessions endpoint
 
       // These would be additional API calls in production
@@ -955,6 +960,89 @@ export function CustomerDetail(): ReactNode {
                 </div>
               ))
             )}
+          </div>
+        </Card>
+      </TabPanel>
+
+      {/* ==================== Routing Tab ==================== */}
+      <TabPanel id="routing" activeTab={activeTab} className="space-y-6">
+        <Card title="AI Routing Decisions" accent="blue">
+          {routingDecisions.length === 0 ? (
+            <p className="py-4 text-center text-sm text-content-secondary">
+              No routing decisions recorded for this customer.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {routingDecisions.map((rd) => (
+                <div key={rd.id} className="rounded-lg border border-border bg-surface px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-semibold text-brand-accent">
+                          {rd.selectedRoute}
+                        </span>
+                        <Badge variant="neutral" size="sm">
+                          {rd.channel}
+                        </Badge>
+                        <Badge
+                          variant={
+                            rd.confidence >= 0.85
+                              ? 'success'
+                              : rd.confidence >= 0.7
+                                ? 'warning'
+                                : 'danger'
+                          }
+                          size="sm"
+                        >
+                          {(rd.confidence * 100).toFixed(0)}% confidence
+                        </Badge>
+                      </div>
+                      <p className="mt-1.5 text-xs text-content-secondary">{rd.reasoning}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-3 font-mono text-2xs text-content-tertiary">
+                        <span>Session: {rd.sessionId}</span>
+                        <span>Model: {rd.modelUsed}</span>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-2xs text-content-tertiary">
+                      {new Date(rd.timestamp).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card title="Routing Summary" accent="purple">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-content-tertiary">Total Decisions</p>
+              <p className="mt-1 font-mono text-xl font-bold text-content">
+                {routingDecisions.length}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-content-tertiary">Avg Confidence</p>
+              <p className="mt-1 font-mono text-xl font-bold text-emerald-400">
+                {routingDecisions.length > 0
+                  ? (
+                      (routingDecisions.reduce((s, d) => s + d.confidence, 0) /
+                        routingDecisions.length) *
+                      100
+                    ).toFixed(0)
+                  : 0}
+                %
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-content-tertiary">Routes Used</p>
+              <p className="mt-1 font-mono text-xl font-bold text-content">
+                {new Set(routingDecisions.map((d) => d.selectedRoute)).size}
+              </p>
+            </div>
           </div>
         </Card>
       </TabPanel>
