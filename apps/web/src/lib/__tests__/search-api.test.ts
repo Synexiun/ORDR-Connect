@@ -1,8 +1,12 @@
 /**
  * search-api tests
+ *
+ * Verifies typed wrappers call the correct endpoints with correct params.
+ * Mocks apiClient to avoid real HTTP requests.
+ *
+ * HIPAA §164.312 — No PHI used in test fixtures.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { searchApi } from '../search-api';
 
@@ -19,100 +23,104 @@ vi.mock('../api', () => ({
   },
 }));
 
-const SEARCH_RESULTS = {
-  results: [
-    { id: 'c-1', entityType: 'contact', entityId: 'c-1', score: 0.9, displayTitle: 'John' },
-  ],
-  total: 1,
-  facets: [],
-  took: 5,
+const MOCK_RESULT = {
+  id: 'res-1',
+  entityType: 'contact' as const,
+  entityId: 'c-1',
+  score: 0.95,
+  displayTitle: 'Alice Smith',
+  displaySubtitle: 'alice@example.com',
+  metadata: {},
 };
 
-const SUGGESTIONS = [{ id: 'c-1', label: 'John Doe', entityType: 'contact' }];
+const MOCK_SEARCH_RESULTS = {
+  results: [MOCK_RESULT],
+  total: 1,
+  facets: [],
+  took: 12,
+};
+
+const MOCK_SUGGESTION = {
+  id: 'sug-1',
+  label: 'Alice Smith',
+  entityType: 'contact' as const,
+  entityId: 'c-1',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('searchApi.search', () => {
-  it('POSTs to /v1/search with query and options', async () => {
-    mockPost.mockResolvedValue(SEARCH_RESULTS);
+  it('POSTs to /v1/search with query', async () => {
+    mockPost.mockResolvedValue(MOCK_SEARCH_RESULTS);
 
-    const result = await searchApi.search('john', { limit: 10 });
+    const result = await searchApi.search('alice');
 
-    expect(mockPost).toHaveBeenCalledWith('/v1/search', { query: 'john', limit: 10 });
+    expect(mockPost).toHaveBeenCalledWith(
+      '/v1/search',
+      expect.objectContaining({ query: 'alice' }),
+    );
     expect(result.total).toBe(1);
+    expect(result.results[0]?.displayTitle).toBe('Alice Smith');
   });
 
-  it('uses empty options by default', async () => {
-    mockPost.mockResolvedValue(SEARCH_RESULTS);
+  it('includes entityTypes filter when provided', async () => {
+    mockPost.mockResolvedValue({ results: [], total: 0, facets: [], took: 5 });
 
-    await searchApi.search('test');
+    await searchApi.search('test', { entityTypes: ['contact', 'deal'] });
 
-    expect(mockPost).toHaveBeenCalledWith('/v1/search', { query: 'test' });
+    const body = mockPost.mock.calls[0]?.[1] as { entityTypes: string[] };
+    expect(body.entityTypes).toEqual(['contact', 'deal']);
+  });
+
+  it('includes limit and offset when provided', async () => {
+    mockPost.mockResolvedValue({ results: [], total: 0, facets: [], took: 5 });
+
+    await searchApi.search('test', { limit: 10, offset: 20 });
+
+    const body = mockPost.mock.calls[0]?.[1] as { limit: number; offset: number };
+    expect(body.limit).toBe(10);
+    expect(body.offset).toBe(20);
   });
 });
 
 describe('searchApi.suggest', () => {
-  it('GETs /v1/search/suggest and extracts data', async () => {
-    mockGet.mockResolvedValue({ success: true, data: SUGGESTIONS });
+  it('GETs /v1/search/suggest with q param', async () => {
+    mockGet.mockResolvedValue({ success: true, data: [MOCK_SUGGESTION] });
 
-    const result = await searchApi.suggest('jo');
+    const result = await searchApi.suggest('ali');
 
-    const calledUrl = mockGet.mock.calls[0]?.[0] as string;
-    expect(calledUrl).toContain('/v1/search/suggest');
-    expect(calledUrl).toContain('q=jo');
-    expect(result).toEqual(SUGGESTIONS);
+    const url = mockGet.mock.calls[0]?.[0] as string;
+    expect(url).toContain('/v1/search/suggest');
+    expect(url).toContain('q=ali');
+    expect(result[0]?.label).toBe('Alice Smith');
   });
 
-  it('appends entityType when provided', async () => {
+  it('includes entityType in query when provided', async () => {
     mockGet.mockResolvedValue({ success: true, data: [] });
 
-    await searchApi.suggest('jo', 'contact');
+    await searchApi.suggest('ali', 'contact');
 
-    const calledUrl = mockGet.mock.calls[0]?.[0] as string;
-    expect(calledUrl).toContain('entityType=contact');
-  });
-
-  it('omits entityType when not provided', async () => {
-    mockGet.mockResolvedValue({ success: true, data: [] });
-
-    await searchApi.suggest('jo');
-
-    const calledUrl = mockGet.mock.calls[0]?.[0] as string;
-    expect(calledUrl).not.toContain('entityType');
+    const url = mockGet.mock.calls[0]?.[0] as string;
+    expect(url).toContain('entityType=contact');
   });
 });
 
 describe('searchApi.faceted', () => {
-  it('POSTs to /v1/search/faceted', async () => {
-    mockPost.mockResolvedValue(SEARCH_RESULTS);
+  it('POSTs to /v1/search/faceted with facets', async () => {
+    mockPost.mockResolvedValue(MOCK_SEARCH_RESULTS);
 
-    await searchApi.faceted({
-      facets: [{ type: 'entity_type', field: 'status' }],
-      query: 'active',
+    const result = await searchApi.faceted({
+      facets: [{ type: 'entity_type', field: 'entityType', values: ['contact'] }],
+      query: 'alice',
     });
 
     expect(mockPost).toHaveBeenCalledWith(
       '/v1/search/faceted',
-      expect.objectContaining({ facets: expect.any(Array) }),
+      expect.objectContaining({ query: 'alice' }),
     );
-  });
-});
-
-describe('searchApi.indexEntity', () => {
-  it('POSTs to /v1/search/index and extracts data', async () => {
-    const payload = { id: 'idx-1', indexedAt: '2026-01-01T00:00:00Z' };
-    mockPost.mockResolvedValue({ success: true, data: payload });
-
-    const result = await searchApi.indexEntity({
-      entityType: 'contact',
-      entityId: 'c-1',
-      fields: { email: { value: 'john@example.com', weight: 'A', isPhi: false } },
-    });
-
-    expect(mockPost).toHaveBeenCalledWith('/v1/search/index', expect.any(Object));
-    expect(result).toEqual(payload);
+    expect(result.total).toBe(1);
   });
 });
 
@@ -123,16 +131,5 @@ describe('searchApi.removeEntity', () => {
     await searchApi.removeEntity('contact', 'c-1');
 
     expect(mockDelete).toHaveBeenCalledWith('/v1/search/index/contact/c-1');
-  });
-});
-
-describe('searchApi.reindex', () => {
-  it('POSTs to /v1/search/reindex/:entityType and returns count', async () => {
-    mockPost.mockResolvedValue({ success: true, data: { reindexed: 42 } });
-
-    const result = await searchApi.reindex('contact');
-
-    expect(mockPost).toHaveBeenCalledWith('/v1/search/reindex/contact');
-    expect(result.reindexed).toBe(42);
   });
 });

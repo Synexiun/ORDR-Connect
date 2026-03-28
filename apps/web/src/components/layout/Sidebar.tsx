@@ -38,6 +38,8 @@ import {
   GitBranch,
   Link2,
   Clock,
+  Search,
+  DollarSign,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -61,6 +63,7 @@ const navSections: NavSection[] = [
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/interactions', label: 'Interactions', icon: MessageSquare },
       { to: '/tickets', label: 'Tickets', icon: Ticket },
+      { to: '/search', label: 'Search', icon: Search },
     ],
   },
   {
@@ -96,6 +99,7 @@ const navSections: NavSection[] = [
       { to: '/developer', label: 'Developer', icon: Code },
       { to: '/healthcare', label: 'Healthcare', icon: Heart },
       { to: '/partner', label: 'Partner', icon: Handshake },
+      { to: '/billing', label: 'Billing', icon: DollarSign },
     ],
   },
   {
