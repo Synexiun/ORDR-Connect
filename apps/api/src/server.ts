@@ -43,7 +43,7 @@ import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine } from '@ordr/compliance';
 import { LLMClient } from '@ordr/ai';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
@@ -56,6 +56,7 @@ import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
 import { configurePartnerStatsRoute } from './routes/partner-stats.js';
+import { configureDeveloperRoutes } from './routes/developers.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -246,6 +247,153 @@ async function bootstrap(): Promise<void> {
   // ── 7. Configure middleware ────────────────────────────────────────────
   configureAuth(jwtConfig);
   configureEventsRoute({ jwtConfig });
+
+  // ── 7.1. Developer portal routes ──────────────────────────────────────
+  // db is non-null here — process.exit(1) in step 2 catch ensures it.
+  // jwtConfig is available from step 6.
+  configureDeveloperRoutes({
+    jwtConfig,
+    auditLogger,
+
+    findDeveloperByEmail: async (email) => {
+      const rows = await db
+        .select()
+        .from(schema.developerAccounts)
+        .where(eq(schema.developerAccounts.email, email))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      return { ...row, displayName: row.displayName ?? '' };
+    },
+
+    findDeveloperById: async (id) => {
+      const rows = await db
+        .select()
+        .from(schema.developerAccounts)
+        .where(eq(schema.developerAccounts.id, id))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      return { ...row, displayName: row.displayName ?? '' };
+    },
+
+    createDeveloper: async (data) => {
+      const inserted = await db
+        .insert(schema.developerAccounts)
+        .values({
+          email: data.email,
+          displayName: data.displayName,
+          organization: data.organization,
+          passwordHash: data.passwordHash,
+          tier: data.tier as 'free' | 'pro' | 'enterprise',
+          // placeholder key fields — developer keys managed via /keys endpoints
+          apiKeyHash: '',
+          apiKeyPrefix: '',
+        })
+        .returning();
+      const row = inserted[0]!;
+      return { ...row, displayName: row.displayName ?? '' };
+    },
+
+    createDeveloperKey: async (data) => {
+      const inserted = await db
+        .insert(schema.developerApiKeys)
+        .values({
+          developerId: data.developerId,
+          name: data.name,
+          keyHash: data.keyHash,
+          keyPrefix: data.keyPrefix,
+          expiresAt: data.expiresAt ?? null,
+        })
+        .returning();
+      return inserted[0]!;
+    },
+
+    listDeveloperKeys: async (developerId) => {
+      return db
+        .select()
+        .from(schema.developerApiKeys)
+        .where(eq(schema.developerApiKeys.developerId, developerId));
+    },
+
+    findKeyById: async (developerId, keyId) => {
+      const rows = await db
+        .select()
+        .from(schema.developerApiKeys)
+        .where(
+          and(
+            eq(schema.developerApiKeys.id, keyId),
+            eq(schema.developerApiKeys.developerId, developerId),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    revokeKey: async (developerId, keyId) => {
+      const result = await db
+        .update(schema.developerApiKeys)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(schema.developerApiKeys.id, keyId),
+            eq(schema.developerApiKeys.developerId, developerId),
+          ),
+        )
+        .returning();
+      return result.length > 0;
+    },
+
+    createSandbox: async (data) => {
+      const inserted = await db
+        .insert(schema.sandboxTenants)
+        .values({
+          developerId: data.developerId,
+          tenantId: data.tenantId,
+          name: data.name,
+          seedDataProfile: data.seedDataProfile as 'minimal' | 'collections' | 'healthcare',
+          expiresAt: data.expiresAt,
+        })
+        .returning();
+      return inserted[0]!;
+    },
+
+    listSandboxes: async (developerId) => {
+      return db
+        .select()
+        .from(schema.sandboxTenants)
+        .where(eq(schema.sandboxTenants.developerId, developerId));
+    },
+
+    findSandboxById: async (developerId, sandboxId) => {
+      const rows = await db
+        .select()
+        .from(schema.sandboxTenants)
+        .where(
+          and(
+            eq(schema.sandboxTenants.id, sandboxId),
+            eq(schema.sandboxTenants.developerId, developerId),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
+    destroySandbox: async (developerId, sandboxId) => {
+      const result = await db
+        .update(schema.sandboxTenants)
+        .set({ status: 'destroyed' })
+        .where(
+          and(
+            eq(schema.sandboxTenants.id, sandboxId),
+            eq(schema.sandboxTenants.developerId, developerId),
+          ),
+        )
+        .returning();
+      return result.length > 0;
+    },
+  });
+  console.warn('[ORDR:API] Developer portal routes configured');
 
   configureHealthChecks({
     checkDb: async () => {

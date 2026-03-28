@@ -14,23 +14,11 @@ import {
 // Enums
 // ---------------------------------------------------------------------------
 
-export const developerTierEnum = pgEnum('developer_tier', [
-  'free',
-  'pro',
-  'enterprise',
-]);
+export const developerTierEnum = pgEnum('developer_tier', ['free', 'pro', 'enterprise']);
 
-export const developerStatusEnum = pgEnum('developer_status', [
-  'active',
-  'suspended',
-  'revoked',
-]);
+export const developerStatusEnum = pgEnum('developer_status', ['active', 'suspended', 'revoked']);
 
-export const sandboxStatusEnum = pgEnum('sandbox_status', [
-  'active',
-  'expired',
-  'destroyed',
-]);
+export const sandboxStatusEnum = pgEnum('sandbox_status', ['active', 'expired', 'destroyed']);
 
 export const seedDataProfileEnum = pgEnum('seed_data_profile', [
   'minimal',
@@ -52,6 +40,9 @@ export const developerAccounts = pgTable(
     displayName: text('display_name'),
 
     organization: text('organization'),
+
+    /** Argon2id hash of the developer's password (Rule 2 — NO bcrypt, NO scrypt) */
+    passwordHash: text('password_hash').notNull().default(''),
 
     /** SHA-256 hash of the full API key — NEVER store the raw key (Rule 2) */
     apiKeyHash: text('api_key_hash').notNull(),
@@ -77,6 +68,43 @@ export const developerAccounts = pgTable(
     uniqueIndex('developer_accounts_email_uniq').on(table.email),
     index('developer_accounts_api_key_prefix_idx').on(table.apiKeyPrefix),
     index('developer_accounts_status_idx').on(table.status),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Developer API Keys — named, revocable keys per developer account
+// ---------------------------------------------------------------------------
+
+export const developerApiKeys = pgTable(
+  'developer_api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    /** FK to developer_accounts */
+    developerId: uuid('developer_id')
+      .notNull()
+      .references(() => developerAccounts.id, { onDelete: 'cascade' }),
+
+    /** Human-readable key name */
+    name: text('name').notNull(),
+
+    /** SHA-256 hash of the raw key — NEVER store raw (Rule 2) */
+    keyHash: text('key_hash').notNull(),
+
+    /** First 8 characters for UI identification */
+    keyPrefix: varchar('key_prefix', { length: 8 }).notNull(),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+
+    /** Null means the key never expires */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+
+    /** Set when revoked — null means still active */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('developer_api_keys_developer_id_idx').on(table.developerId),
+    index('developer_api_keys_key_prefix_idx').on(table.keyPrefix),
   ],
 );
 
@@ -123,6 +151,9 @@ export const sandboxTenants = pgTable(
       .references(() => developerAccounts.id, { onDelete: 'cascade' }),
 
     tenantId: text('tenant_id').notNull(),
+
+    /** Human-readable sandbox name */
+    name: text('name').notNull().default(''),
 
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 
