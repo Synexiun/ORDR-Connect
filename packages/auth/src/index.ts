@@ -13,11 +13,7 @@
  */
 
 // ─── JWT ───────────────────────────────────────────────────────────
-export type {
-  JwtConfig,
-  AccessTokenPayload,
-  RefreshTokenPayload,
-} from './jwt.js';
+export type { JwtConfig, AccessTokenPayload, RefreshTokenPayload } from './jwt.js';
 
 export {
   createAccessToken,
@@ -28,35 +24,17 @@ export {
 } from './jwt.js';
 
 // ─── RBAC ──────────────────────────────────────────────────────────
-export {
-  ROLE_HIERARCHY,
-  ROLE_PERMISSIONS,
-  hasRole,
-  hasPermission,
-  checkAccess,
-} from './rbac.js';
+export { ROLE_HIERARCHY, ROLE_PERMISSIONS, hasRole, hasPermission, checkAccess } from './rbac.js';
 
 // ─── Session Management ────────────────────────────────────────────
-export type {
-  StoredSession,
-  SessionMetadata,
-  SessionStore,
-} from './session.js';
+export type { StoredSession, SessionMetadata, SessionStore } from './session.js';
 
 export { SessionManager } from './session.js';
 
 // ─── API Key ───────────────────────────────────────────────────────
-export type {
-  ApiKeyCreateResult,
-  ApiKeyRecord,
-} from './api-key.js';
+export type { ApiKeyCreateResult, ApiKeyRecord } from './api-key.js';
 
-export {
-  createApiKey,
-  verifyApiKey,
-  extractApiKeyPrefix,
-  isApiKeyExpired,
-} from './api-key.js';
+export { createApiKey, verifyApiKey, extractApiKeyPrefix, isApiKeyExpired } from './api-key.js';
 
 // ─── Middleware ─────────────────────────────────────────────────────
 export type {
@@ -75,22 +53,16 @@ export {
 } from './middleware.js';
 
 // ─── Password Policy ───────────────────────────────────────────────
-export type {
-  PasswordPolicy,
-  PasswordValidationResult,
-} from './password-policy.js';
+export type { PasswordPolicy, PasswordValidationResult } from './password-policy.js';
 
-export {
-  DEFAULT_PASSWORD_POLICY,
-  validatePassword,
-  isPasswordExpired,
-} from './password-policy.js';
+export { DEFAULT_PASSWORD_POLICY, validatePassword, isPasswordExpired } from './password-policy.js';
 
 // ─── Rate Limiting ─────────────────────────────────────────────────
 export type {
   RateLimitConfig,
   RateLimitResult,
   RateLimiter,
+  RedisLikeClient,
 } from './rate-limiter.js';
 
 export {
@@ -98,6 +70,7 @@ export {
   API_RATE_LIMIT,
   PHI_ACCESS_RATE_LIMIT,
   InMemoryRateLimiter,
+  RedisRateLimiter,
 } from './rate-limiter.js';
 
 // ─── SSO ──────────────────────────────────────────────────────────
@@ -113,11 +86,7 @@ export type {
   SSOConnectionStore,
 } from './sso.js';
 
-export {
-  SSOManager,
-  InMemorySSOClient,
-  InMemorySSOConnectionStore,
-} from './sso.js';
+export { SSOManager, InMemorySSOClient, InMemorySSOConnectionStore } from './sso.js';
 
 // ─── SCIM ─────────────────────────────────────────────────────────
 export type {
@@ -151,17 +120,9 @@ export {
 } from './scim.js';
 
 // ─── Organization ─────────────────────────────────────────────────
-export type {
-  Organization,
-  OrgTree,
-  CreateOrgInput,
-  OrgStore,
-} from './organization.js';
+export type { Organization, OrgTree, CreateOrgInput, OrgStore } from './organization.js';
 
-export {
-  OrganizationManager,
-  InMemoryOrgStore,
-} from './organization.js';
+export { OrganizationManager, InMemoryOrgStore } from './organization.js';
 
 // ─── Custom Roles ─────────────────────────────────────────────────
 export type {
@@ -172,7 +133,4 @@ export type {
   RoleAuditLogger,
 } from './custom-roles.js';
 
-export {
-  CustomRoleManager,
-  InMemoryRoleStore,
-} from './custom-roles.js';
+export { CustomRoleManager, InMemoryRoleStore } from './custom-roles.js';

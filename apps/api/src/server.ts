@@ -51,6 +51,7 @@ import {
   InMemorySSOClient,
   InMemorySSOConnectionStore,
   SSOManager,
+  InMemoryRateLimiter,
 } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine, ComplianceGate } from '@ordr/compliance';
@@ -68,6 +69,7 @@ import { and, eq, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
+import { configureRateLimit } from './middleware/rate-limit.js';
 import { configureBillingGate } from './middleware/plan-gate.js';
 import { configureHealthChecks } from './routes/health.js';
 import { configureBrandingRoutes } from './routes/branding.js';
@@ -975,6 +977,12 @@ async function bootstrap(): Promise<void> {
 
   // ── 7. Configure middleware ────────────────────────────────────────────
   configureAuth(jwtConfig);
+
+  // Rate limiter — InMemoryRateLimiter for single-instance deployments.
+  // Swap for RedisRateLimiter(new Redis(process.env.REDIS_URL)) in multi-instance prod.
+  configureRateLimit(new InMemoryRateLimiter());
+  console.warn('[ORDR:API] Rate limiter initialized (InMemory sliding window)');
+
   configureEventsRoute({ jwtConfig });
 
   // ── 7.1. Developer portal routes ──────────────────────────────────────

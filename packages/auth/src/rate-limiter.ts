@@ -98,17 +98,21 @@ export class InMemoryRateLimiter implements RateLimiter {
 
   constructor() {
     // Periodic cleanup of stale entries (every 5 minutes)
-    this.cleanupTimer = setInterval(() => {
-      this.cleanup();
-    }, 5 * 60 * 1000);
+    this.cleanupTimer = setInterval(
+      () => {
+        this.cleanup();
+      },
+      5 * 60 * 1000,
+    );
 
-    // Allow the timer to be garbage collected
-    if (this.cleanupTimer && typeof this.cleanupTimer === 'object' && 'unref' in this.cleanupTimer) {
-      this.cleanupTimer.unref();
+    // Allow the timer to be garbage collected (Node.js-specific method)
+
+    if (typeof (this.cleanupTimer as { unref?: () => void } | null)?.unref === 'function') {
+      (this.cleanupTimer as { unref: () => void }).unref();
     }
   }
 
-  async check(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
+  check(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
     const now = Date.now();
     const windowStart = Math.floor(now / config.windowMs) * config.windowMs;
     const windowEnd = windowStart + config.windowMs;
@@ -142,16 +146,14 @@ export class InMemoryRateLimiter implements RateLimiter {
     // Calculate sliding window count
     const elapsedInWindow = now - windowStart;
     const windowRatio = elapsedInWindow / config.windowMs;
-    const effectiveCount =
-      entry.previousCount * (1 - windowRatio) + entry.currentCount;
+    const effectiveCount = entry.previousCount * (1 - windowRatio) + entry.currentCount;
 
     if (effectiveCount >= config.maxRequests) {
-      const remaining = 0;
-      return {
+      return Promise.resolve({
         allowed: false,
-        remaining,
+        remaining: 0,
         resetAt: new Date(windowEnd),
-      };
+      });
     }
 
     // Increment and allow
@@ -159,18 +161,21 @@ export class InMemoryRateLimiter implements RateLimiter {
 
     const remaining = Math.max(
       0,
-      Math.floor(config.maxRequests - (entry.previousCount * (1 - windowRatio) + entry.currentCount)),
+      Math.floor(
+        config.maxRequests - (entry.previousCount * (1 - windowRatio) + entry.currentCount),
+      ),
     );
 
-    return {
+    return Promise.resolve({
       allowed: true,
       remaining,
       resetAt: new Date(windowEnd),
-    };
+    });
   }
 
-  async reset(key: string): Promise<void> {
+  reset(key: string): Promise<void> {
     this.entries.delete(key);
+    return Promise.resolve();
   }
 
   /**
@@ -197,5 +202,124 @@ export class InMemoryRateLimiter implements RateLimiter {
       this.cleanupTimer = null;
     }
     this.entries.clear();
+  }
+}
+
+// ─── Redis-backed Implementation ───────────────────────────────────
+
+/**
+ * Minimal Redis client interface required by RedisRateLimiter.
+ * Implemented by ioredis.Redis and compatible clients — no direct dependency.
+ *
+ * Usage in production:
+ *   import Redis from 'ioredis';
+ *   const redis = new Redis(process.env.REDIS_URL);
+ *   const limiter = new RedisRateLimiter(redis);
+ */
+export interface RedisLikeClient {
+  /**
+   * Evaluate a Lua script.
+   * Signature matches ioredis `redis.eval(script, numkeys, ...keys, ...args)`.
+   */
+  eval(script: string, numkeys: number, ...args: readonly string[]): Promise<unknown>;
+}
+
+/**
+ * Redis-backed sliding window rate limiter.
+ *
+ * Uses a Lua script for atomic read-increment-expire in a single round-trip.
+ * Suitable for horizontally-scaled deployments where InMemoryRateLimiter
+ * would not share state across instances.
+ *
+ * Algorithm (same sliding window as InMemoryRateLimiter):
+ *   - Two hash fields per key: "prev" (previous window count) and "curr" (current)
+ *   - On window rotation, HSET prev=curr, curr=0, reset TTL
+ *   - Allow if: prev*(1-elapsed_ratio) + curr < maxRequests
+ *
+ * SOC2 CC6.6 — Distributed rate enforcement across API replicas.
+ * ISO 27001 A.13.1.1 — Consistent network controls in multi-node deployments.
+ */
+export class RedisRateLimiter implements RateLimiter {
+  private readonly client: RedisLikeClient;
+
+  // Lua script: atomic sliding-window check + increment
+  // KEYS[1] = rate limit key
+  // ARGV[1] = current time (ms, as string)
+  // ARGV[2] = window size (ms, as string)
+  // ARGV[3] = max requests (as string)
+  // Returns: "1:{remaining}:{resetAt_ms}" if allowed, "0:0:{resetAt_ms}" if denied
+  private static readonly SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local max = tonumber(ARGV[3])
+
+local window_start = math.floor(now / window) * window
+local window_end = window_start + window
+
+local stored = redis.call('HMGET', key, 'window_start', 'curr', 'prev')
+local stored_start = tonumber(stored[1]) or window_start
+local curr = tonumber(stored[2]) or 0
+local prev = tonumber(stored[3]) or 0
+
+-- Rotate window if needed
+if window_start > stored_start then
+  if window_start - stored_start >= window * 2 then
+    prev = 0
+    curr = 0
+  else
+    prev = curr
+    curr = 0
+  end
+  stored_start = window_start
+end
+
+-- Sliding window estimate
+local elapsed = now - stored_start
+local ratio = elapsed / window
+local effective = prev * (1 - ratio) + curr
+
+if effective >= max then
+  return { 0, 0, window_end }
+end
+
+curr = curr + 1
+redis.call('HMSET', key, 'window_start', stored_start, 'curr', curr, 'prev', prev)
+redis.call('PEXPIREAT', key, window_end + window)
+
+local remaining = math.max(0, math.floor(max - (prev * (1 - ratio) + curr)))
+return { 1, remaining, window_end }
+`.trim();
+
+  constructor(client: RedisLikeClient) {
+    this.client = client;
+  }
+
+  async check(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
+    const now = Date.now();
+    const result = await this.client.eval(
+      RedisRateLimiter.SCRIPT,
+      1,
+      key,
+      String(now),
+      String(config.windowMs),
+      String(config.maxRequests),
+    );
+
+    // result is [allowed(0|1), remaining, resetAt_ms]
+    const parts = result as [number, number, number];
+    const allowed = parts[0] === 1;
+    const remaining = parts[1];
+    const resetAtMs = parts[2];
+
+    return {
+      allowed,
+      remaining,
+      resetAt: new Date(resetAtMs),
+    };
+  }
+
+  async reset(key: string): Promise<void> {
+    await this.client.eval('return redis.call("DEL", KEYS[1])', 1, key);
   }
 }

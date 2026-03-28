@@ -6,7 +6,7 @@
  * 2. Security headers — defense-in-depth HTTP response headers
  * 3. CORS — configurable origins, NO wildcard in production
  * 4. Request logging — method, path, status, duration (NO bodies, NO PHI)
- * 5. Rate limiting — per-tenant via auth context
+ * 5. Rate limiting — per-tenant / per-IP sliding window (429 on breach)
  * 6. Audit — compliance trail for all state-changing operations
  * 7. Error handler — catches all, returns safe response with correlation ID
  *
@@ -37,6 +37,7 @@ import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { audit } from './middleware/audit.js';
 import { globalErrorHandler } from './middleware/error-handler.js';
+import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import { createTracingMiddleware } from '@ordr/observability';
 import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
@@ -123,7 +124,13 @@ export function createApp(config: AppConfig): Hono<Env> {
   // It does NOT log request bodies or headers (no PHI leakage).
   app.use('*', logger());
 
-  // ── 5. Audit middleware — compliance trail ───────────────────────────────
+  // ── 5. Rate limiting — per-tenant / per-IP sliding window ───────────────
+  // Returns 429 + X-RateLimit-* headers when limits are exceeded.
+  // Auth endpoints use a tighter AUTH_WINDOW (5/15min) for brute-force protection.
+  // No-op if configureRateLimit() was not called (test environments).
+  app.use('*', rateLimitMiddleware);
+
+  // ── 6. Audit middleware — compliance trail ───────────────────────────────
   app.use('*', audit);
 
   // ── 6. Error handler — catches all uncaught errors ──────────────────────
