@@ -76,6 +76,7 @@ const Integrations = lazy(() =>
 const SchedulerMonitor = lazy(() =>
   import('./pages/SchedulerMonitor').then((m) => ({ default: m.SchedulerMonitor })),
 );
+const Billing = lazy(() => import('./pages/Billing').then((m) => ({ default: m.Billing })));
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -177,6 +178,7 @@ export function App(): ReactNode {
                 <Route path="/workflows" element={<Workflows />} />
                 <Route path="/integrations" element={<Integrations />} />
                 <Route path="/scheduler" element={<SchedulerMonitor />} />
+                <Route path="/billing" element={<Billing />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
