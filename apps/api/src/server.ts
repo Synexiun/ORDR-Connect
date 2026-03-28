@@ -64,6 +64,8 @@ import { configurePartnerStatsRoute } from './routes/partner-stats.js';
 import { configureDeveloperRoutes } from './routes/developers.js';
 import { SlaChecker, DEFAULT_CHECK_INTERVAL_MS } from './lib/sla-checker.js';
 import { configureSlaRoutes } from './routes/sla.js';
+import { configureTeamRoutes } from './routes/team.js';
+import { configureProfileRoutes } from './routes/profile.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -217,6 +219,14 @@ async function bootstrap(): Promise<void> {
   slaChecker = new SlaChecker(db);
   configureSlaRoutes(slaChecker);
   slaChecker.start(DEFAULT_CHECK_INTERVAL_MS);
+
+  // ── 4.11. Team management routes ──────────────────────────────────────────
+  configureTeamRoutes({ db, auditLogger });
+  console.warn('[ORDR:API] Team routes configured');
+
+  // ── 4.12. Profile routes (user self-service) ───────────────────────────────
+  configureProfileRoutes({ db, auditLogger });
+  console.warn('[ORDR:API] Profile routes configured');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();

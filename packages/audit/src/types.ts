@@ -35,7 +35,17 @@ export type AuditEventType =
   | 'organization.deleted'
   | 'auth.sso.success'
   | 'sso.connection.created'
-  | 'sso.connection.deleted';
+  | 'sso.connection.deleted'
+  | 'user.invited'
+  | 'user.role_changed'
+  | 'user.suspended'
+  | 'user.profile_updated'
+  | 'user.password_changed'
+  | 'user.mfa_enabled'
+  | 'user.mfa_disabled'
+  | 'user.session_revoked'
+  | 'api_key.created'
+  | 'api_key.revoked';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

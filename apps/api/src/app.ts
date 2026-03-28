@@ -64,6 +64,8 @@ import { healthcareRouter } from './routes/healthcare.js';
 import { devUsageRouter } from './routes/developer-usage.js';
 import { partnerStatsRouter } from './routes/partner-stats.js';
 import { slaRouter } from './routes/sla.js';
+import { teamRouter } from './routes/team.js';
+import { profileRouter } from './routes/profile.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -222,6 +224,12 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // SLA routes — breach status and manual trigger
   app.route('/api/v1/sla', slaRouter);
+
+  // Team management — member listing, invite, role update, suspend, deactivate, activity
+  app.route('/api/v1/team', teamRouter);
+
+  // Profile — current user, password change, MFA, sessions, API tokens
+  app.route('/api/v1/profile', profileRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);
