@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/",
@@ -22,6 +22,10 @@
     "@ordr/audit": "workspace:*",
     "@ordr/channels": "workspace:*",
     "@ordr/ai": "workspace:*",
+    "@ordr/db": "workspace:*",
+    "@ordr/decision-engine": "workspace:*",
+    "drizzle-orm": "^0.36.0",
+    "kafkajs": "^2.2.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
