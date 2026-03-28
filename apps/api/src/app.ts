@@ -59,6 +59,7 @@ import { partnersRouter } from './routes/partners.js';
 import { aiRouter } from './routes/ai.js';
 import { complianceDashboardRouter } from './routes/compliance-dashboard.js';
 import { eventsRouter } from './routes/events.js';
+import { notificationsRouter } from './routes/notifications.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -200,6 +201,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // SSE events stream — real-time dashboard updates
   app.route('/api/v1/events', eventsRouter);
+
+  // Notification center — HITL approvals, compliance alerts, SLA breaches
+  app.route('/api/v1/notifications', notificationsRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);

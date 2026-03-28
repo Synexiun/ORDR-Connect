@@ -11,6 +11,12 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Spinner } from '../components/ui/Spinner';
 import { listHitl, approveHitl, rejectHitl, type HitlItem as ApiHitlItem } from '../lib/agents-api';
+import {
+  listNotifications,
+  markNotificationRead,
+  dismissNotification,
+  type Notification as ApiNotification,
+} from '../lib/notifications-api';
 import { AlertTriangle, ShieldCheck, ArrowUpRight, Clock, Settings } from '../components/icons';
 
 // --- Types ---
@@ -244,13 +250,31 @@ export function Notifications(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [hitlRes] = await Promise.allSettled([listHitl()]);
+      const [hitlRes, notifRes] = await Promise.allSettled([
+        listHitl(),
+        listNotifications({ includeDismissed: false, limit: 100 }),
+      ]);
 
       setHitlItems(
         hitlRes.status === 'fulfilled' ? hitlRes.value.data.map(adaptHitlItem) : mockHitlItems,
       );
-      // Notifications are mock for MVP — would integrate with notification service
-      setNotifications(mockNotifications);
+      setNotifications(
+        notifRes.status === 'fulfilled'
+          ? notifRes.value.data.map((n: ApiNotification) => ({
+              id: n.id,
+              type: n.type,
+              severity: n.severity,
+              title: n.title,
+              description: n.description,
+              timestamp: n.timestamp,
+              read: n.read,
+              dismissed: n.dismissed,
+              actionLabel: n.actionLabel,
+              actionRoute: n.actionRoute,
+              metadata: n.metadata,
+            }))
+          : mockNotifications,
+      );
     } catch {
       setHitlItems(mockHitlItems);
       setNotifications(mockNotifications);
@@ -277,11 +301,23 @@ export function Notifications(): ReactNode {
   }, []);
 
   const handleMarkRead = useCallback((notifId: string) => {
+    // Optimistic update
     setNotifications((prev) => prev.map((n) => (n.id === notifId ? { ...n, read: true } : n)));
+    void markNotificationRead(notifId).catch(() => {
+      // Revert on failure
+      setNotifications((prev) => prev.map((n) => (n.id === notifId ? { ...n, read: false } : n)));
+    });
   }, []);
 
   const handleDismiss = useCallback((notifId: string) => {
+    // Optimistic update
     setNotifications((prev) => prev.map((n) => (n.id === notifId ? { ...n, dismissed: true } : n)));
+    void dismissNotification(notifId).catch(() => {
+      // Revert on failure
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notifId ? { ...n, dismissed: false } : n)),
+      );
+    });
   }, []);
 
   const filteredNotifications = notifications.filter((n) => {

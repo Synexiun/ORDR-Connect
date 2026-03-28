@@ -52,6 +52,7 @@ import { configureHealthChecks } from './routes/health.js';
 import { configureBrandingRoutes } from './routes/branding.js';
 import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
+import { configureNotificationsRoute } from './routes/notifications.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -179,6 +180,10 @@ async function bootstrap(): Promise<void> {
   });
   configureBillingGate(subscriptionManager);
   console.warn('[ORDR:API] Billing gate initialized — store=drizzle (postgres)');
+
+  // ── 4.6. Notifications route ───────────────────────────────────────────
+  configureNotificationsRoute(db);
+  console.warn('[ORDR:API] Notifications route configured');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();

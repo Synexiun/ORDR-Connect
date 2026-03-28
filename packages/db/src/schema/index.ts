@@ -115,6 +115,9 @@ export {
   partnerPayoutStatusEnum,
 } from './partners.js';
 
+// Notifications
+export { notifications, notificationTypeEnum, notificationSeverityEnum } from './notifications.js';
+
 // Billing (customers, subscriptions, usage)
 export { billingCustomers } from './billing-customers.js';
 
