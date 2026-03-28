@@ -54,6 +54,7 @@ import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
+import { configureDevUsageRoute } from './routes/developer-usage.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -188,6 +189,10 @@ async function bootstrap(): Promise<void> {
   // ── 4.7. Healthcare routes ─────────────────────────────────────────────
   configureHealthcareRoutes(db);
   console.warn('[ORDR:API] Healthcare routes configured');
+
+  // ── 4.8. Developer usage route ─────────────────────────────────────────
+  configureDevUsageRoute(db);
+  console.warn('[ORDR:API] Developer usage route configured');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();

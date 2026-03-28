@@ -22,6 +22,7 @@ import {
   createApiKey,
   revokeApiKey,
   listSandboxes,
+  getDeveloperUsage,
   type ApiKey,
   type SandboxTenant,
 } from '../lib/developer-api';
@@ -110,8 +111,8 @@ const sandboxBadge: Record<SandboxItem['status'], 'success' | 'warning' | 'neutr
   destroyed: 'neutral',
 };
 
-// API usage data for BarChart (last 7 days)
-const usageChartData = [
+// Fallback chart data used when the API is unavailable
+const fallbackUsageChart = [
   { label: 'Mon', value: 1842, color: '#3b82f6' },
   { label: 'Tue', value: 2105, color: '#3b82f6' },
   { label: 'Wed', value: 1920, color: '#3b82f6' },
@@ -121,7 +122,7 @@ const usageChartData = [
   { label: 'Sun', value: 663, color: '#3b82f6' },
 ];
 
-const errorChartData = [
+const fallbackErrorChart = [
   { label: 'Mon', value: 23, color: '#ef4444' },
   { label: 'Tue', value: 41, color: '#ef4444' },
   { label: 'Wed', value: 18, color: '#ef4444' },
@@ -131,7 +132,7 @@ const errorChartData = [
   { label: 'Sun', value: 8, color: '#ef4444' },
 ];
 
-const endpointUsageData = [
+const fallbackEndpointData = [
   { label: '/customers', value: 4230 },
   { label: '/agents', value: 2847 },
   { label: '/tickets', value: 1920 },
@@ -317,6 +318,9 @@ export function DeveloperConsole(): ReactNode {
   const [agents, setAgents] = useState<PublishedAgent[]>([]);
   const [sandboxes, setSandboxes] = useState<SandboxItem[]>([]);
   const [usage, setUsage] = useState<UsageStats | null>(null);
+  const [usageChartData, setUsageChartData] = useState(fallbackUsageChart);
+  const [errorChartData, setErrorChartData] = useState(fallbackErrorChart);
+  const [endpointUsageData, setEndpointUsageData] = useState(fallbackEndpointData);
   const [webhooks] = useState(mockWebhooks);
   const [loading, setLoading] = useState(true);
   const [showCreateKey, setShowCreateKey] = useState(false);
@@ -327,10 +331,11 @@ export function DeveloperConsole(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [keysRes, agentsRes, sandboxRes] = await Promise.allSettled([
+      const [keysRes, agentsRes, sandboxRes, usageRes] = await Promise.allSettled([
         listApiKeys(),
         listMarketplaceAgents({ pageSize: 20 }),
         listSandboxes(),
+        getDeveloperUsage(7),
       ]);
 
       setKeys(keysRes.status === 'fulfilled' ? keysRes.value.data.map(adaptApiKey) : mockKeys);
@@ -342,7 +347,23 @@ export function DeveloperConsole(): ReactNode {
       setSandboxes(
         sandboxRes.status === 'fulfilled' ? sandboxRes.value.data.map(adaptSandbox) : mockSandboxes,
       );
-      setUsage(mockUsage);
+
+      if (usageRes.status === 'fulfilled') {
+        const { stats, daily, endpoints } = usageRes.value.data;
+        setUsage({
+          totalCalls: stats.totalCalls,
+          totalErrors: stats.totalErrors,
+          callsToday: stats.callsToday,
+          errorsToday: stats.errorsToday,
+        });
+        setUsageChartData(daily.map((d) => ({ label: d.label, value: d.calls, color: '#3b82f6' })));
+        setErrorChartData(
+          daily.map((d) => ({ label: d.label, value: d.errors, color: '#ef4444' })),
+        );
+        setEndpointUsageData(endpoints.map((e) => ({ label: e.endpoint, value: e.calls })));
+      } else {
+        setUsage(mockUsage);
+      }
     } catch {
       setKeys(mockKeys);
       setAgents(mockAgents);

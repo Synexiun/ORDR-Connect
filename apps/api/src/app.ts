@@ -61,6 +61,7 @@ import { complianceDashboardRouter } from './routes/compliance-dashboard.js';
 import { eventsRouter } from './routes/events.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { healthcareRouter } from './routes/healthcare.js';
+import { devUsageRouter } from './routes/developer-usage.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -208,6 +209,10 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Healthcare dashboard — patient queue, appointments, care plans, compliance
   app.route('/api/v1/healthcare', healthcareRouter);
+
+  // Developer usage stats — aggregate, daily breakdown, top endpoints
+  // NOTE: mounted before /api/v1/developers so it takes precedence for /usage
+  app.route('/api/v1/developers/usage', devUsageRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);

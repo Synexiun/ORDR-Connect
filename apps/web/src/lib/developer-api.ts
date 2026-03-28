@@ -100,3 +100,38 @@ export function listSandboxes(): Promise<{
 export async function destroySandbox(sandboxId: string): Promise<void> {
   await apiClient.delete(`/v1/developers/sandbox/${sandboxId}`);
 }
+
+// ── Usage Stats ─────────────────────────────────────────────────────
+
+export interface DeveloperUsageStats {
+  readonly totalCalls: number;
+  readonly totalErrors: number;
+  readonly callsToday: number;
+  readonly errorsToday: number;
+}
+
+export interface DeveloperUsageDaily {
+  readonly label: string;
+  readonly calls: number;
+  readonly errors: number;
+}
+
+export interface DeveloperUsageEndpoint {
+  readonly endpoint: string;
+  readonly calls: number;
+}
+
+export interface DeveloperUsageData {
+  readonly stats: DeveloperUsageStats;
+  readonly daily: DeveloperUsageDaily[];
+  readonly endpoints: DeveloperUsageEndpoint[];
+}
+
+export function getDeveloperUsage(days = 7): Promise<{
+  readonly success: true;
+  readonly data: DeveloperUsageData;
+}> {
+  return apiClient.get<{ readonly success: true; readonly data: DeveloperUsageData }>(
+    `/v1/developers/usage?days=${String(days)}`,
+  );
+}
