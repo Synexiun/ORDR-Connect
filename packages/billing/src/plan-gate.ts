@@ -19,70 +19,18 @@ import { PlanLimitExceededError, SubscriptionNotFoundError } from './subscriptio
 
 // ─── Env Type (matches API Env) ──────────────────────────────────
 
-interface BillingEnv {
+export interface BillingEnv {
   Variables: {
     requestId: string;
-    tenantContext: {
-      readonly tenantId: string;
-      readonly userId: string;
-      readonly roles: readonly string[];
-      readonly permissions: readonly string[];
-    } | undefined;
+    tenantContext:
+      | {
+          readonly tenantId: string;
+          readonly userId: string;
+          readonly roles: readonly string[];
+          readonly permissions: readonly string[];
+        }
+      | undefined;
   };
-}
-
-// ─── Module-level config ─────────────────────────────────────────
-
-let subscriptionManager: SubscriptionManager | null = null;
-let subscriptionCache = new Map<string, { subscription: Subscription; cachedAt: number }>();
-const CACHE_TTL_MS = 60_000; // 1 minute
-
-/**
- * Configure plan gate middleware with the subscription manager.
- * Must be called once at startup before any plan-gated routes are hit.
- */
-export function configurePlanGate(manager: SubscriptionManager): void {
-  subscriptionManager = manager;
-}
-
-/**
- * Clear the subscription cache (e.g., after plan change).
- */
-export function clearSubscriptionCache(tenantId?: string): void {
-  if (tenantId) {
-    subscriptionCache.delete(tenantId);
-  } else {
-    subscriptionCache = new Map();
-  }
-}
-
-// ─── Internal: Get Tenant Subscription ───────────────────────────
-
-async function getTenantSubscription(tenantId: string): Promise<Subscription | null> {
-  if (!subscriptionManager) {
-    throw new Error('[ORDR:Billing] Plan gate not configured — call configurePlanGate()');
-  }
-
-  // Check cache
-  const cached = subscriptionCache.get(tenantId);
-  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
-    return cached.subscription;
-  }
-
-  try {
-    const usage = await subscriptionManager.getUsage(tenantId);
-    // getUsage internally calls getActiveSubscription, which throws if not found.
-    // We need to get the subscription directly.
-    // Use checkLimit as a proxy to verify subscription exists.
-    await subscriptionManager.checkLimit(tenantId, 'api_calls');
-
-    // If we got here, subscription exists. Use checkLimit result to infer.
-    // For a proper implementation, we'd add a getSubscription method.
-    // For now, return null and let the middleware handle missing subscriptions.
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 // ─── requirePlan Middleware ──────────────────────────────────────
@@ -107,7 +55,7 @@ export function requirePlan(
           error: {
             code: 'AUTH_FAILED' as const,
             message: 'Authentication required',
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         401,
@@ -122,7 +70,7 @@ export function requirePlan(
           error: {
             code: 'FORBIDDEN' as const,
             message: 'No active subscription found',
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         403,
@@ -136,7 +84,7 @@ export function requirePlan(
           error: {
             code: 'FORBIDDEN' as const,
             message: `This feature requires the ${minimumTier} plan or higher`,
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         403,
@@ -169,7 +117,7 @@ export function requireFeature(
           error: {
             code: 'AUTH_FAILED' as const,
             message: 'Authentication required',
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         401,
@@ -184,7 +132,7 @@ export function requireFeature(
           error: {
             code: 'FORBIDDEN' as const,
             message: 'No active subscription found',
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         403,
@@ -198,7 +146,7 @@ export function requireFeature(
           error: {
             code: 'FORBIDDEN' as const,
             message: `Feature '${featureName}' is not available on your current plan`,
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         403,
@@ -218,10 +166,7 @@ export function requireFeature(
  * @param resource - Usage resource to check quota for
  * @param manager - SubscriptionManager instance for limit checking
  */
-export function checkQuota(
-  resource: UsageResource,
-  manager: SubscriptionManager,
-) {
+export function checkQuota(resource: UsageResource, manager: SubscriptionManager) {
   return createMiddleware<BillingEnv>(async (c, next) => {
     const ctx = c.get('tenantContext');
     if (!ctx) {
@@ -231,7 +176,7 @@ export function checkQuota(
           error: {
             code: 'AUTH_FAILED' as const,
             message: 'Authentication required',
-            correlationId: c.get('requestId') ?? 'unknown',
+            correlationId: c.get('requestId'),
           },
         },
         401,
@@ -248,7 +193,7 @@ export function checkQuota(
             error: {
               code: 'RATE_LIMIT' as const,
               message: error.message,
-              correlationId: c.get('requestId') ?? 'unknown',
+              correlationId: c.get('requestId'),
               details: {
                 resource: error.resource,
                 current: error.current,
@@ -266,7 +211,7 @@ export function checkQuota(
             error: {
               code: 'FORBIDDEN' as const,
               message: 'No active subscription found',
-              correlationId: c.get('requestId') ?? 'unknown',
+              correlationId: c.get('requestId'),
             },
           },
           403,

@@ -70,13 +70,7 @@ export { UsageTracker } from './usage-tracker.js';
 export type { UsageStore } from './usage-tracker.js';
 
 // ─── Plan Gate Middleware ─────────────────────────────────────────
-export {
-  requirePlan,
-  requireFeature,
-  checkQuota,
-  configurePlanGate,
-  clearSubscriptionCache,
-} from './plan-gate.js';
+export { requirePlan, requireFeature, checkQuota } from './plan-gate.js';
 export type { BillingEnv } from './plan-gate.js';
 
 // ─── In-Memory Stores (dev / testing) ────────────────────────────
