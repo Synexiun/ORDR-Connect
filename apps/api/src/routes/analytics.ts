@@ -21,6 +21,7 @@ import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
+import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ───────────────────────────────────────────────
@@ -106,9 +107,11 @@ function parseZodErrors(error: z.ZodError): Record<string, string[]> {
 
 const analyticsRouter = new Hono<Env>();
 
-// All routes require authentication + analytics:read permission
+// All routes require authentication + analytics:read permission + analytics plan feature
 analyticsRouter.use('*', requireAuth());
 analyticsRouter.use('*', requirePermissionMiddleware('analytics', 'read'));
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+analyticsRouter.use('*', featureGate(FEATURES.ANALYTICS));
 
 // ─── GET /dashboard — Dashboard summary ──────────────────────────
 

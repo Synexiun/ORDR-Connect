@@ -442,6 +442,14 @@ export class SubscriptionManager {
   }
 
   /**
+   * Get the current subscription for a tenant, or null if none exists.
+   * Does not throw on missing subscription — callers must handle null.
+   */
+  async getSubscription(tenantId: string): Promise<Subscription | null> {
+    return this.store.findSubscriptionByTenantId(tenantId);
+  }
+
+  /**
    * Get active subscription for tenant (throws if not found).
    */
   private async getActiveSubscription(tenantId: string): Promise<Subscription> {

@@ -41,7 +41,11 @@ export {
 } from './plans.js';
 
 // ─── Stripe Client ───────────────────────────────────────────────
-export { MockStripeClient, verifyWebhookSignature, generateWebhookSignature } from './stripe-client.js';
+export {
+  MockStripeClient,
+  verifyWebhookSignature,
+  generateWebhookSignature,
+} from './stripe-client.js';
 
 export type { StripeClient } from './stripe-client.js';
 
@@ -69,3 +73,6 @@ export {
   configurePlanGate,
   clearSubscriptionCache,
 } from './plan-gate.js';
+
+// ─── In-Memory Stores (dev / testing) ────────────────────────────
+export { InMemorySubscriptionStore, InMemoryUsageStore } from './in-memory-store.js';

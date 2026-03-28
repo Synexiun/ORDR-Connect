@@ -24,6 +24,7 @@ import { ValidationError, AuthorizationError, NotFoundError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 
 // ─── Input Schemas ───────────────────────────────────────────────
 
@@ -209,9 +210,11 @@ function computeComplianceScore(tenantId: string): {
 
 const complianceDashboardRouter = new Hono<Env>();
 
-// All compliance routes require auth + compliance:read permission
+// All compliance routes require auth + compliance:read permission + compliance_dashboard plan feature
 complianceDashboardRouter.use('*', requireAuth());
 complianceDashboardRouter.use('*', requirePermissionMiddleware('compliance', 'read'));
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+complianceDashboardRouter.use('*', featureGate(FEATURES.COMPLIANCE_DASHBOARD));
 
 // ─── GET /summary ────────────────────────────────────────────────
 

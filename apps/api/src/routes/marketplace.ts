@@ -29,6 +29,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 
 // ─── Input Schemas ──────────────────────────────────────────────
 
@@ -412,75 +413,81 @@ marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
 
 // ─── POST /:agentId/install — Install agent for tenant ──────────
 
-marketplaceRouter.post('/:agentId/install', requireAuth(), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+marketplaceRouter.post(
+  '/:agentId/install',
+  requireAuth(),
+  featureGate(FEATURES.MARKETPLACE),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
-  const requestId = c.get('requestId');
-  const { userId, tenantId, roles } = ensureAuthContext(c);
-  const agentId = c.req.param('agentId');
+    const requestId = c.get('requestId');
+    const { userId, tenantId, roles } = ensureAuthContext(c);
+    const agentId = c.req.param('agentId');
 
-  // Admin-only check
-  requireRole(roles, 'tenant_admin', requestId);
+    // Admin-only check
+    requireRole(roles, 'tenant_admin', requestId);
 
-  // Verify agent exists and is published
-  const agent = await deps.findAgentById(agentId);
-  if (!agent) {
-    throw new NotFoundError('Agent not found', requestId);
-  }
+    // Verify agent exists and is published
+    const agent = await deps.findAgentById(agentId);
+    if (!agent) {
+      throw new NotFoundError('Agent not found', requestId);
+    }
 
-  if (agent.status !== 'published') {
-    throw new ValidationError(
-      'Only published agents can be installed',
+    if (agent.status !== 'published') {
+      throw new ValidationError(
+        'Only published agents can be installed',
+        {
+          status: ['Agent is not published'],
+        },
+        requestId,
+      );
+    }
+
+    // Check if already installed
+    const existingInstall = await deps.findInstall(tenantId, agentId);
+    if (existingInstall && existingInstall.status === 'active') {
+      throw new ConflictError('Agent is already installed for this tenant', requestId);
+    }
+
+    const install = await deps.createInstall({
+      tenantId,
+      agentId,
+      version: agent.version,
+    });
+
+    // Increment downloads
+    await deps.incrementDownloads(agentId);
+
+    // Audit log — WORM (Rule 3)
+    await deps.auditLogger.log({
+      tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: userId,
+      resource: 'marketplace_installs',
+      resourceId: install.id,
+      action: 'install_agent',
+      details: { agentId, version: agent.version, agentName: agent.name },
+      timestamp: new Date(),
+    });
+
+    return c.json(
       {
-        status: ['Agent is not published'],
+        success: true as const,
+        data: {
+          id: install.id,
+          tenantId: install.tenantId,
+          agentId: install.agentId,
+          version: install.version,
+          status: install.status,
+          installedAt: install.installedAt,
+        },
       },
-      requestId,
+      201,
     );
-  }
-
-  // Check if already installed
-  const existingInstall = await deps.findInstall(tenantId, agentId);
-  if (existingInstall && existingInstall.status === 'active') {
-    throw new ConflictError('Agent is already installed for this tenant', requestId);
-  }
-
-  const install = await deps.createInstall({
-    tenantId,
-    agentId,
-    version: agent.version,
-  });
-
-  // Increment downloads
-  await deps.incrementDownloads(agentId);
-
-  // Audit log — WORM (Rule 3)
-  await deps.auditLogger.log({
-    tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: userId,
-    resource: 'marketplace_installs',
-    resourceId: install.id,
-    action: 'install_agent',
-    details: { agentId, version: agent.version, agentName: agent.name },
-    timestamp: new Date(),
-  });
-
-  return c.json(
-    {
-      success: true as const,
-      data: {
-        id: install.id,
-        tenantId: install.tenantId,
-        agentId: install.agentId,
-        version: install.version,
-        status: install.status,
-        installedAt: install.installedAt,
-      },
-    },
-    201,
-  );
-});
+  },
+);
 
 // ─── DELETE /:agentId/install — Uninstall agent ─────────────────
 

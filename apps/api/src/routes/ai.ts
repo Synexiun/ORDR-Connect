@@ -1,6 +1,5 @@
 /* eslint-disable
    @typescript-eslint/no-unsafe-assignment,
-   @typescript-eslint/no-unsafe-call,
    @typescript-eslint/no-unsafe-argument,
    @typescript-eslint/no-unsafe-member-access
    --
@@ -35,6 +34,7 @@ import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ───────────────────────────────────────────────
@@ -89,10 +89,11 @@ function ensureDeps(): AIDependencies {
 
 const aiRouter = new Hono<Env>();
 
-// All AI routes require auth + agents:read permission
+// All AI routes require auth + agents:read permission + ai_agents plan feature
 // (agents permission — AI features are agent-tier functionality)
 aiRouter.use('*', requireAuth());
 aiRouter.use('*', requirePermissionMiddleware('agents', 'read'));
+aiRouter.use('*', featureGate(FEATURES.AI_AGENTS));
 
 // ─── POST /sentiment — Batch sentiment analysis ──────────────────
 

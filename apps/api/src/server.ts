@@ -1,13 +1,15 @@
 /* eslint-disable
    @typescript-eslint/no-non-null-assertion,
    @typescript-eslint/strict-boolean-expressions,
-   @typescript-eslint/require-await
+   @typescript-eslint/require-await,
+   @typescript-eslint/no-unsafe-assignment,
+   @typescript-eslint/no-unsafe-call
    --
    NOTE: These rules are disabled because workspace dependencies (@ordr/db,
-   @ordr/core, @ordr/events, etc.) have not been compiled to dist/ yet, so
-   TypeScript's project service cannot resolve their types. Re-enable once all
-   packages are built (tracked in TODO: build pipeline). Security rules remain
-   fully active — only type-inference rules are suppressed here.
+   @ordr/core, @ordr/events, @ordr/billing, @ordr/crypto, etc.) have not been
+   compiled to dist/ yet, so TypeScript's project service cannot resolve their
+   types. Re-enable once all packages are built (tracked in TODO: build pipeline).
+   Security rules remain fully active — only type-inference rules are suppressed.
 */
 /**
  * Server Entry Point — bootstraps and starts the ORDR-Connect API
@@ -37,6 +39,8 @@ import * as schema from '@ordr/db';
 import { createKafkaClient, createProducer } from '@ordr/events';
 import type { Producer } from '@ordr/events';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
+import { SubscriptionManager, InMemorySubscriptionStore, MockStripeClient } from '@ordr/billing';
+import { FieldEncryptor } from '@ordr/crypto';
 import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine } from '@ordr/compliance';
@@ -45,6 +49,7 @@ import { eq } from 'drizzle-orm';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
+import { configureBillingGate } from './middleware/plan-gate.js';
 import { configureHealthChecks } from './routes/health.js';
 import { configureBrandingRoutes } from './routes/branding.js';
 import { configureAiRoutes } from './routes/ai.js';
@@ -154,6 +159,24 @@ async function bootstrap(): Promise<void> {
   const auditLogger = new AuditLogger(auditStore);
   configureAudit(auditLogger);
   console.warn('[ORDR:API] Audit logger initialized');
+
+  // ── 4.5. Billing / Plan Gate ───────────────────────────────────────────
+  // In production:
+  //   - Replace InMemorySubscriptionStore with a Drizzle-backed store
+  //   - Replace MockStripeClient with StripeClient(process.env.STRIPE_SECRET_KEY)
+  //   - Load fieldEncryptionKey from Vault / AWS Secrets Manager (min 32 bytes)
+  const fieldEncryptionKey = Buffer.from(
+    process.env['FIELD_ENCRYPTION_KEY'] ?? 'dev-only-key-replace-in-prod-!!!',
+  );
+  const subscriptionStore = new InMemorySubscriptionStore();
+  const subscriptionManager = new SubscriptionManager({
+    store: subscriptionStore,
+    stripe: new MockStripeClient(),
+    auditLogger,
+    fieldEncryptor: new FieldEncryptor(fieldEncryptionKey),
+  });
+  configureBillingGate(subscriptionManager);
+  console.warn('[ORDR:API] Billing gate initialized (in-memory subscription store)');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();

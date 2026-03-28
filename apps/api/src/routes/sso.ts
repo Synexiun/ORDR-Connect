@@ -20,6 +20,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
@@ -156,34 +157,41 @@ ssoRouter.get('/callback', async (c): Promise<Response> => {
 
 // ─── GET /connections ─────────────────────────────────────────────
 
-ssoRouter.get('/connections', requireAuth(), async (c): Promise<Response> => {
-  if (!deps) {
-    throw new Error('[ORDR:API] SSO routes not configured');
-  }
+// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+ssoRouter.get(
+  '/connections',
+  requireAuth(),
+  featureGate(FEATURES.SSO),
+  async (c): Promise<Response> => {
+    if (!deps) {
+      throw new Error('[ORDR:API] SSO routes not configured');
+    }
 
-  const ctx = c.get('tenantContext');
-  if (!ctx) {
-    const requestId = c.get('requestId');
-    throw new AuthenticationError('Authentication required', requestId);
-  }
+    const ctx = c.get('tenantContext');
+    if (!ctx) {
+      const requestId = c.get('requestId');
+      throw new AuthenticationError('Authentication required', requestId);
+    }
 
-  const result = await deps.ssoManager.getSSOConnections(ctx.tenantId);
+    const result = await deps.ssoManager.getSSOConnections(ctx.tenantId);
 
-  if (!result.success) {
-    return jsonErr(c, result.error);
-  }
+    if (!result.success) {
+      return jsonErr(c, result.error);
+    }
 
-  return c.json({
-    success: true as const,
-    data: result.data,
-  });
-});
+    return c.json({
+      success: true as const,
+      data: result.data,
+    });
+  },
+);
 
 // ─── POST /connections ────────────────────────────────────────────
 
 ssoRouter.post(
   '/connections',
   requireAuth(),
+  featureGate(FEATURES.SSO), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
   requireRoleMiddleware('tenant_admin'),
   async (c): Promise<Response> => {
     if (!deps) {
@@ -252,6 +260,7 @@ ssoRouter.post(
 ssoRouter.delete(
   '/connections/:id',
   requireAuth(),
+  featureGate(FEATURES.SSO), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
   requireRoleMiddleware('tenant_admin'),
   async (c): Promise<Response> => {
     if (!deps) {
