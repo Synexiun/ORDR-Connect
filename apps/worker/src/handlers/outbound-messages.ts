@@ -23,8 +23,16 @@ import type { EventEnvelope } from '@ordr/events';
 import { createEventEnvelope, TOPICS, EventType } from '@ordr/events';
 import type { EventProducer } from '@ordr/events';
 import type { AuditLogger } from '@ordr/audit';
-import type { ConsentManager, ConsentStore, SmsProvider, EmailProvider, MessageStateMachine, Channel } from '@ordr/channels';
+import type {
+  ConsentManager,
+  ConsentStore,
+  SmsProvider,
+  EmailProvider,
+  MessageStateMachine,
+  Channel,
+} from '@ordr/channels';
 import type { ComplianceGate } from '@ordr/compliance';
+import type { NotificationWriter } from '../types.js';
 
 // ─── Outbound Message Payload ────────────────────────────────────
 
@@ -46,15 +54,13 @@ export interface OutboundMessagesDeps {
   readonly eventProducer: EventProducer;
   readonly auditLogger: AuditLogger;
   readonly stateMachine: MessageStateMachine;
+  readonly notificationWriter: NotificationWriter;
   readonly getCustomerContact: (
     tenantId: string,
     customerId: string,
     channel: string,
   ) => Promise<{ readonly contact: string; readonly contentBody: string } | null>;
-  readonly updateMessageStatus: (
-    messageId: string,
-    status: string,
-  ) => Promise<void>;
+  readonly updateMessageStatus: (messageId: string, status: string) => Promise<void>;
 }
 
 // ─── Handler Factory ─────────────────────────────────────────────
@@ -79,7 +85,7 @@ export function createOutboundMessagesHandler(
     );
 
     if (!consentResult.success) {
-      // Consent denied — update status and audit
+      // Consent denied — update status, audit, and notify
       await deps.updateMessageStatus(messageId, 'opted_out');
 
       await deps.auditLogger.log({
@@ -98,28 +104,40 @@ export function createOutboundMessagesHandler(
         timestamp: new Date(),
       });
 
+      await deps.notificationWriter
+        .insert({
+          tenantId,
+          type: 'compliance',
+          severity: 'high',
+          title: 'Message blocked: consent not given',
+          description: `Outbound ${channel} message blocked — customer has not provided consent. Message ID: ${messageId}.`,
+          actionLabel: 'View customer',
+          actionRoute: `/customers/${customerId}`,
+          metadata: { messageId, customerId, channel },
+        })
+        .catch((notifErr: unknown) => {
+          console.error('[ORDR:WORKER] Failed to write consent_denied notification:', notifErr);
+        });
+
       return;
     }
 
     // ── 2. Compliance Gate — MUST pass before any customer-facing action ──
 
-    const complianceResult = deps.complianceGate.check(
-      `send_${channel}`,
-      {
-        tenantId,
-        customerId,
-        channel,
-        data: { contentRef: data.contentRef },
-        timestamp: new Date(),
-      },
-    );
+    const complianceResult = deps.complianceGate.check(`send_${channel}`, {
+      tenantId,
+      customerId,
+      channel,
+      data: { contentRef: data.contentRef },
+      timestamp: new Date(),
+    });
 
     if (!complianceResult.allowed) {
       const violationMessages = complianceResult.violations
         .map((v) => v.violation?.message ?? 'Unknown violation')
         .join('; ');
 
-      // Compliance denied — update status and audit
+      // Compliance denied — update status, audit, and notify
       await deps.updateMessageStatus(messageId, 'failed');
 
       await deps.auditLogger.log({
@@ -138,6 +156,21 @@ export function createOutboundMessagesHandler(
         },
         timestamp: new Date(),
       });
+
+      await deps.notificationWriter
+        .insert({
+          tenantId,
+          type: 'compliance',
+          severity: 'high',
+          title: 'Message blocked: compliance violation',
+          description: `Outbound ${channel} message blocked by compliance gate. Message ID: ${messageId}. Violations: ${violationMessages}`,
+          actionLabel: 'View customer',
+          actionRoute: `/customers/${customerId}`,
+          metadata: { messageId, customerId, channel },
+        })
+        .catch((notifErr: unknown) => {
+          console.error('[ORDR:WORKER] Failed to write compliance_blocked notification:', notifErr);
+        });
 
       return;
     }
@@ -230,9 +263,11 @@ export function createOutboundMessagesHandler(
         },
       );
 
-      await deps.eventProducer.publish(TOPICS.INTERACTION_EVENTS, interactionEvent).catch((publishErr: unknown) => {
-        console.error('[ORDR:WORKER] Failed to publish interaction.logged event:', publishErr);
-      });
+      await deps.eventProducer
+        .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
+        .catch((publishErr: unknown) => {
+          console.error('[ORDR:WORKER] Failed to publish interaction.logged event:', publishErr);
+        });
     }
   };
 }

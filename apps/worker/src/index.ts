@@ -7,7 +7,7 @@
 
 // ─── Server ──────────────────────────────────────────────────────
 export { startWorker } from './server.js';
-export type { WorkerDependencies } from './server.js';
+export type { WorkerDependencies, NotificationWriter, NotificationInsert } from './server.js';
 
 // ─── Handlers ────────────────────────────────────────────────────
 export { createCustomerEventsHandler } from './handlers/customer-events.js';

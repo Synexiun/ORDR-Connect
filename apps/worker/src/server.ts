@@ -29,6 +29,7 @@ import type {
   MessageStateMachine,
 } from '@ordr/channels';
 import type { EventProducer } from '@ordr/events';
+import type { NotificationWriter } from './types.js';
 import { createCustomerEventsHandler } from './handlers/customer-events.js';
 import {
   createInteractionEventsHandler,
@@ -38,6 +39,8 @@ import {
 } from './handlers/interaction-events.js';
 import { createAgentEventsHandler } from './handlers/agent-events.js';
 import { createOutboundMessagesHandler } from './handlers/outbound-messages.js';
+
+export type { NotificationWriter, NotificationInsert } from './types.js';
 
 // ─── Worker Dependencies ─────────────────────────────────────────
 
@@ -53,6 +56,7 @@ export interface WorkerDependencies {
   readonly smsProvider: SmsProvider;
   readonly emailProvider: EmailProvider;
   readonly stateMachine: MessageStateMachine;
+  readonly notificationWriter: NotificationWriter;
   /** NBA pipeline — evaluates inbound interactions to produce Next-Best-Action decisions. */
   readonly nbaPipeline: NBAEvaluator;
   /** Agent orchestrator — dispatches NBA decisions to the correct agent role. */
@@ -105,6 +109,7 @@ export async function startWorker(
     graphEnricher: deps.graphEnricher,
     eventProducer: deps.eventProducer,
     auditLogger: deps.auditLogger,
+    notificationWriter: deps.notificationWriter,
   });
   handlers.set('agent.triggered', agentHandler);
   handlers.set('agent.action_executed', agentHandler);
@@ -119,6 +124,7 @@ export async function startWorker(
     eventProducer: deps.eventProducer,
     auditLogger: deps.auditLogger,
     stateMachine: deps.stateMachine,
+    notificationWriter: deps.notificationWriter,
     getCustomerContact: deps.getCustomerContact,
     updateMessageStatus: deps.updateMessageStatus,
   });

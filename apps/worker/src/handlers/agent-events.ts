@@ -23,6 +23,7 @@ import type { AgentEngine } from '@ordr/agent-runtime';
 import type { GraphEnricher } from '@ordr/graph';
 import type { AuditLogger } from '@ordr/audit';
 import type { AgentRole, AutonomyLevel } from '@ordr/core';
+import type { NotificationWriter } from '../types.js';
 
 // ─── Agent Triggered Payload ─────────────────────────────────────
 
@@ -40,6 +41,7 @@ export interface AgentEventsDeps {
   readonly graphEnricher: GraphEnricher;
   readonly eventProducer: EventProducer;
   readonly auditLogger: AuditLogger;
+  readonly notificationWriter: NotificationWriter;
 }
 
 // ─── Handler Factory ─────────────────────────────────────────────
@@ -60,7 +62,7 @@ export function createAgentEventsHandler(
           data.customerId,
           data.agentRole as AgentRole,
           event.id,
-          (data.autonomyLevel ?? 'supervised') as AutonomyLevel,
+          data.autonomyLevel as AutonomyLevel,
         );
 
         if (!sessionResult.success) {
@@ -85,6 +87,28 @@ export function createAgentEventsHandler(
             },
             timestamp: new Date(),
           });
+
+          await deps.notificationWriter
+            .insert({
+              tenantId,
+              type: 'system',
+              severity: 'high',
+              title: 'Agent session could not start',
+              description: `Agent role "${data.agentRole}" failed to initialise. Session ID: ${data.sessionId}. Error: ${sessionResult.error.code}.`,
+              actionLabel: 'View agent activity',
+              actionRoute: '/agent-activity',
+              metadata: {
+                sessionId: data.sessionId,
+                agentRole: data.agentRole,
+                error: sessionResult.error.code,
+              },
+            })
+            .catch((notifErr: unknown) => {
+              console.error(
+                '[ORDR:WORKER] Failed to write session_start_failed notification:',
+                notifErr,
+              );
+            });
 
           return;
         }
@@ -123,6 +147,54 @@ export function createAgentEventsHandler(
           timestamp: new Date(),
         });
 
+        // Notify on actionable outcomes: escalation, failure, or timeout
+        if (outcome.result === 'escalated') {
+          await deps.notificationWriter
+            .insert({
+              tenantId,
+              type: 'hitl',
+              severity: 'high',
+              title: 'Agent escalated: human review required',
+              description: `Agent role "${data.agentRole}" escalated after ${String(outcome.totalSteps)} step(s) and requires human review. Session ID: ${context.sessionId}.`,
+              actionLabel: 'Review session',
+              actionRoute: '/agent-activity',
+              metadata: { sessionId: context.sessionId, agentRole: data.agentRole },
+            })
+            .catch((notifErr: unknown) => {
+              console.error('[ORDR:WORKER] Failed to write escalated notification:', notifErr);
+            });
+        } else if (outcome.result === 'failed') {
+          await deps.notificationWriter
+            .insert({
+              tenantId,
+              type: 'system',
+              severity: 'high',
+              title: 'Agent session failed',
+              description: `Agent role "${data.agentRole}" session ended with a failure after ${String(outcome.totalSteps)} step(s). Session ID: ${context.sessionId}.`,
+              actionLabel: 'View agent activity',
+              actionRoute: '/agent-activity',
+              metadata: { sessionId: context.sessionId, agentRole: data.agentRole },
+            })
+            .catch((notifErr: unknown) => {
+              console.error('[ORDR:WORKER] Failed to write failed notification:', notifErr);
+            });
+        } else if (outcome.result === 'timeout') {
+          await deps.notificationWriter
+            .insert({
+              tenantId,
+              type: 'system',
+              severity: 'medium',
+              title: 'Agent session timed out',
+              description: `Agent role "${data.agentRole}" session exceeded the time budget after ${String(outcome.totalSteps)} step(s). Session ID: ${context.sessionId}.`,
+              actionLabel: 'View agent activity',
+              actionRoute: '/agent-activity',
+              metadata: { sessionId: context.sessionId, agentRole: data.agentRole },
+            })
+            .catch((notifErr: unknown) => {
+              console.error('[ORDR:WORKER] Failed to write timeout notification:', notifErr);
+            });
+        }
+
         // Publish agent outcome event
         const outcomeEvent = createEventEnvelope(
           EventType.AGENT_ACTION_EXECUTED,
@@ -142,9 +214,11 @@ export function createAgentEventsHandler(
           },
         );
 
-        await deps.eventProducer.publish(TOPICS.AGENT_EVENTS, outcomeEvent).catch((publishErr: unknown) => {
-          console.error('[ORDR:WORKER] Failed to publish agent outcome event:', publishErr);
-        });
+        await deps.eventProducer
+          .publish(TOPICS.AGENT_EVENTS, outcomeEvent)
+          .catch((publishErr: unknown) => {
+            console.error('[ORDR:WORKER] Failed to publish agent outcome event:', publishErr);
+          });
 
         break;
       }
