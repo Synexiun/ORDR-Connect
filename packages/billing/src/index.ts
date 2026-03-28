@@ -23,7 +23,9 @@ export type {
   Invoice,
   UsageResource,
   UsageSummary,
+  UsageRecord,
   PaymentMethod,
+  BillingCustomer,
   BillingEvent,
 } from './types.js';
 

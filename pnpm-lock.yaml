@@ -102,6 +102,9 @@ importers:
       '@ordr/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@ordr/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@ordr/channels':
         specifier: workspace:*
         version: link:../../packages/channels

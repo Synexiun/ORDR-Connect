@@ -33,6 +33,7 @@ import {
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { quotaGate } from '../middleware/plan-gate.js';
 
 // ---- Input Schemas ---------------------------------------------------------
 
@@ -256,164 +257,169 @@ messagesRouter.get('/:id', requirePermissionMiddleware('messages', 'read'), asyn
 
 // ---- POST /send — manual message send (not agent-triggered) ----------------
 
-messagesRouter.post('/send', requirePermissionMiddleware('messages', 'create'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Message routes not configured');
+messagesRouter.post(
+  '/send',
+  requirePermissionMiddleware('messages', 'create'),
+  quotaGate('messages'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Message routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  // Validate input
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = sendMessageSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      'Invalid message send request',
-      parseValidationErrors(parsed.error.issues),
-      requestId,
+    // Validate input
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = sendMessageSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid message send request',
+        parseValidationErrors(parsed.error.issues),
+        requestId,
+      );
+    }
+
+    const { customerId, channel, contentRef } = parsed.data;
+
+    // 1. Consent check — MUST pass before any outbound message
+    const consentResult = await deps.consentManager.verifyConsentForSend(
+      customerId,
+      channel as Channel,
+      deps.consentStore,
     );
-  }
 
-  const { customerId, channel, contentRef } = parsed.data;
+    if (!consentResult.success) {
+      // Audit log consent failure
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'compliance.violation',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'message',
+        resourceId: requestId,
+        action: 'consent_check_failed',
+        details: { customerId, channel },
+        timestamp: new Date(),
+      });
 
-  // 1. Consent check — MUST pass before any outbound message
-  const consentResult = await deps.consentManager.verifyConsentForSend(
-    customerId,
-    channel as Channel,
-    deps.consentStore,
-  );
+      throw consentResult.error;
+    }
 
-  if (!consentResult.success) {
-    // Audit log consent failure
-    await deps.auditLogger.log({
+    // 2. Compliance gate — MUST pass before any customer-facing action
+    const complianceResult = deps.complianceGate.check(`send_${channel}`, {
       tenantId: ctx.tenantId,
-      eventType: 'compliance.violation',
-      actorType: 'user',
-      actorId: ctx.userId,
-      resource: 'message',
-      resourceId: requestId,
-      action: 'consent_check_failed',
-      details: { customerId, channel },
-      timestamp: new Date(),
-    });
-
-    throw consentResult.error;
-  }
-
-  // 2. Compliance gate — MUST pass before any customer-facing action
-  const complianceResult = deps.complianceGate.check(`send_${channel}`, {
-    tenantId: ctx.tenantId,
-    customerId,
-    channel,
-    data: { contentRef },
-    timestamp: new Date(),
-  });
-
-  if (!complianceResult.allowed) {
-    const violationMessages = complianceResult.violations
-      .map((v) => v.violation?.message ?? 'Unknown violation')
-      .join('; ');
-
-    // Audit log compliance failure
-    await deps.auditLogger.log({
-      tenantId: ctx.tenantId,
-      eventType: 'compliance.violation',
-      actorType: 'user',
-      actorId: ctx.userId,
-      resource: 'message',
-      resourceId: requestId,
-      action: 'compliance_check_failed',
-      details: { customerId, channel, violations: violationMessages },
-      timestamp: new Date(),
-    });
-
-    throw new ComplianceViolationError(
-      `Message blocked by compliance gate: ${violationMessages}`,
-      'SOC2',
-    );
-  }
-
-  // 3. Resolve customer contact info and retrieve content
-  const contactInfo = await deps.getCustomerContact(ctx.tenantId, customerId, channel);
-  if (!contactInfo) {
-    throw new NotFoundError('Customer contact information not found for channel', requestId);
-  }
-
-  // 4. Create message record
-  const messageId = randomUUID();
-  const messageRecord = await deps.createMessage({
-    id: messageId,
-    tenantId: ctx.tenantId,
-    customerId,
-    channel,
-    direction: 'outbound',
-    status: 'pending',
-    contentRef,
-  });
-
-  // 5. Send via appropriate channel provider
-  let sendSuccess = false;
-  if (channel === 'sms') {
-    const sendResult = await deps.smsProvider.send(contactInfo.contact, contactInfo.contentBody);
-    sendSuccess = sendResult.success;
-  } else {
-    const sendResult = await deps.emailProvider.send(
-      contactInfo.contact,
-      'Message from ORDR-Connect',
-      contactInfo.contentBody,
-    );
-    sendSuccess = sendResult.success;
-  }
-
-  // 6. Audit log
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'message',
-    resourceId: messageId,
-    action: 'send',
-    details: {
       customerId,
       channel,
-      success: sendSuccess,
-    },
-    timestamp: new Date(),
-  });
+      data: { contentRef },
+      timestamp: new Date(),
+    });
 
-  // 7. Publish event
-  const event = createEventEnvelope(
-    EventType.INTERACTION_LOGGED,
-    ctx.tenantId,
-    {
-      interactionId: messageId,
+    if (!complianceResult.allowed) {
+      const violationMessages = complianceResult.violations
+        .map((v) => v.violation?.message ?? 'Unknown violation')
+        .join('; ');
+
+      // Audit log compliance failure
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'compliance.violation',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'message',
+        resourceId: requestId,
+        action: 'compliance_check_failed',
+        details: { customerId, channel, violations: violationMessages },
+        timestamp: new Date(),
+      });
+
+      throw new ComplianceViolationError(
+        `Message blocked by compliance gate: ${violationMessages}`,
+        'SOC2',
+      );
+    }
+
+    // 3. Resolve customer contact info and retrieve content
+    const contactInfo = await deps.getCustomerContact(ctx.tenantId, customerId, channel);
+    if (!contactInfo) {
+      throw new NotFoundError('Customer contact information not found for channel', requestId);
+    }
+
+    // 4. Create message record
+    const messageId = randomUUID();
+    const messageRecord = await deps.createMessage({
+      id: messageId,
+      tenantId: ctx.tenantId,
       customerId,
       channel,
       direction: 'outbound',
-      type: 'message',
-    },
-    {
-      correlationId: requestId,
-      userId: ctx.userId,
-      source: 'api',
-    },
-  );
-
-  await deps.eventProducer
-    .publish(TOPICS.INTERACTION_EVENTS, event)
-    .catch((publishErr: unknown) => {
-      console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+      status: 'pending',
+      contentRef,
     });
 
-  // SECURITY: Return metadata only — NO content
-  return c.json(
-    {
-      success: true as const,
-      data: toSafeMetadata(messageRecord),
-    },
-    201,
-  );
-});
+    // 5. Send via appropriate channel provider
+    let sendSuccess = false;
+    if (channel === 'sms') {
+      const sendResult = await deps.smsProvider.send(contactInfo.contact, contactInfo.contentBody);
+      sendSuccess = sendResult.success;
+    } else {
+      const sendResult = await deps.emailProvider.send(
+        contactInfo.contact,
+        'Message from ORDR-Connect',
+        contactInfo.contentBody,
+      );
+      sendSuccess = sendResult.success;
+    }
+
+    // 6. Audit log
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'message',
+      resourceId: messageId,
+      action: 'send',
+      details: {
+        customerId,
+        channel,
+        success: sendSuccess,
+      },
+      timestamp: new Date(),
+    });
+
+    // 7. Publish event
+    const event = createEventEnvelope(
+      EventType.INTERACTION_LOGGED,
+      ctx.tenantId,
+      {
+        interactionId: messageId,
+        customerId,
+        channel,
+        direction: 'outbound',
+        type: 'message',
+      },
+      {
+        correlationId: requestId,
+        userId: ctx.userId,
+        source: 'api',
+      },
+    );
+
+    await deps.eventProducer
+      .publish(TOPICS.INTERACTION_EVENTS, event)
+      .catch((publishErr: unknown) => {
+        console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+      });
+
+    // SECURITY: Return metadata only — NO content
+    return c.json(
+      {
+        success: true as const,
+        data: toSafeMetadata(messageRecord),
+      },
+      201,
+    );
+  },
+);
 
 export { messagesRouter };

@@ -157,11 +157,10 @@ ssoRouter.get('/callback', async (c): Promise<Response> => {
 
 // ─── GET /connections ─────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
 ssoRouter.get(
   '/connections',
   requireAuth(),
-  featureGate(FEATURES.SSO),
+  featureGate(FEATURES.SSO), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] SSO routes not configured');

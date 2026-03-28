@@ -23,6 +23,7 @@ import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
+import { quotaGate } from '../middleware/plan-gate.js';
 
 // ---- PII fields that require field-level encryption -------------------------
 
@@ -261,86 +262,91 @@ customersRouter.get('/:id', requirePermissionMiddleware('customers', 'read'), as
 
 // ---- POST / — create customer ----------------------------------------------
 
-customersRouter.post('/', requirePermissionMiddleware('customers', 'create'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
+customersRouter.post(
+  '/',
+  requirePermissionMiddleware('customers', 'create'),
+  quotaGate('contacts'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  // Validate input
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = createCustomerSchema.safeParse(body);
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path.join('.');
-      const existing = fieldErrors[field];
-      if (existing) {
-        existing.push(issue.message);
-      } else {
-        fieldErrors[field] = [issue.message];
+    // Validate input
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = createCustomerSchema.safeParse(body);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path.join('.');
+        const existing = fieldErrors[field];
+        if (existing) {
+          existing.push(issue.message);
+        } else {
+          fieldErrors[field] = [issue.message];
+        }
       }
+      throw new ValidationError('Invalid customer data', fieldErrors, requestId);
     }
-    throw new ValidationError('Invalid customer data', fieldErrors, requestId);
-  }
 
-  // Encrypt PII fields before storage
-  const encryptedData = encryptPiiFields(
-    parsed.data as unknown as Record<string, unknown>,
-    deps.fieldEncryptor,
-  );
+    // Encrypt PII fields before storage
+    const encryptedData = encryptPiiFields(
+      parsed.data as unknown as Record<string, unknown>,
+      deps.fieldEncryptor,
+    );
 
-  // Create in database
-  const customer = await deps.createCustomer(ctx.tenantId, encryptedData);
+    // Create in database
+    const customer = await deps.createCustomer(ctx.tenantId, encryptedData);
 
-  // Audit log
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'customers',
-    resourceId: customer.id,
-    action: 'create',
-    details: { type: parsed.data.type },
-    timestamp: new Date(),
-  });
+    // Audit log
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'customers',
+      resourceId: customer.id,
+      action: 'create',
+      details: { type: parsed.data.type },
+      timestamp: new Date(),
+    });
 
-  // Publish domain event
-  const event = createEventEnvelope(
-    EventType.CUSTOMER_CREATED,
-    ctx.tenantId,
-    {
-      customerId: customer.id,
-      name: parsed.data.name,
-      email: parsed.data.email ?? '',
-      type: parsed.data.type,
-      lifecycleStage: parsed.data.lifecycleStage ?? 'lead',
-    },
-    {
-      correlationId: requestId,
-      userId: ctx.userId,
-      source: 'api',
-    },
-  );
+    // Publish domain event
+    const event = createEventEnvelope(
+      EventType.CUSTOMER_CREATED,
+      ctx.tenantId,
+      {
+        customerId: customer.id,
+        name: parsed.data.name,
+        email: parsed.data.email ?? '',
+        type: parsed.data.type,
+        lifecycleStage: parsed.data.lifecycleStage ?? 'lead',
+      },
+      {
+        correlationId: requestId,
+        userId: ctx.userId,
+        source: 'api',
+      },
+    );
 
-  await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
-    // Event publish failure should not fail the request
-    console.error('[ORDR:API] Failed to publish customer.created event:', err);
-  });
+    await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
+      // Event publish failure should not fail the request
+      console.error('[ORDR:API] Failed to publish customer.created event:', err);
+    });
 
-  // Return decrypted version
-  const decrypted = decryptCustomer(customer, deps.fieldEncryptor);
+    // Return decrypted version
+    const decrypted = decryptCustomer(customer, deps.fieldEncryptor);
 
-  return c.json(
-    {
-      success: true as const,
-      data: decrypted,
-    },
-    201,
-  );
-});
+    return c.json(
+      {
+        success: true as const,
+        data: decrypted,
+      },
+      201,
+    );
+  },
+);
 
 // ---- PATCH /:id — update customer ------------------------------------------
 

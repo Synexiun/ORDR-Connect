@@ -413,11 +413,10 @@ marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
 
 // ─── POST /:agentId/install — Install agent for tenant ──────────
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
 marketplaceRouter.post(
   '/:agentId/install',
   requireAuth(),
-  featureGate(FEATURES.MARKETPLACE),
+  featureGate(FEATURES.MARKETPLACE), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
   async (c) => {
     if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 

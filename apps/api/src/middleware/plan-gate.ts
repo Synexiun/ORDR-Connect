@@ -1,14 +1,3 @@
-/* eslint-disable
-   @typescript-eslint/no-unsafe-assignment,
-   @typescript-eslint/no-unsafe-call,
-   @typescript-eslint/no-unsafe-member-access,
-   @typescript-eslint/no-unsafe-return,
-   @typescript-eslint/no-redundant-type-constituents
-   --
-   NOTE: These rules are disabled because @ordr/billing has not been compiled to dist/ yet,
-   so TypeScript's project service cannot resolve its types. Re-enable once all packages
-   are built (tracked in build pipeline TODO). Security rules remain fully active.
-*/
 /**
  * Plan Gate Middleware — API-side billing gate
  *
