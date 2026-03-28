@@ -67,6 +67,8 @@ import { slaRouter } from './routes/sla.js';
 import { teamRouter } from './routes/team.js';
 import { profileRouter } from './routes/profile.js';
 import { settingsRouter } from './routes/settings.js';
+import { ticketsRouter } from './routes/tickets.js';
+import { reportsRouter } from './routes/reports.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -234,6 +236,12 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Settings — tenant config, SSO, roles, agents, channels, notifications, security
   app.route('/api/v1/settings', settingsRouter);
+
+  // Tickets — internal support ticketing system
+  app.route('/api/v1/tickets', ticketsRouter);
+
+  // Reports — report generation, scheduling, export
+  app.route('/api/v1/reports', reportsRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);

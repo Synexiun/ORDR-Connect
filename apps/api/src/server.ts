@@ -67,6 +67,8 @@ import { configureSlaRoutes } from './routes/sla.js';
 import { configureTeamRoutes } from './routes/team.js';
 import { configureProfileRoutes } from './routes/profile.js';
 import { configureSettingsRoutes } from './routes/settings.js';
+import { configureTicketRoutes } from './routes/tickets.js';
+import { configureReportRoutes } from './routes/reports.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -232,6 +234,14 @@ async function bootstrap(): Promise<void> {
   // ── 4.13. Settings routes (tenant config, SSO, roles, agents, channels) ────
   configureSettingsRoutes({ db, auditLogger });
   console.warn('[ORDR:API] Settings routes configured');
+
+  // ── 4.14. Tickets routes (support ticketing system) ────────────────────────
+  configureTicketRoutes({ db });
+  console.warn('[ORDR:API] Ticket routes configured');
+
+  // ── 4.15. Reports routes (generation, scheduling, export) ──────────────────
+  configureReportRoutes({ db });
+  console.warn('[ORDR:API] Report routes configured');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();

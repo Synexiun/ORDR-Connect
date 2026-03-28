@@ -125,3 +125,23 @@ export { billingCustomers } from './billing-customers.js';
 export { subscriptions, subscriptionStatusEnum } from './subscriptions.js';
 
 export { usageRecords, usageResourceEnum } from './usage-records.js';
+
+// Support Tickets
+export {
+  tickets,
+  ticketMessages,
+  ticketStatusEnum,
+  ticketPriorityEnum,
+  ticketCategoryEnum,
+  ticketMessageAuthorRoleEnum,
+} from './tickets.js';
+
+// Reports (generated reports + schedules)
+export {
+  generatedReports,
+  reportSchedules,
+  reportTypeEnum,
+  reportStatusEnum,
+  scheduleFrequencyEnum,
+  scheduleStatusEnum,
+} from './reports.js';
