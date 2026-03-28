@@ -2,23 +2,25 @@
  * workflow-api tests
  *
  * Verifies typed wrappers call the correct endpoints with correct params.
+ * Mocks apiClient to avoid real HTTP requests.
  */
 
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { workflowApi } from '../workflow-api';
-import * as apiModule from '../api';
+
+const mockGet = vi.fn();
+const mockPost = vi.fn();
+const mockPatch = vi.fn();
+const mockDelete = vi.fn();
 
 vi.mock('../api', () => ({
   apiClient: {
-    get: vi.fn(),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
+    get: (...args: unknown[]) => mockGet(...args) as unknown,
+    post: (...args: unknown[]) => mockPost(...args) as unknown,
+    patch: (...args: unknown[]) => mockPatch(...args) as unknown,
+    delete: (...args: unknown[]) => mockDelete(...args) as unknown,
   },
 }));
-
-const mockClient = vi.mocked(apiModule.apiClient);
 
 const MOCK_INSTANCE = {
   id: 'inst-1',
@@ -42,18 +44,18 @@ beforeEach(() => {
 
 describe('workflowApi.listDefinitions', () => {
   it('GETs /v1/workflow/definitions and extracts data', async () => {
-    mockClient.get.mockResolvedValue({ success: true, data: [MOCK_DEF], total: 1 });
+    mockGet.mockResolvedValue({ success: true, data: [MOCK_DEF], total: 1 });
 
     const result = await workflowApi.listDefinitions();
 
-    expect(mockClient.get).toHaveBeenCalledWith('/v1/workflow/definitions');
+    expect(mockGet).toHaveBeenCalledWith('/v1/workflow/definitions');
     expect(result).toEqual([MOCK_DEF]);
   });
 });
 
 describe('workflowApi.startInstance', () => {
   it('POSTs to /v1/workflow/instances and extracts data', async () => {
-    mockClient.post.mockResolvedValue({ success: true, data: MOCK_INSTANCE });
+    mockPost.mockResolvedValue({ success: true, data: MOCK_INSTANCE });
 
     const result = await workflowApi.startInstance({
       definitionId: 'onboarding-v1',
@@ -66,26 +68,26 @@ describe('workflowApi.startInstance', () => {
       },
     });
 
-    expect(mockClient.post).toHaveBeenCalledWith('/v1/workflow/instances', expect.any(Object));
+    expect(mockPost).toHaveBeenCalledWith('/v1/workflow/instances', expect.any(Object));
     expect(result.id).toBe('inst-1');
   });
 });
 
 describe('workflowApi.listInstances', () => {
   it('GETs /v1/workflow/instances with no query when no filter', async () => {
-    mockClient.get.mockResolvedValue({ success: true, data: [MOCK_INSTANCE], total: 1 });
+    mockGet.mockResolvedValue({ success: true, data: [MOCK_INSTANCE], total: 1 });
 
     await workflowApi.listInstances();
 
-    expect(mockClient.get).toHaveBeenCalledWith('/v1/workflow/instances');
+    expect(mockGet).toHaveBeenCalledWith('/v1/workflow/instances');
   });
 
   it('appends status filter to query string', async () => {
-    mockClient.get.mockResolvedValue({ success: true, data: [], total: 0 });
+    mockGet.mockResolvedValue({ success: true, data: [], total: 0 });
 
     await workflowApi.listInstances({ status: 'running', limit: 10 });
 
-    const url = mockClient.get.mock.calls[0]?.[0] as string;
+    const url = mockGet.mock.calls[0]?.[0] as string;
     expect(url).toContain('status=running');
     expect(url).toContain('limit=10');
   });
@@ -93,11 +95,11 @@ describe('workflowApi.listInstances', () => {
 
 describe('workflowApi.getInstance', () => {
   it('GETs /v1/workflow/instances/:id and extracts data', async () => {
-    mockClient.get.mockResolvedValue({ success: true, data: MOCK_INSTANCE });
+    mockGet.mockResolvedValue({ success: true, data: MOCK_INSTANCE });
 
     const result = await workflowApi.getInstance('inst-1');
 
-    expect(mockClient.get).toHaveBeenCalledWith('/v1/workflow/instances/inst-1');
+    expect(mockGet).toHaveBeenCalledWith('/v1/workflow/instances/inst-1');
     expect(result.id).toBe('inst-1');
   });
 });
@@ -105,22 +107,22 @@ describe('workflowApi.getInstance', () => {
 describe('workflowApi.pauseInstance', () => {
   it('PATCHes /v1/workflow/instances/:id/pause and extracts data', async () => {
     const paused = { ...MOCK_INSTANCE, status: 'paused' };
-    mockClient.patch.mockResolvedValue({ success: true, data: paused });
+    mockPatch.mockResolvedValue({ success: true, data: paused });
 
     const result = await workflowApi.pauseInstance('inst-1');
 
-    expect(mockClient.patch).toHaveBeenCalledWith('/v1/workflow/instances/inst-1/pause');
+    expect(mockPatch).toHaveBeenCalledWith('/v1/workflow/instances/inst-1/pause');
     expect(result.status).toBe('paused');
   });
 });
 
 describe('workflowApi.resumeInstance', () => {
   it('PATCHes /v1/workflow/instances/:id/resume and extracts data', async () => {
-    mockClient.patch.mockResolvedValue({ success: true, data: MOCK_INSTANCE });
+    mockPatch.mockResolvedValue({ success: true, data: MOCK_INSTANCE });
 
     const result = await workflowApi.resumeInstance('inst-1');
 
-    expect(mockClient.patch).toHaveBeenCalledWith('/v1/workflow/instances/inst-1/resume');
+    expect(mockPatch).toHaveBeenCalledWith('/v1/workflow/instances/inst-1/resume');
     expect(result.status).toBe('running');
   });
 });
@@ -128,16 +130,13 @@ describe('workflowApi.resumeInstance', () => {
 describe('workflowApi.cancelInstance', () => {
   it('DELETEs /v1/workflow/instances/:id with reason header', async () => {
     const cancelled = { ...MOCK_INSTANCE, status: 'cancelled' };
-    mockClient.delete.mockResolvedValue({ success: true, data: cancelled });
+    mockDelete.mockResolvedValue({ success: true, data: cancelled });
 
     const result = await workflowApi.cancelInstance('inst-1', 'User requested');
 
-    expect(mockClient.delete).toHaveBeenCalledWith(
-      '/v1/workflow/instances/inst-1',
-      expect.objectContaining({
-        headers: expect.objectContaining({ 'X-Cancel-Reason': 'User requested' }),
-      }),
-    );
+    expect(mockDelete).toHaveBeenCalledWith('/v1/workflow/instances/inst-1', expect.any(Object));
+    const opts = mockDelete.mock.calls[0]?.[1] as { headers: Record<string, string> } | undefined;
+    expect(opts?.headers['X-Cancel-Reason']).toBe('User requested');
     expect(result.status).toBe('cancelled');
   });
 });
