@@ -62,6 +62,8 @@ import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
 import { configurePartnerStatsRoute } from './routes/partner-stats.js';
 import { configureDeveloperRoutes } from './routes/developers.js';
+import { SlaChecker, DEFAULT_CHECK_INTERVAL_MS } from './lib/sla-checker.js';
+import { configureSlaRoutes } from './routes/sla.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -70,6 +72,7 @@ let limbInstance: Limb | null = null;
 let dbConnection: postgres.Sql | null = null;
 let kafkaProducer: Producer | null = null;
 let llmClient: LLMClient | null = null;
+let slaChecker: SlaChecker | null = null;
 let server: ReturnType<typeof serve> | null = null;
 
 /**
@@ -209,6 +212,11 @@ async function bootstrap(): Promise<void> {
   // ── 4.9. Partner stats route ───────────────────────────────────────────
   configurePartnerStatsRoute(db);
   console.warn('[ORDR:API] Partner stats route configured');
+
+  // ── 4.10. SLA checker — periodic background scan for breach notifications ──
+  slaChecker = new SlaChecker(db);
+  configureSlaRoutes(slaChecker);
+  slaChecker.start(DEFAULT_CHECK_INTERVAL_MS);
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();
@@ -542,13 +550,18 @@ async function shutdown(signal: string): Promise<void> {
     console.warn('[ORDR:API] HTTP server closed');
   }
 
-  // 2. Shut down Synexiun kernel (stops heartbeat loop)
+  // 2. Stop SLA checker loop
+  if (slaChecker !== null) {
+    slaChecker.stop();
+  }
+
+  // 3. Shut down Synexiun kernel (stops heartbeat loop)
   if (limbInstance !== null) {
     limbInstance.shutdown();
     console.warn('[ORDR:API] Synexiun kernel shut down');
   }
 
-  // 3. Disconnect Kafka producer (flush pending messages)
+  // 4. Disconnect Kafka producer (flush pending messages)
   if (kafkaProducer !== null) {
     try {
       await kafkaProducer.disconnect();
@@ -558,7 +571,7 @@ async function shutdown(signal: string): Promise<void> {
     }
   }
 
-  // 4. Close database connection pool
+  // 5. Close database connection pool
   if (dbConnection !== null) {
     try {
       await closeConnection(dbConnection);
