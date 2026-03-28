@@ -66,6 +66,7 @@ import {
 } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
 import { and, eq, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
+import { MetricsRegistry } from '@ordr/observability';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
@@ -1667,9 +1668,14 @@ async function bootstrap(): Promise<void> {
   console.warn('[ORDR:API] Tenant routes configured');
 
   // ── 9. Create and start Hono app ───────────────────────────────────────
+  // MetricsRegistry collects Node.js runtime defaults + ORDR-specific metrics.
+  // /metrics is network-restricted — NOT behind the public load balancer.
+  const metricsRegistry = new MetricsRegistry();
+
   const app = createApp({
     corsOrigins: config.corsOrigins,
     nodeEnv: config.nodeEnv,
+    metrics: metricsRegistry,
   });
 
   server = serve(
@@ -1680,6 +1686,7 @@ async function bootstrap(): Promise<void> {
     (info) => {
       console.warn(`[ORDR:API] Server listening on port ${String(info.port)}`);
       console.warn(`[ORDR:API] Health check: http://localhost:${String(info.port)}/health`);
+      console.warn(`[ORDR:API] Metrics:      http://localhost:${String(info.port)}/metrics`);
     },
   );
 }

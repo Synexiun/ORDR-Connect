@@ -1,0 +1,134 @@
+# ORDR-Connect — Render Deployment Configuration
+# Docs: https://render.com/docs/render-yaml-spec
+#
+# Services:
+#   - ordr-api        Web service (Hono API, Node.js 22)
+#   - ordr-worker     Background worker (Kafka consumer, agent pipeline)
+#
+# Databases / caches are managed externally (Supabase PostgreSQL, Upstash Redis)
+# and injected via environment variables — NOT provisioned by this file.
+#
+# SOC2 CC6.1 — Tenant isolation: secrets injected via Render environment groups.
+# SOC2 CC6.6 — Rate limiting and WAF handled at the load balancer layer.
+# HIPAA §164.312 — Transmission security: all traffic over HTTPS (TLS 1.3).
+
+services:
+  # ── API Service ─────────────────────────────────────────────────────────
+  - type: web
+    name: ordr-api
+    runtime: node
+    region: oregon
+
+    # Build
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @ordr/db build && pnpm --filter @ordr/auth build && pnpm --filter @ordr/audit build && pnpm --filter @ordr/billing build && pnpm --filter @ordr/observability build && pnpm --filter ordr-api build
+    startCommand: node dist/server.js
+
+    # Node version pinned for LTS stability (Rule 8 — no floating versions)
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.1
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+
+      # ── Database (Supabase / Neon PostgreSQL) ──────────────────────────
+      - key: DATABASE_URL
+        sync: false # injected from Render environment group — never committed
+
+      # ── Redis (Upstash) ───────────────────────────────────────────────
+      - key: REDIS_URL
+        sync: false
+
+      # ── Kafka (Confluent Cloud) ───────────────────────────────────────
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+
+      # ── JWT / Auth ────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ISSUER
+        value: https://api.ordr.io
+      - key: WORKOS_API_KEY
+        sync: false
+      - key: WORKOS_CLIENT_ID
+        sync: false
+
+      # ── Stripe ───────────────────────────────────────────────────────
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # ── Twilio ───────────────────────────────────────────────────────
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+
+      # ── SendGrid ─────────────────────────────────────────────────────
+      - key: SENDGRID_API_KEY
+        sync: false
+
+      # ── CORS ─────────────────────────────────────────────────────────
+      - key: CORS_ORIGINS
+        value: https://app.ordr.io
+
+      # ── Signing keys (cosign / audit) ─────────────────────────────────
+      - key: COSIGN_PRIVATE_KEY
+        sync: false
+      - key: COSIGN_PASSWORD
+        sync: false
+
+    # Health check — Render polls this to determine readiness
+    healthCheckPath: /health/ready
+
+    # Auto-scaling
+    scaling:
+      minInstances: 1
+      maxInstances: 4
+      targetMemoryPercent: 75
+      targetCPUPercent: 70
+
+    # Zero-downtime deploys — Render does rolling replacements
+    # pre-deploy command runs DB migrations before traffic shifts
+    preDeployCommand: pnpm --filter @ordr/db migrate
+
+  # ── Worker Service ───────────────────────────────────────────────────────
+  - type: worker
+    name: ordr-worker
+    runtime: node
+    region: oregon
+
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter ordr-worker build
+    startCommand: node dist/index.js
+
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.1
+      - key: NODE_ENV
+        value: production
+
+      # Shared with API — injected from environment group
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+      # AI — Claude API key for agent execution
+      - key: ANTHROPIC_API_KEY
+        sync: false

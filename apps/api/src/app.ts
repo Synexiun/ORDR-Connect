@@ -79,12 +79,16 @@ import { searchRouter } from './routes/search.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { integrationsRouter } from './routes/integrations.js';
 import { auditLogsRouter } from './routes/audit-logs.js';
+import { createMetricsRouter } from './routes/metrics.js';
+import type { MetricsRegistry } from '@ordr/observability';
 
 // ---- App Factory -----------------------------------------------------------
 
 export interface AppConfig {
   readonly corsOrigins: readonly string[];
   readonly nodeEnv: string;
+  /** Prometheus metrics registry — when provided, /metrics is mounted */
+  readonly metrics?: MetricsRegistry | undefined;
 }
 
 export function createApp(config: AppConfig): Hono<Env> {
@@ -99,7 +103,7 @@ export function createApp(config: AppConfig): Hono<Env> {
   // ── 2.5. Distributed tracing — OTel span per request ──────────────────
   // MUST be early in chain so all downstream middleware/routes are traced.
   // Records: method, path, status, duration, tenant_id. NO bodies, NO PHI.
-  app.use('*', createTracingMiddleware({ serviceName: 'ordr-api' }));
+  app.use('*', createTracingMiddleware({ serviceName: 'ordr-api', metrics: config.metrics }));
 
   // ── 3. CORS — configurable origins, NO wildcard in production ───────────
   const allowedOrigins =
@@ -276,6 +280,11 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Audit Logs — immutable WORM audit trail viewer (tenant_admin+)
   app.route('/api/v1/audit-logs', auditLogsRouter);
+
+  // Prometheus metrics — network-restricted; no auth; no PHI in labels (Rule 6)
+  if (config.metrics !== undefined) {
+    app.route('/metrics', createMetricsRouter(config.metrics));
+  }
 
   return app;
 }
