@@ -146,3 +146,26 @@ export {
   scheduleFrequencyEnum,
   scheduleStatusEnum,
 } from './reports.js';
+
+// Workflow (definitions, instances, step results)
+export {
+  workflowDefinitions,
+  workflowInstances,
+  workflowStepResults,
+  workflowStatusEnum,
+  stepStatusEnum,
+  stepTypeEnum,
+  triggerTypeEnum,
+} from './workflow.js';
+
+// Scheduler (job definitions, instances, dead letters)
+export {
+  jobDefinitions,
+  jobInstances,
+  jobDeadLetters,
+  jobStatusEnum,
+  jobPriorityEnum,
+} from './scheduler.js';
+
+// Search Index (tsvector full-text search)
+export { searchIndex, searchEntityTypeEnum } from './search-index.js';

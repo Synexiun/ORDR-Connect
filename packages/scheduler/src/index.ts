@@ -42,23 +42,14 @@ export {
 } from './types.js';
 
 // ─── Cron Parser ──────────────────────────────────────────────────
-export {
-  parseCron,
-  isValidCron,
-  createCronExpression,
-  nextOccurrence,
-} from './cron-parser.js';
+export { parseCron, isValidCron, createCronExpression, nextOccurrence } from './cron-parser.js';
 
 export type { ParsedCron } from './cron-parser.js';
 
 // ─── Scheduler ────────────────────────────────────────────────────
-export {
-  JobScheduler,
-  InMemorySchedulerStore,
-} from './scheduler.js';
+export { JobScheduler, InMemorySchedulerStore } from './scheduler.js';
 
-export type {
-  SchedulerStore,
-  SchedulerAuditLogger,
-  SchedulerAlertCallback,
-} from './scheduler.js';
+export type { SchedulerStore, SchedulerAuditLogger, SchedulerAlertCallback } from './scheduler.js';
+
+// ─── Drizzle Store ────────────────────────────────────────────────
+export { DrizzleSchedulerStore } from './drizzle-store.js';

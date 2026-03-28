@@ -79,11 +79,7 @@ export {
   InMemoryStepResultStore,
 } from './engine.js';
 
-export type {
-  WorkflowEngineDeps,
-  WorkflowInstanceStore,
-  StepResultStore,
-} from './engine.js';
+export type { WorkflowEngineDeps, WorkflowInstanceStore, StepResultStore } from './engine.js';
 
 // ─── Triggers ─────────────────────────────────────────────────────
 export { WorkflowTrigger, matchesCron } from './triggers.js';
@@ -94,3 +90,10 @@ export type { TriggerEvent, WorkflowTriggerDeps } from './triggers.js';
 export { DelayScheduler, DEFAULT_BUSINESS_HOURS } from './scheduler.js';
 
 export type { BusinessHoursConfig } from './scheduler.js';
+
+// ─── Drizzle Store ────────────────────────────────────────────────
+export {
+  DrizzleDefinitionStore,
+  DrizzleInstanceStore,
+  DrizzleStepResultStore,
+} from './drizzle-store.js';

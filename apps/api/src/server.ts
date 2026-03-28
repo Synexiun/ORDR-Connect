@@ -107,9 +107,12 @@ import {
   InMemoryDefinitionStore,
   InMemoryInstanceStore,
   InMemoryStepResultStore,
+  DrizzleDefinitionStore,
+  DrizzleInstanceStore,
+  DrizzleStepResultStore,
 } from '@ordr/workflow';
-import { SearchEngine, SearchIndexer, InMemorySearchStore } from '@ordr/search';
-import { JobScheduler, InMemorySchedulerStore } from '@ordr/scheduler';
+import { SearchEngine, SearchIndexer, InMemorySearchStore, DrizzleSearchStore } from '@ordr/search';
+import { JobScheduler, InMemorySchedulerStore, DrizzleSchedulerStore } from '@ordr/scheduler';
 import { SalesforceAdapter, HubSpotAdapter } from '@ordr/integrations';
 import type { CRMAdapter } from './routes/integrations.js';
 import { UsageTracker, InMemoryUsageStore, DrizzleUsageStore } from '@ordr/billing';
@@ -1421,23 +1424,36 @@ async function bootstrap(): Promise<void> {
         eventType: 'agent.action',
       }),
   };
-  const workflowInstanceStore = new InMemoryInstanceStore();
+  const workflowDb = createDrizzle(dbConnection, schema);
+  const isProduction = config.nodeEnv === 'production';
+  const workflowInstanceStore = isProduction
+    ? new DrizzleInstanceStore(workflowDb)
+    : new InMemoryInstanceStore();
   const workflowEngine = new WorkflowEngine({
-    definitionStore: new InMemoryDefinitionStore(),
+    definitionStore: isProduction
+      ? new DrizzleDefinitionStore(workflowDb)
+      : new InMemoryDefinitionStore(),
     instanceStore: workflowInstanceStore,
-    stepResultStore: new InMemoryStepResultStore(),
+    stepResultStore: isProduction
+      ? new DrizzleStepResultStore(workflowDb)
+      : new InMemoryStepResultStore(),
     auditLogger: workflowAuditLogger,
   });
   configureWorkflowRoutes({ engine: workflowEngine, instanceStore: workflowInstanceStore });
-  console.warn('[ORDR:API] Workflow routes configured');
+  console.warn(
+    `[ORDR:API] Workflow routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
+  );
 
   // ── P6.4. Search engine routes ────────────────────────────────────────
-  const searchStore = new InMemorySearchStore();
+  const searchDb = createDrizzle(dbConnection, schema);
+  const searchStore = isProduction ? new DrizzleSearchStore(searchDb) : new InMemorySearchStore();
   configureSearchRoutes({
     engine: new SearchEngine(searchStore),
     indexer: new SearchIndexer(searchStore),
   });
-  console.warn('[ORDR:API] Search routes configured');
+  console.warn(
+    `[ORDR:API] Search routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
+  );
 
   // ── P6.5. Scheduler routes ────────────────────────────────────────────
   const schedulerAuditLog = async (entry: {
@@ -1470,10 +1486,15 @@ async function bootstrap(): Promise<void> {
     // In production: page on-call via PagerDuty for p1, alert for p2/p3
     console.error('[ORDR:Scheduler] Dead-letter alert:', _alert);
   };
-  const schedulerStore = new InMemorySchedulerStore();
+  const schedulerDb = createDrizzle(dbConnection, schema);
+  const schedulerStore = isProduction
+    ? new DrizzleSchedulerStore(schedulerDb)
+    : new InMemorySchedulerStore();
   const jobScheduler = new JobScheduler(schedulerStore, schedulerAuditLog, schedulerAlert);
   configureSchedulerRoutes({ scheduler: jobScheduler, store: schedulerStore });
-  console.warn('[ORDR:API] Scheduler routes configured');
+  console.warn(
+    `[ORDR:API] Scheduler routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
+  );
 
   // ── P6.6. CRM integration routes ────────────────────────────────────────
   // Adapters are initialized with a lightweight fetch-based HTTP client.

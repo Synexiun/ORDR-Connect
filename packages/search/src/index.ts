@@ -65,14 +65,13 @@ export type {
 // ─── Indexer ──────────────────────────────────────────────────────
 export { SearchIndexer } from './indexer.js';
 
-export type {
-  SearchIndexStore,
-  IndexUpsertInput,
-  EntityLoader,
-} from './indexer.js';
+export type { SearchIndexStore, IndexUpsertInput, EntityLoader } from './indexer.js';
 
 // ─── In-Memory Store ──────────────────────────────────────────────
 export { InMemorySearchStore } from './in-memory-store.js';
+
+// ─── Drizzle Store ────────────────────────────────────────────────
+export { DrizzleSearchStore } from './drizzle-store.js';
 
 // ─── Sanitizer ────────────────────────────────────────────────────
 export {

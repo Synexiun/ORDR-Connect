@@ -5,7 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -19,7 +24,9 @@
     "@ordr/audit": "workspace:*",
     "@ordr/core": "workspace:*",
     "@ordr/crypto": "workspace:*",
-    "@ordr/compliance": "workspace:*"
+    "@ordr/compliance": "workspace:*",
+    "@ordr/db": "workspace:*",
+    "drizzle-orm": "^0.36.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
