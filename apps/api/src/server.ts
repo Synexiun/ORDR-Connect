@@ -1,15 +1,13 @@
 /* eslint-disable
    @typescript-eslint/no-non-null-assertion,
    @typescript-eslint/strict-boolean-expressions,
-   @typescript-eslint/require-await,
-   @typescript-eslint/no-unsafe-assignment,
-   @typescript-eslint/no-unsafe-call
+   @typescript-eslint/require-await
    --
-   NOTE: These rules are disabled because workspace dependencies (@ordr/db,
-   @ordr/core, @ordr/events, @ordr/billing, @ordr/crypto, etc.) have not been
-   compiled to dist/ yet, so TypeScript's project service cannot resolve their
-   types. Re-enable once all packages are built (tracked in TODO: build pipeline).
-   Security rules remain fully active — only type-inference rules are suppressed.
+   NOTE: strict-boolean-expressions and no-non-null-assertion are suppressed for
+   Hono / process.env patterns (env vars are string | undefined, not boolean).
+   require-await is suppressed for bootstrap() which calls awaitable helpers but
+   TypeScript cannot always infer await-depth across re-exports.
+   Security rules remain fully active.
 */
 /**
  * Server Entry Point — bootstraps and starts the ORDR-Connect API
@@ -39,7 +37,7 @@ import * as schema from '@ordr/db';
 import { createKafkaClient, createProducer } from '@ordr/events';
 import type { Producer } from '@ordr/events';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
-import { SubscriptionManager, InMemorySubscriptionStore, MockStripeClient } from '@ordr/billing';
+import { SubscriptionManager, DrizzleSubscriptionStore, MockStripeClient } from '@ordr/billing';
 import { FieldEncryptor } from '@ordr/crypto';
 import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
@@ -125,13 +123,14 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 2. Database connection ─────────────────────────────────────────────
+  let db: ReturnType<typeof createDrizzle> | null = null;
   try {
     dbConnection = createConnection({
       databaseUrl: config.database.url,
       poolMin: config.database.poolMin,
       poolMax: config.database.poolMax,
     });
-    createDrizzle(dbConnection, schema);
+    db = createDrizzle(dbConnection, schema);
     console.warn('[ORDR:API] Database connection established');
   } catch (error: unknown) {
     console.error('[ORDR:API] FATAL: Database connection failed:', error);
@@ -161,14 +160,17 @@ async function bootstrap(): Promise<void> {
   console.warn('[ORDR:API] Audit logger initialized');
 
   // ── 4.5. Billing / Plan Gate ───────────────────────────────────────────
-  // In production:
-  //   - Replace InMemorySubscriptionStore with a Drizzle-backed store
-  //   - Replace MockStripeClient with StripeClient(process.env.STRIPE_SECRET_KEY)
-  //   - Load fieldEncryptionKey from Vault / AWS Secrets Manager (min 32 bytes)
+  // Uses DrizzleSubscriptionStore when the DB connection is available (production).
+  // Falls back to InMemorySubscriptionStore for environments without a database
+  // (e.g., smoke-test startup without DATABASE_URL).
+  //
+  // TODO: Replace MockStripeClient with StripeClient(process.env.STRIPE_SECRET_KEY)
+  //       and load fieldEncryptionKey from Vault / AWS Secrets Manager (min 32 bytes).
   const fieldEncryptionKey = Buffer.from(
     process.env['FIELD_ENCRYPTION_KEY'] ?? 'dev-only-key-replace-in-prod-!!!',
   );
-  const subscriptionStore = new InMemorySubscriptionStore();
+  // db is always non-null here: process.exit(1) in step 2 catch ensures it
+  const subscriptionStore = new DrizzleSubscriptionStore(db);
   const subscriptionManager = new SubscriptionManager({
     store: subscriptionStore,
     stripe: new MockStripeClient(),
@@ -176,7 +178,7 @@ async function bootstrap(): Promise<void> {
     fieldEncryptor: new FieldEncryptor(fieldEncryptionKey),
   });
   configureBillingGate(subscriptionManager);
-  console.warn('[ORDR:API] Billing gate initialized (in-memory subscription store)');
+  console.warn('[ORDR:API] Billing gate initialized — store=drizzle (postgres)');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();

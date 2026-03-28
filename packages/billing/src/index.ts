@@ -78,3 +78,6 @@ export {
 
 // ─── In-Memory Stores (dev / testing) ────────────────────────────
 export { InMemorySubscriptionStore, InMemoryUsageStore } from './in-memory-store.js';
+
+// ─── Drizzle Stores (production) ─────────────────────────────────
+export { DrizzleSubscriptionStore, DrizzleUsageStore } from './drizzle-store.js';

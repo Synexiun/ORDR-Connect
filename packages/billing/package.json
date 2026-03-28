@@ -5,7 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -19,6 +24,8 @@
     "@ordr/core": "workspace:*",
     "@ordr/crypto": "workspace:*",
     "@ordr/audit": "workspace:*",
+    "@ordr/db": "workspace:*",
+    "drizzle-orm": "^0.36.0",
     "hono": "^4.6.0",
     "zod": "^3.23.0"
   },

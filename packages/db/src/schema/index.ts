@@ -26,12 +26,7 @@ export {
 } from './customers.js';
 
 // Interactions
-export {
-  interactions,
-  channelEnum,
-  directionEnum,
-  interactionTypeEnum,
-} from './interactions.js';
+export { interactions, channelEnum, directionEnum, interactionTypeEnum } from './interactions.js';
 
 // Audit Logs (WORM — immutable)
 export { auditLogs, actorTypeEnum } from './audit-logs.js';
@@ -46,39 +41,19 @@ export { agentActions } from './agent-actions.js';
 export { complianceRecords, complianceResultEnum } from './compliance-records.js';
 
 // Contacts
-export {
-  contacts,
-  contactChannelEnum,
-  consentStatusEnum,
-} from './contacts.js';
+export { contacts, contactChannelEnum, consentStatusEnum } from './contacts.js';
 
 // Consent Records (WORM — immutable)
-export {
-  consentRecords,
-  consentActionEnum,
-  consentMethodEnum,
-} from './consent-records.js';
+export { consentRecords, consentActionEnum, consentMethodEnum } from './consent-records.js';
 
 // Agent Sessions
-export {
-  agentSessions,
-  agentSessionStatusEnum,
-  autonomyLevelEnum,
-} from './agent-sessions.js';
+export { agentSessions, agentSessionStatusEnum, autonomyLevelEnum } from './agent-sessions.js';
 
 // Messages
-export {
-  messages,
-  messageDirectionEnum,
-  messageStatusEnum,
-} from './messages.js';
+export { messages, messageDirectionEnum, messageStatusEnum } from './messages.js';
 
 // Payment Records
-export {
-  paymentRecords,
-  paymentStatusEnum,
-  paymentMethodEnum,
-} from './payment-records.js';
+export { paymentRecords, paymentStatusEnum, paymentMethodEnum } from './payment-records.js';
 
 // Decision Rules
 export { decisionRules } from './decision-rules.js';
@@ -129,11 +104,7 @@ export {
 } from './marketplace.js';
 
 // Memory (Agent Long-Term Memory + Sentiment History)
-export {
-  agentMemories,
-  sentimentHistory,
-  sentimentLabelEnum,
-} from './memory.js';
+export { agentMemories, sentimentHistory, sentimentLabelEnum } from './memory.js';
 
 // Partners
 export {
@@ -143,3 +114,10 @@ export {
   partnerStatusEnum,
   partnerPayoutStatusEnum,
 } from './partners.js';
+
+// Billing (customers, subscriptions, usage)
+export { billingCustomers } from './billing-customers.js';
+
+export { subscriptions, subscriptionStatusEnum } from './subscriptions.js';
+
+export { usageRecords, usageResourceEnum } from './usage-records.js';
