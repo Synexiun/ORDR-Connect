@@ -36,7 +36,6 @@ function makeAllTools(): Map<string, AgentTool> {
 // ─── Tests ──────────────────────────────────────────────────────
 
 describe('AgentRegistry', () => {
-
   // ── Default Configs ─────────────────────────────
 
   describe('built-in configurations', () => {
@@ -90,7 +89,7 @@ describe('AgentRegistry', () => {
 
     it('should return undefined for unregistered role', () => {
       const registry = new AgentRegistry();
-      const config = registry.getConfig('lead_qualifier');
+      const config = registry.getConfig('nonexistent_role');
       expect(config).toBeUndefined();
     });
   });
@@ -115,7 +114,7 @@ describe('AgentRegistry', () => {
     it('should return empty map for unknown role', () => {
       const registry = new AgentRegistry();
       const allTools = makeAllTools();
-      const roleTools = registry.getToolsForRole('lead_qualifier', allTools);
+      const roleTools = registry.getToolsForRole('nonexistent_role', allTools);
       expect(roleTools.size).toBe(0);
     });
 
@@ -159,7 +158,7 @@ describe('AgentRegistry', () => {
 
     it('should return false for unknown roles', () => {
       const registry = new AgentRegistry();
-      expect(registry.isRoleEnabled('lead_qualifier', 'tenant-1')).toBe(false);
+      expect(registry.isRoleEnabled('nonexistent_role', 'tenant-1')).toBe(false);
     });
 
     it('should respect tenant-level override to disable', () => {

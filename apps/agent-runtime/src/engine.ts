@@ -25,7 +25,6 @@ import {
   err,
   AppError,
   ComplianceViolationError,
-  InternalError,
   ValidationError,
 } from '@ordr/core';
 import type { AgentRole, AutonomyLevel } from '@ordr/core';
@@ -35,31 +34,51 @@ import type {
   AgentDecision,
   AgentOutcome,
   AgentEngineDeps,
-  LLMParsedResponse,
 } from './types.js';
 import { CONFIDENCE_THRESHOLD, DEFAULT_MAX_STEPS } from './types.js';
 import { AgentMemory } from './memory.js';
-import { buildCollectionsPrompt, buildGenericPrompt } from './prompts.js';
+import {
+  buildCollectionsPrompt,
+  buildGenericPrompt,
+  buildLeadQualifierPrompt,
+  buildMeetingPrepPrompt,
+  buildChurnDetectionPrompt,
+  buildExecutiveBriefingPrompt,
+} from './prompts.js';
 import { HitlQueue } from './hitl.js';
+import type { LLMMessage } from '@ordr/ai';
 
-// ─── Constants ──────────────────────────────────────────────────
+// ─── Prompt Builder Registry ─────────────────────────────────────
+//
+// Maps every WellKnownAgentRole to its domain-specific prompt builder.
+// Falls back to buildGenericPrompt for custom/SDK-registered roles.
 
-const COLLECTIONS_ROLES: ReadonlySet<string> = new Set([
-  'collections',
-  'follow_up',
-]);
+type PromptBuilderFn = (context: AgentContext, memory: AgentMemory) => LLMMessage[];
 
-const TERMINAL_ACTIONS: ReadonlySet<string> = new Set([
-  'complete',
-  'escalate',
-]);
+const ROLE_PROMPT_BUILDERS: ReadonlyMap<string, PromptBuilderFn> = new Map<string, PromptBuilderFn>(
+  [
+    ['collections', buildCollectionsPrompt],
+    ['follow_up', buildCollectionsPrompt], // follow_up uses FDCPA/TCPA blocks
+    ['lead_qualifier', buildLeadQualifierPrompt],
+    ['meeting_prep', buildMeetingPrepPrompt],
+    ['churn_detection', buildChurnDetectionPrompt],
+    ['executive_briefing', buildExecutiveBriefingPrompt],
+    ['support_triage', buildGenericPrompt],
+    ['escalation', buildGenericPrompt],
+  ],
+);
+
+const TERMINAL_ACTIONS: ReadonlySet<string> = new Set(['complete', 'escalate']);
 
 // ─── AgentEngine ────────────────────────────────────────────────
 
 export class AgentEngine {
   private readonly deps: AgentEngineDeps;
   private readonly hitlQueue: HitlQueue;
-  private readonly activeSessions: Map<string, { readonly killSwitch: AgentContext['killSwitch'] }> = new Map();
+  private readonly activeSessions: Map<
+    string,
+    { readonly killSwitch: AgentContext['killSwitch'] }
+  > = new Map();
 
   constructor(deps: AgentEngineDeps, hitlQueue?: HitlQueue) {
     this.deps = deps;
@@ -82,8 +101,12 @@ export class AgentEngine {
     agentRole: AgentRole,
     triggerEventId: string,
     autonomyLevel: AutonomyLevel = 'supervised',
-    budget?: Partial<{ readonly maxTokens: number; readonly maxCostCents: number; readonly maxActions: number }>,
-  ): Promise<Result<AgentContext, AppError>> {
+    budget?: Partial<{
+      readonly maxTokens: number;
+      readonly maxCostCents: number;
+      readonly maxActions: number;
+    }>,
+  ): Promise<Result<AgentContext>> {
     const sessionId = randomUUID();
     const memory = new AgentMemory();
 
@@ -151,7 +174,7 @@ export class AgentEngine {
    * 6. If confidence < 0.7: route to HITL queue
    * 7. Update budget tracking
    */
-  async runStep(context: AgentContext): Promise<Result<AgentStep, AppError>> {
+  async runStep(context: AgentContext): Promise<Result<AgentStep>> {
     const startTime = performance.now();
 
     // ── Check kill switch ──
@@ -174,9 +197,8 @@ export class AgentEngine {
 
     // ── Build prompt — NEVER logged (may contain PHI) ──
     const memory = AgentMemory.fromState(context.memory);
-    const messages = COLLECTIONS_ROLES.has(context.agentRole)
-      ? buildCollectionsPrompt(context, memory)
-      : buildGenericPrompt(context, memory);
+    const promptBuilder = ROLE_PROMPT_BUILDERS.get(context.agentRole) ?? buildGenericPrompt;
+    const messages = promptBuilder(context, memory);
 
     // ── Extract system prompt from messages ──
     const systemMessage = messages.find((m) => m.role === 'system');
@@ -431,21 +453,26 @@ export class AgentEngine {
   async runLoop(
     context: AgentContext,
     maxSteps: number = DEFAULT_MAX_STEPS,
-  ): Promise<Result<AgentOutcome, AppError>> {
+  ): Promise<Result<AgentOutcome>> {
     let stepCount = 0;
 
     while (stepCount < maxSteps) {
       // ── Kill switch check ──
       if (context.killSwitch.active) {
-        return ok(this.buildOutcome(context, 'killed', stepCount,
-          `Session killed: ${context.killSwitch.reason}`));
+        return ok(
+          this.buildOutcome(
+            context,
+            'killed',
+            stepCount,
+            `Session killed: ${context.killSwitch.reason}`,
+          ),
+        );
       }
 
       // ── Budget check ──
       const budgetCheck = this.checkBudget(context);
       if (!budgetCheck.success) {
-        return ok(this.buildOutcome(context, 'timeout', stepCount,
-          'Budget exhausted'));
+        return ok(this.buildOutcome(context, 'timeout', stepCount, 'Budget exhausted'));
       }
 
       // ── Run step ──
@@ -455,13 +482,18 @@ export class AgentEngine {
       if (!stepResult.success) {
         // Check if it's a compliance block or safety issue
         if (stepResult.error instanceof ComplianceViolationError) {
-          return ok(this.buildOutcome(context, 'failed', stepCount,
-            `Compliance violation: ${stepResult.error.message}`));
+          return ok(
+            this.buildOutcome(
+              context,
+              'failed',
+              stepCount,
+              `Compliance violation: ${stepResult.error.message}`,
+            ),
+          );
         }
 
         if (stepResult.error.code === 'AGENT_SAFETY_BLOCK') {
-          return ok(this.buildOutcome(context, 'killed', stepCount,
-            stepResult.error.message));
+          return ok(this.buildOutcome(context, 'killed', stepCount, stepResult.error.message));
         }
 
         // For other errors, continue loop (agent may recover)
@@ -471,21 +503,33 @@ export class AgentEngine {
       const step = stepResult.data;
 
       // ── Check for terminal conditions ──
-      if (step.type === 'act' && step.toolUsed !== undefined && TERMINAL_ACTIONS.has(step.toolUsed)) {
-        const result = step.toolUsed === 'escalate' ? 'escalated' as const : 'completed' as const;
+      if (
+        step.type === 'act' &&
+        step.toolUsed !== undefined &&
+        TERMINAL_ACTIONS.has(step.toolUsed)
+      ) {
+        const result =
+          step.toolUsed === 'escalate' ? ('escalated' as const) : ('completed' as const);
         return ok(this.buildOutcome(context, result, stepCount, step.output));
       }
 
       // ── Check for HITL escalation (step was routed to queue) ──
       if (step.type === 'check' && step.output.includes('HITL queue')) {
-        return ok(this.buildOutcome(context, 'escalated', stepCount,
-          'Decision routed to human review'));
+        return ok(
+          this.buildOutcome(context, 'escalated', stepCount, 'Decision routed to human review'),
+        );
       }
     }
 
     // Max steps reached
-    return ok(this.buildOutcome(context, 'timeout', stepCount,
-      `Maximum steps (${String(maxSteps)}) reached`));
+    return ok(
+      this.buildOutcome(
+        context,
+        'timeout',
+        stepCount,
+        `Maximum steps (${String(maxSteps)}) reached`,
+      ),
+    );
   }
 
   /**
@@ -515,7 +559,7 @@ export class AgentEngine {
   /**
    * Check if the session budget allows another step.
    */
-  private checkBudget(context: AgentContext): Result<true, AppError> {
+  private checkBudget(context: AgentContext): Result<true> {
     if (context.budget.usedTokens >= context.budget.maxTokens) {
       return err(
         new AppError(
@@ -557,7 +601,7 @@ export class AgentEngine {
    *
    * SECURITY: Only the parsed structure is used — raw content is never logged.
    */
-  private parseLLMResponse(content: string): Result<AgentDecision, AppError> {
+  private parseLLMResponse(content: string): Result<AgentDecision> {
     try {
       // Extract JSON from potential markdown code blocks
       let jsonStr = content.trim();
@@ -582,15 +626,17 @@ export class AgentEngine {
       }
 
       const confidence = typeof obj['confidence'] === 'number' ? obj['confidence'] : 0.5;
-      const requiresApproval = typeof obj['requiresApproval'] === 'boolean'
-        ? obj['requiresApproval']
-        : confidence < CONFIDENCE_THRESHOLD;
+      const requiresApproval =
+        typeof obj['requiresApproval'] === 'boolean'
+          ? obj['requiresApproval']
+          : confidence < CONFIDENCE_THRESHOLD;
 
       const decision: AgentDecision = {
         action: obj['action'],
-        parameters: (typeof obj['parameters'] === 'object' && obj['parameters'] !== null)
-          ? obj['parameters'] as Record<string, unknown>
-          : {},
+        parameters:
+          typeof obj['parameters'] === 'object' && obj['parameters'] !== null
+            ? (obj['parameters'] as Record<string, unknown>)
+            : {},
         reasoning: typeof obj['reasoning'] === 'string' ? obj['reasoning'] : '',
         confidence,
         requiresApproval,
@@ -598,9 +644,7 @@ export class AgentEngine {
 
       return ok(decision);
     } catch {
-      return err(
-        new ValidationError('Failed to parse LLM response as JSON'),
-      );
+      return err(new ValidationError('Failed to parse LLM response as JSON'));
     }
   }
 

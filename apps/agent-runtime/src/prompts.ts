@@ -90,7 +90,7 @@ const FDCPA_AGENT_BLOCK = [
   'FDCPA COMPLIANCE (MANDATORY FOR COLLECTIONS):',
   '- Include Mini-Miranda disclosure in first communication:',
   '  "This is an attempt to collect a debt. Any information obtained will be used for that purpose."',
-  '- NEVER contact before 8:00 AM or after 9:00 PM in the debtor\'s time zone.',
+  "- NEVER contact before 8:00 AM or after 9:00 PM in the debtor's time zone.",
   '- Maximum 7 contact attempts per debt per 7-day rolling period.',
   '- Respect cease-and-desist requests immediately — no further contact.',
   '- NEVER threaten arrest, imprisonment, or seizure of property.',
@@ -119,10 +119,7 @@ const TCPA_BLOCK = [
  * SECURITY: No PHI/PII in system prompt. Customer data flows through
  * tool calls, not prompt construction.
  */
-export function buildCollectionsPrompt(
-  context: AgentContext,
-  memory: AgentMemory,
-): LLMMessage[] {
+export function buildCollectionsPrompt(context: AgentContext, memory: AgentMemory): LLMMessage[] {
   const toolDescriptions = formatToolDescriptions(context.tools);
   const memorySummary = memory.summarize();
   const conversationHistory = memory.getConversationHistory();
@@ -181,6 +178,252 @@ export function buildCollectionsPrompt(
   return messages;
 }
 
+// ─── Lead Qualifier Prompt Builder ──────────────────────────────
+
+/**
+ * Build the full prompt for a lead qualifier agent session.
+ *
+ * COMPLIANCE: TCPA consent verified before every outreach attempt.
+ * Lead data accessed via tool calls — no PII in system prompt.
+ */
+export function buildLeadQualifierPrompt(context: AgentContext, memory: AgentMemory): LLMMessage[] {
+  const toolDescriptions = formatToolDescriptions(context.tools);
+  const memorySummary = memory.summarize();
+  const conversationHistory = memory.getConversationHistory();
+
+  const systemParts: string[] = [
+    `You are a lead_qualifier agent operating within the ORDR-Connect Customer Operations OS.`,
+    `Session ID: ${context.sessionId}`,
+    `Autonomy Level: ${context.autonomyLevel}`,
+    '',
+    COMPLIANCE_BLOCKS.BASE,
+    '',
+    TCPA_BLOCK.join('\n'),
+    '',
+    'LEAD QUALIFICATION GUIDELINES:',
+    '- Assess fit against ideal customer profile: company size, budget authority, need, timeline (BANT).',
+    '- Ask one qualification question at a time — do not interrogate.',
+    '- Score confidence 0.0–1.0 on how well the lead matches ICP after each discovery step.',
+    '- If BANT is fully established and score >= 0.8, action: schedule_followup for sales handoff.',
+    '- If the lead is clearly out-of-ICP (score < 0.3), action: complete with disqualified summary.',
+    '- NEVER fabricate company data, revenue figures, or deal size.',
+    '- Outreach must be professional, concise, and value-led.',
+    '',
+    SAFETY_BLOCK.join('\n'),
+    '',
+    CONFIDENCE_BLOCK.join('\n'),
+    '',
+    'AVAILABLE TOOLS:',
+    toolDescriptions,
+    '',
+    TOOL_FORMAT_BLOCK.join('\n'),
+  ];
+
+  const systemPrompt = systemParts.join('\n');
+  const messages: LLMMessage[] = [{ role: 'system', content: systemPrompt }];
+
+  for (const msg of conversationHistory) {
+    messages.push(msg);
+  }
+
+  messages.push({
+    role: 'user',
+    content:
+      memorySummary.length > 0
+        ? `Current session state: ${memorySummary}\n\nProceed with the next qualification step.`
+        : `Begin lead qualification for customer ${context.customerId}. Look up their profile and start the qualification process.`,
+  });
+
+  return messages;
+}
+
+// ─── Meeting Prep Prompt Builder ─────────────────────────────────
+
+/**
+ * Build the full prompt for a meeting_prep agent session.
+ *
+ * Gathers relationship context, recent interactions, and open items
+ * to produce a pre-meeting briefing. Read-only — no outbound actions.
+ *
+ * COMPLIANCE: No PHI in output. Customer references use IDs.
+ */
+export function buildMeetingPrepPrompt(context: AgentContext, memory: AgentMemory): LLMMessage[] {
+  const toolDescriptions = formatToolDescriptions(context.tools);
+  const memorySummary = memory.summarize();
+  const conversationHistory = memory.getConversationHistory();
+
+  const systemParts: string[] = [
+    `You are a meeting_prep agent operating within the ORDR-Connect Customer Operations OS.`,
+    `Session ID: ${context.sessionId}`,
+    `Autonomy Level: ${context.autonomyLevel}`,
+    '',
+    COMPLIANCE_BLOCKS.BASE,
+    '',
+    'MEETING PREP GUIDELINES:',
+    '- Retrieve account history, recent interactions, open issues, and deal status.',
+    '- Identify key stakeholders, their roles, and last interaction dates.',
+    '- Surface any open support tickets, unpaid invoices, or escalated issues.',
+    '- Produce a structured briefing: Account Summary → Key Contacts → Recent Activity → Open Items → Suggested Agenda.',
+    '- Output MUST be factual — only include verified data from tool results.',
+    '- Do NOT speculate about relationships or outcomes not present in the data.',
+    '- This is a READ-ONLY agent — use only lookup and summarize tools.',
+    '',
+    SAFETY_BLOCK.join('\n'),
+    '',
+    CONFIDENCE_BLOCK.join('\n'),
+    '',
+    'AVAILABLE TOOLS:',
+    toolDescriptions,
+    '',
+    TOOL_FORMAT_BLOCK.join('\n'),
+  ];
+
+  const systemPrompt = systemParts.join('\n');
+  const messages: LLMMessage[] = [{ role: 'system', content: systemPrompt }];
+
+  for (const msg of conversationHistory) {
+    messages.push(msg);
+  }
+
+  messages.push({
+    role: 'user',
+    content:
+      memorySummary.length > 0
+        ? `Current session state: ${memorySummary}\n\nContinue building the meeting brief.`
+        : `Prepare a meeting brief for customer ${context.customerId}. Start by looking up their full account profile and recent interactions.`,
+  });
+
+  return messages;
+}
+
+// ─── Churn Detection Prompt Builder ──────────────────────────────
+
+/**
+ * Build the full prompt for a churn_detection agent session.
+ *
+ * Evaluates health signals and either schedules a retention outreach
+ * or escalates to account management. TCPA-compliant outbound only.
+ *
+ * COMPLIANCE: Health scores are aggregate metrics — no raw PHI.
+ */
+export function buildChurnDetectionPrompt(
+  context: AgentContext,
+  memory: AgentMemory,
+): LLMMessage[] {
+  const toolDescriptions = formatToolDescriptions(context.tools);
+  const memorySummary = memory.summarize();
+  const conversationHistory = memory.getConversationHistory();
+
+  const systemParts: string[] = [
+    `You are a churn_detection agent operating within the ORDR-Connect Customer Operations OS.`,
+    `Session ID: ${context.sessionId}`,
+    `Autonomy Level: ${context.autonomyLevel}`,
+    '',
+    COMPLIANCE_BLOCKS.BASE,
+    '',
+    TCPA_BLOCK.join('\n'),
+    '',
+    'CHURN DETECTION GUIDELINES:',
+    '- Evaluate churn risk signals: login frequency drop, support ticket volume increase,',
+    '  payment delays, negative sentiment, feature adoption decline, NPS decrease.',
+    '- Assign a churn risk score: LOW (< 30%), MEDIUM (30–65%), HIGH (> 65%).',
+    '- HIGH risk: schedule a retention call immediately; flag for account manager review.',
+    '- MEDIUM risk: schedule an automated check-in outreach via send_sms or email.',
+    '- LOW risk: complete with health status logged — no action needed.',
+    '- NEVER contact a customer with fabricated engagement data.',
+    '- Confidence < 0.7 on risk classification → HITL queue for human review.',
+    '',
+    SAFETY_BLOCK.join('\n'),
+    '',
+    CONFIDENCE_BLOCK.join('\n'),
+    '',
+    'AVAILABLE TOOLS:',
+    toolDescriptions,
+    '',
+    TOOL_FORMAT_BLOCK.join('\n'),
+  ];
+
+  const systemPrompt = systemParts.join('\n');
+  const messages: LLMMessage[] = [{ role: 'system', content: systemPrompt }];
+
+  for (const msg of conversationHistory) {
+    messages.push(msg);
+  }
+
+  messages.push({
+    role: 'user',
+    content:
+      memorySummary.length > 0
+        ? `Current session state: ${memorySummary}\n\nContinue churn risk evaluation.`
+        : `Run churn detection analysis for customer ${context.customerId}. Start by looking up their account health signals and recent interaction history.`,
+  });
+
+  return messages;
+}
+
+// ─── Executive Briefing Prompt Builder ───────────────────────────
+
+/**
+ * Build the full prompt for an executive_briefing agent session.
+ *
+ * Synthesises account data, pipeline status, and risk signals into
+ * an executive-ready summary. Read-only — no outbound actions.
+ *
+ * COMPLIANCE: Aggregate metrics only — no raw PII/PHI in output.
+ */
+export function buildExecutiveBriefingPrompt(
+  context: AgentContext,
+  memory: AgentMemory,
+): LLMMessage[] {
+  const toolDescriptions = formatToolDescriptions(context.tools);
+  const memorySummary = memory.summarize();
+  const conversationHistory = memory.getConversationHistory();
+
+  const systemParts: string[] = [
+    `You are an executive_briefing agent operating within the ORDR-Connect Customer Operations OS.`,
+    `Session ID: ${context.sessionId}`,
+    `Autonomy Level: ${context.autonomyLevel}`,
+    '',
+    COMPLIANCE_BLOCKS.BASE,
+    '',
+    'EXECUTIVE BRIEFING GUIDELINES:',
+    '- Produce a concise, executive-grade briefing — maximum 400 words.',
+    '- Structure: 1) Relationship Health (one sentence), 2) Key Metrics (3–5 bullets),',
+    '  3) Open Risks (ranked), 4) Recommended Actions (max 3, prioritised).',
+    '- Use precise numbers from tool data — no estimates or interpolated figures.',
+    '- Tone: direct, factual, decision-enabling. No filler language.',
+    '- Flag compliance risks or regulatory exposure as priority items.',
+    '- This is a READ-ONLY agent — use only lookup and summarize tools.',
+    '- Do NOT include raw customer names, SSNs, DOBs, or PHI in the output.',
+    '',
+    SAFETY_BLOCK.join('\n'),
+    '',
+    CONFIDENCE_BLOCK.join('\n'),
+    '',
+    'AVAILABLE TOOLS:',
+    toolDescriptions,
+    '',
+    TOOL_FORMAT_BLOCK.join('\n'),
+  ];
+
+  const systemPrompt = systemParts.join('\n');
+  const messages: LLMMessage[] = [{ role: 'system', content: systemPrompt }];
+
+  for (const msg of conversationHistory) {
+    messages.push(msg);
+  }
+
+  messages.push({
+    role: 'user',
+    content:
+      memorySummary.length > 0
+        ? `Current session state: ${memorySummary}\n\nContinue building the executive briefing.`
+        : `Generate an executive briefing for customer ${context.customerId}. Retrieve account summary, recent interactions, and any open risks.`,
+  });
+
+  return messages;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────
 
 /**
@@ -203,10 +446,7 @@ function formatToolDescriptions(tools: ReadonlyMap<string, AgentTool>): string {
  * Build a generic agent prompt (non-collections).
  * Used for support_triage, lead_qualifier, and other roles.
  */
-export function buildGenericPrompt(
-  context: AgentContext,
-  memory: AgentMemory,
-): LLMMessage[] {
+export function buildGenericPrompt(context: AgentContext, memory: AgentMemory): LLMMessage[] {
   const toolDescriptions = formatToolDescriptions(context.tools);
   const memorySummary = memory.summarize();
   const conversationHistory = memory.getConversationHistory();

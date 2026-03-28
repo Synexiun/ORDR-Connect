@@ -91,20 +91,17 @@ export interface NBAPipelineInterface {
     readonly timestamp: Date;
     readonly correlationId: string;
   }) => Promise<
-    Result<
-      {
-        readonly id: string;
-        readonly tenantId: string;
-        readonly customerId: string;
-        readonly action: string;
-        readonly channel: string | undefined;
-        readonly parameters: Record<string, unknown>;
-        readonly score: number;
-        readonly confidence: number;
-        readonly reasoning: string;
-      },
-      AppError
-    >
+    Result<{
+      readonly id: string;
+      readonly tenantId: string;
+      readonly customerId: string;
+      readonly action: string;
+      readonly channel: string | undefined;
+      readonly parameters: Record<string, unknown>;
+      readonly score: number;
+      readonly confidence: number;
+      readonly reasoning: string;
+    }>
   >;
 }
 
@@ -196,7 +193,7 @@ export class AgentOrchestrator {
     },
     tenantId: string,
     customerId: string,
-  ): Promise<Result<AgentOutcome, AppError>> {
+  ): Promise<Result<AgentOutcome>> {
     // ── Map action to agent role ──
     const agentRole = ACTION_TO_ROLE[decision.action];
     if (agentRole === undefined) {

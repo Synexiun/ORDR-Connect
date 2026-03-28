@@ -25,23 +25,23 @@ function makeMockTool(name: string): AgentTool {
 }
 
 function makeMockPromptBuilder(): PromptBuilder {
-  return vi.fn().mockReturnValue([
-    { role: 'system' as const, content: 'Dynamic agent prompt' },
-  ]);
+  return vi.fn().mockReturnValue([{ role: 'system' as const, content: 'Dynamic agent prompt' }]);
 }
 
-function makeValidManifest(overrides: Partial<{
-  name: string;
-  version: string;
-  description: string;
-  requiredTools: readonly string[];
-  minConfidenceThreshold: number;
-  maxBudget: {
-    maxTokens: number;
-    maxCostCents: number;
-    maxActions: number;
-  };
-}> = {}) {
+function makeValidManifest(
+  overrides: Partial<{
+    name: string;
+    version: string;
+    description: string;
+    requiredTools: readonly string[];
+    minConfidenceThreshold: number;
+    maxBudget: {
+      maxTokens: number;
+      maxCostCents: number;
+      maxActions: number;
+    };
+  }> = {},
+) {
   return {
     name: 'custom_agent',
     version: '1.0.0',
@@ -342,7 +342,7 @@ describe('AgentRegistry — listRegistered', () => {
 
   it('should return built-in agents by default', () => {
     const list = registry.listRegistered();
-    expect(list.length).toBe(4);
+    expect(list.length).toBe(9);
   });
 
   it('should include dynamically registered agents', () => {
@@ -351,8 +351,8 @@ describe('AgentRegistry — listRegistered', () => {
     registry.registerFromManifest(manifest, makeMockPromptBuilder(), tools);
 
     const list = registry.listRegistered();
-    expect(list.length).toBe(5);
-    expect(list.some(c => c.displayName === 'custom_agent')).toBe(true);
+    expect(list.length).toBe(10);
+    expect(list.some((c) => c.displayName === 'custom_agent')).toBe(true);
   });
 
   it('should not include unregistered agents', () => {
@@ -362,8 +362,8 @@ describe('AgentRegistry — listRegistered', () => {
     registry.unregister('custom_agent');
 
     const list = registry.listRegistered();
-    expect(list.length).toBe(4);
-    expect(list.some(c => c.displayName === 'custom_agent')).toBe(false);
+    expect(list.length).toBe(9);
+    expect(list.some((c) => c.displayName === 'custom_agent')).toBe(false);
   });
 
   it('should return all configs with correct structure', () => {

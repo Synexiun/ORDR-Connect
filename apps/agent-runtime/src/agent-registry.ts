@@ -14,7 +14,7 @@
  */
 
 import type { AgentRole, AutonomyLevel, Result } from '@ordr/core';
-import { createAgentRole, isWellKnownRole, ok, err, ValidationError } from '@ordr/core';
+import { createAgentRole, ok, err, ValidationError } from '@ordr/core';
 import type { LLMMessage } from '@ordr/ai';
 import type { AgentTool, AgentContext } from './types.js';
 import type { AgentMemory } from './memory.js';
@@ -26,10 +26,7 @@ import type { AgentMemory } from './memory.js';
  * Builds LLM message array from agent context and working memory.
  * SECURITY: MUST NOT include raw PII/PHI in output messages.
  */
-export type PromptBuilder = (
-  context: AgentContext,
-  memory: AgentMemory,
-) => LLMMessage[];
+export type PromptBuilder = (context: AgentContext, memory: AgentMemory) => LLMMessage[];
 
 /**
  * Configuration for an agent role.
@@ -69,11 +66,13 @@ interface TenantRoleOverride {
 const COLLECTIONS_CONFIG: AgentConfig = {
   role: createAgentRole('collections'),
   displayName: 'Collections Agent',
-  description: 'Handles debt collection outreach, payment follow-ups, and settlement negotiations. FDCPA/TCPA compliant.',
+  description:
+    'Handles debt collection outreach, payment follow-ups, and settlement negotiations. FDCPA/TCPA compliant.',
   defaultAutonomyLevel: 'supervised',
   maxAutonomyLevel: 'autonomous',
   toolAllowlist: ['send_sms', 'lookup_customer', 'check_payment', 'schedule_followup'],
-  systemPromptTemplate: 'You are a collections agent operating within the ORDR-Connect Customer Operations OS. Your role is to manage debt collection outreach while strictly adhering to FDCPA, TCPA, and all applicable regulations.',
+  systemPromptTemplate:
+    'You are a collections agent operating within the ORDR-Connect Customer Operations OS. Your role is to manage debt collection outreach while strictly adhering to FDCPA, TCPA, and all applicable regulations.',
   maxSteps: 10,
   maxTokensBudget: 100_000,
   maxCostCentsBudget: 500,
@@ -88,11 +87,13 @@ const COLLECTIONS_CONFIG: AgentConfig = {
 const SUPPORT_TRIAGE_CONFIG: AgentConfig = {
   role: createAgentRole('support_triage'),
   displayName: 'Support Triage Agent',
-  description: 'Classifies incoming customer support requests, searches knowledge base for solutions, and routes to appropriate teams.',
+  description:
+    'Classifies incoming customer support requests, searches knowledge base for solutions, and routes to appropriate teams.',
   defaultAutonomyLevel: 'supervised',
   maxAutonomyLevel: 'supervised',
   toolAllowlist: ['search_knowledge', 'categorize_ticket', 'route_ticket', 'lookup_customer'],
-  systemPromptTemplate: 'You are a customer support triage agent operating within the ORDR-Connect Customer Operations OS. Your role is to understand customer issues, search for solutions, and route tickets to the right team.',
+  systemPromptTemplate:
+    'You are a customer support triage agent operating within the ORDR-Connect Customer Operations OS. Your role is to understand customer issues, search for solutions, and route tickets to the right team.',
   maxSteps: 8,
   maxTokensBudget: 80_000,
   maxCostCentsBudget: 300,
@@ -107,11 +108,18 @@ const SUPPORT_TRIAGE_CONFIG: AgentConfig = {
 const ESCALATION_CONFIG: AgentConfig = {
   role: createAgentRole('escalation'),
   displayName: 'Escalation Coordinator',
-  description: 'Coordinates escalation to human agents. Summarizes context, creates tickets, and ensures smooth handoff with full audit trail.',
+  description:
+    'Coordinates escalation to human agents. Summarizes context, creates tickets, and ensures smooth handoff with full audit trail.',
   defaultAutonomyLevel: 'supervised',
   maxAutonomyLevel: 'supervised',
-  toolAllowlist: ['escalate_to_human', 'summarize_conversation', 'create_ticket', 'lookup_customer'],
-  systemPromptTemplate: 'You are an escalation coordinator operating within the ORDR-Connect Customer Operations OS. Your role is to assess severity, summarize context, create tickets, and coordinate handoff to human agents.',
+  toolAllowlist: [
+    'escalate_to_human',
+    'summarize_conversation',
+    'create_ticket',
+    'lookup_customer',
+  ],
+  systemPromptTemplate:
+    'You are an escalation coordinator operating within the ORDR-Connect Customer Operations OS. Your role is to assess severity, summarize context, create tickets, and coordinate handoff to human agents.',
   maxSteps: 6,
   maxTokensBudget: 60_000,
   maxCostCentsBudget: 200,
@@ -132,11 +140,18 @@ const ESCALATION_CONFIG: AgentConfig = {
 const HEALTHCARE_CONFIG: AgentConfig = {
   role: createAgentRole('healthcare'),
   displayName: 'Healthcare Agent',
-  description: 'HIPAA-compliant healthcare operations: appointment scheduling, patient follow-up, care coordination, and prescription reminders. All PHI access is tokenized and audit-logged.',
+  description:
+    'HIPAA-compliant healthcare operations: appointment scheduling, patient follow-up, care coordination, and prescription reminders. All PHI access is tokenized and audit-logged.',
   defaultAutonomyLevel: 'supervised',
   maxAutonomyLevel: 'supervised',
-  toolAllowlist: ['lookup_patient', 'schedule_appointment', 'check_care_plan', 'send_health_reminder'],
-  systemPromptTemplate: 'You are a HIPAA-compliant healthcare operations agent within the ORDR-Connect Customer Operations OS. Your role is to manage appointment scheduling, patient follow-up, care coordination, and health reminders while maintaining strict HIPAA compliance.',
+  toolAllowlist: [
+    'lookup_patient',
+    'schedule_appointment',
+    'check_care_plan',
+    'send_health_reminder',
+  ],
+  systemPromptTemplate:
+    'You are a HIPAA-compliant healthcare operations agent within the ORDR-Connect Customer Operations OS. Your role is to manage appointment scheduling, patient follow-up, care coordination, and health reminders while maintaining strict HIPAA compliance.',
   maxSteps: 10,
   maxTokensBudget: 50_000,
   maxCostCentsBudget: 200,
@@ -144,12 +159,130 @@ const HEALTHCARE_CONFIG: AgentConfig = {
   enabled: true,
 } as const;
 
-/** All built-in agent configurations. */
+/**
+ * Lead qualifier agent — ICP scoring and sales pipeline entry.
+ * Tools: lookup_customer, search_knowledge, schedule_followup, send_sms
+ *
+ * COMPLIANCE: TCPA consent required before every outbound message.
+ */
+const LEAD_QUALIFIER_CONFIG: AgentConfig = {
+  role: createAgentRole('lead_qualifier'),
+  displayName: 'Lead Qualifier',
+  description:
+    'Qualifies inbound and outbound leads against ICP criteria using BANT framework. Routes qualified leads to sales pipeline. TCPA-compliant outreach.',
+  defaultAutonomyLevel: 'supervised',
+  maxAutonomyLevel: 'autonomous',
+  toolAllowlist: ['lookup_customer', 'search_knowledge', 'schedule_followup', 'send_sms'],
+  systemPromptTemplate:
+    'You are a lead_qualifier agent. Qualify leads against ICP criteria and route to sales.',
+  maxSteps: 8,
+  maxTokensBudget: 80_000,
+  maxCostCentsBudget: 300,
+  maxActions: 15,
+  enabled: true,
+} as const;
+
+/**
+ * Follow-up agent — post-interaction follow-up and relationship nurturing.
+ * Uses collections prompt (FDCPA/TCPA compliance is required for payment follow-ups).
+ * Tools: send_sms, lookup_customer, check_payment, schedule_followup
+ */
+const FOLLOW_UP_CONFIG: AgentConfig = {
+  role: createAgentRole('follow_up'),
+  displayName: 'Follow-Up Agent',
+  description:
+    'Manages post-interaction follow-up sequences: payment reminders, satisfaction check-ins, and re-engagement. FDCPA/TCPA compliant.',
+  defaultAutonomyLevel: 'supervised',
+  maxAutonomyLevel: 'autonomous',
+  toolAllowlist: ['send_sms', 'lookup_customer', 'check_payment', 'schedule_followup'],
+  systemPromptTemplate:
+    'You are a follow_up agent. Manage post-interaction follow-up while respecting FDCPA and TCPA.',
+  maxSteps: 8,
+  maxTokensBudget: 80_000,
+  maxCostCentsBudget: 300,
+  maxActions: 15,
+  enabled: true,
+} as const;
+
+/**
+ * Meeting prep agent — pre-meeting briefing and context assembly.
+ * READ-ONLY: may not initiate outbound communications.
+ * Tools: lookup_customer, search_knowledge, summarize_conversation
+ */
+const MEETING_PREP_CONFIG: AgentConfig = {
+  role: createAgentRole('meeting_prep'),
+  displayName: 'Meeting Prep Agent',
+  description:
+    'Assembles pre-meeting briefings: account history, key contacts, open issues, suggested agenda. Read-only — no outbound actions.',
+  defaultAutonomyLevel: 'supervised',
+  maxAutonomyLevel: 'supervised',
+  toolAllowlist: ['lookup_customer', 'search_knowledge', 'summarize_conversation'],
+  systemPromptTemplate:
+    'You are a meeting_prep agent. Assemble factual pre-meeting briefings from account data.',
+  maxSteps: 6,
+  maxTokensBudget: 60_000,
+  maxCostCentsBudget: 200,
+  maxActions: 10,
+  enabled: true,
+} as const;
+
+/**
+ * Churn detection agent — health scoring and retention trigger.
+ * Tools: lookup_customer, search_knowledge, schedule_followup, send_sms
+ *
+ * COMPLIANCE: TCPA consent required before retention outreach.
+ * Budget capped — health analysis is read-heavy, not action-heavy.
+ */
+const CHURN_DETECTION_CONFIG: AgentConfig = {
+  role: createAgentRole('churn_detection'),
+  displayName: 'Churn Detection Agent',
+  description:
+    'Monitors customer health signals and classifies churn risk (LOW/MEDIUM/HIGH). Triggers retention outreach for HIGH risk and schedules check-ins for MEDIUM.',
+  defaultAutonomyLevel: 'supervised',
+  maxAutonomyLevel: 'autonomous',
+  toolAllowlist: ['lookup_customer', 'search_knowledge', 'schedule_followup', 'send_sms'],
+  systemPromptTemplate:
+    'You are a churn_detection agent. Score churn risk and trigger retention actions.',
+  maxSteps: 8,
+  maxTokensBudget: 80_000,
+  maxCostCentsBudget: 300,
+  maxActions: 12,
+  enabled: true,
+} as const;
+
+/**
+ * Executive briefing agent — C-suite-grade account summaries.
+ * READ-ONLY: produces briefings, never initiates contact.
+ * Tools: lookup_customer, summarize_conversation, search_knowledge
+ */
+const EXECUTIVE_BRIEFING_CONFIG: AgentConfig = {
+  role: createAgentRole('executive_briefing'),
+  displayName: 'Executive Briefing Agent',
+  description:
+    'Generates concise, data-backed executive briefings covering relationship health, key metrics, open risks, and recommended actions. Read-only.',
+  defaultAutonomyLevel: 'supervised',
+  maxAutonomyLevel: 'supervised',
+  toolAllowlist: ['lookup_customer', 'summarize_conversation', 'search_knowledge'],
+  systemPromptTemplate:
+    'You are an executive_briefing agent. Produce concise, factual executive summaries.',
+  maxSteps: 6,
+  maxTokensBudget: 60_000,
+  maxCostCentsBudget: 200,
+  maxActions: 8,
+  enabled: true,
+} as const;
+
+/** All built-in agent configurations — covers every WellKnownAgentRole. */
 const BUILT_IN_CONFIGS: readonly AgentConfig[] = [
   COLLECTIONS_CONFIG,
+  FOLLOW_UP_CONFIG,
+  LEAD_QUALIFIER_CONFIG,
+  MEETING_PREP_CONFIG,
+  CHURN_DETECTION_CONFIG,
   SUPPORT_TRIAGE_CONFIG,
   ESCALATION_CONFIG,
   HEALTHCARE_CONFIG,
+  EXECUTIVE_BRIEFING_CONFIG,
 ] as const;
 
 // ─── AgentRegistry ──────────────────────────────────────────────
@@ -302,28 +435,32 @@ export class AgentRegistry {
     try {
       role = createAgentRole(manifest.name);
     } catch {
-      return err(new ValidationError(
-        `Invalid agent name "${manifest.name}": must be lowercase alphanumeric + underscores, 1-64 chars`,
-        { name: [`Invalid format: ${manifest.name}`] },
-      ));
+      return err(
+        new ValidationError(
+          `Invalid agent name "${manifest.name}": must be lowercase alphanumeric + underscores, 1-64 chars`,
+          { name: [`Invalid format: ${manifest.name}`] },
+        ),
+      );
     }
 
     // Check for duplicate registration
     if (this.configs.has(role)) {
-      return err(new ValidationError(
-        `Agent "${manifest.name}" is already registered`,
-        { name: [`Duplicate: ${manifest.name}`] },
-      ));
+      return err(
+        new ValidationError(`Agent "${manifest.name}" is already registered`, {
+          name: [`Duplicate: ${manifest.name}`],
+        }),
+      );
     }
 
     // Verify all required tools are provided
-    const providedToolNames = new Set(tools.map(t => t.name));
-    const missingTools = manifest.requiredTools.filter(t => !providedToolNames.has(t));
+    const providedToolNames = new Set(tools.map((t) => t.name));
+    const missingTools = manifest.requiredTools.filter((t) => !providedToolNames.has(t));
     if (missingTools.length > 0) {
-      return err(new ValidationError(
-        `Missing required tools: ${missingTools.join(', ')}`,
-        { tools: missingTools.map(t => `Missing: ${t}`) },
-      ));
+      return err(
+        new ValidationError(`Missing required tools: ${missingTools.join(', ')}`, {
+          tools: missingTools.map((t) => `Missing: ${t}`),
+        }),
+      );
     }
 
     // Build the agent config from the manifest
@@ -357,24 +494,23 @@ export class AgentRegistry {
     try {
       role = createAgentRole(name);
     } catch {
-      return err(new ValidationError(
-        `Invalid agent name "${name}"`,
-        { name: [`Invalid format: ${name}`] },
-      ));
+      return err(
+        new ValidationError(`Invalid agent name "${name}"`, { name: [`Invalid format: ${name}`] }),
+      );
     }
 
     if (this.builtInRoles.has(role)) {
-      return err(new ValidationError(
-        `Cannot unregister built-in agent "${name}"`,
-        { name: [`Built-in: ${name}`] },
-      ));
+      return err(
+        new ValidationError(`Cannot unregister built-in agent "${name}"`, {
+          name: [`Built-in: ${name}`],
+        }),
+      );
     }
 
     if (!this.configs.has(role)) {
-      return err(new ValidationError(
-        `Agent "${name}" is not registered`,
-        { name: [`Not found: ${name}`] },
-      ));
+      return err(
+        new ValidationError(`Agent "${name}" is not registered`, { name: [`Not found: ${name}`] }),
+      );
     }
 
     this.configs.delete(role);

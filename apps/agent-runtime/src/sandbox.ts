@@ -204,11 +204,15 @@ export class AgentSandbox {
     // ── Execute with timeout ──
     let output: unknown;
     try {
+      const safeRoleName = this.config.agentName
+        .toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/^[^a-z]/, 'a');
       const toolContext = {
         sessionId: this.sandboxId,
         tenantId: this.config.tenantId,
         customerId: '',
-        agentRole: createAgentRole(this.config.agentName),
+        agentRole: createAgentRole(safeRoleName),
         autonomyLevel: 'rule_based' as AutonomyLevel,
         tools: this.tools,
         memory: { observations: new Map(), steps: [] },
