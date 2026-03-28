@@ -66,6 +66,7 @@ import { partnerStatsRouter } from './routes/partner-stats.js';
 import { slaRouter } from './routes/sla.js';
 import { teamRouter } from './routes/team.js';
 import { profileRouter } from './routes/profile.js';
+import { settingsRouter } from './routes/settings.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -230,6 +231,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Profile — current user, password change, MFA, sessions, API tokens
   app.route('/api/v1/profile', profileRouter);
+
+  // Settings — tenant config, SSO, roles, agents, channels, notifications, security
+  app.route('/api/v1/settings', settingsRouter);
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);
