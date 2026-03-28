@@ -11,15 +11,14 @@
  * The authenticated user's JWT sub (ctx.userId) is treated as the partnerId.
  * Tenant-isolated: only rows where partner_payouts.partner_id = caller's id.
  *
- * NOTE: Referral funnel (clicks/signups/conversions) has no backing table yet.
- * The endpoint returns an empty funnel array; the frontend falls back to mock.
+ * Referral funnel (clicks/signups/conversions) is backed by partner_referrals table.
  */
 
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, eq, gte, sql, sum } from 'drizzle-orm';
 import type { OrdrDatabase } from '@ordr/db';
-import { partnerPayouts } from '@ordr/db';
+import { partnerPayouts, partnerReferrals } from '@ordr/db';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -134,10 +133,35 @@ partnerStatsRouter.get('/', requireAuth(), async (c): Promise<Response> => {
     };
   });
 
-  // ── Referral funnel ──
-  // No referral tracking table exists in the current schema.
-  // Return empty array — frontend falls back to mock data for this chart.
-  const funnel: { month: string; clicks: number; signups: number; conversions: number }[] = [];
+  // ── Referral funnel from partner_referrals ──
+
+  const funnelRows = await db
+    .select({
+      month: partnerReferrals.month,
+      clicks: partnerReferrals.clicks,
+      signups: partnerReferrals.signups,
+      conversions: partnerReferrals.conversions,
+    })
+    .from(partnerReferrals)
+    .where(
+      and(
+        eq(partnerReferrals.partnerId, partnerId),
+        gte(partnerReferrals.month, windows[0]?.isoMonth ?? ''),
+      ),
+    )
+    .orderBy(partnerReferrals.month);
+
+  const funnelByMonth = new Map(funnelRows.map((r) => [r.month, r]));
+
+  const funnel = windows.map(({ isoMonth, label }) => {
+    const row = funnelByMonth.get(isoMonth);
+    return {
+      month: label,
+      clicks: row?.clicks ?? 0,
+      signups: row?.signups ?? 0,
+      conversions: row?.conversions ?? 0,
+    };
+  });
 
   return c.json({
     success: true as const,

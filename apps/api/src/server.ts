@@ -48,7 +48,7 @@ import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine } from '@ordr/compliance';
 import { LLMClient } from '@ordr/ai';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sum } from 'drizzle-orm';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
@@ -61,6 +61,7 @@ import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
 import { configurePartnerStatsRoute } from './routes/partner-stats.js';
+import { configurePartnerRoutes } from './routes/partners.js';
 import { configureDeveloperRoutes } from './routes/developers.js';
 import { SlaChecker, DEFAULT_CHECK_INTERVAL_MS } from './lib/sla-checker.js';
 import { configureSlaRoutes } from './routes/sla.js';
@@ -217,6 +218,93 @@ async function bootstrap(): Promise<void> {
   // ── 4.9. Partner stats route ───────────────────────────────────────────
   configurePartnerStatsRoute(db);
   console.warn('[ORDR:API] Partner stats route configured');
+
+  // ── 4.9b. Partner CRUD routes (register, me, earnings, payouts) ───────────
+  configurePartnerRoutes({
+    auditLogger,
+    findPartnerByEmail: async (email) => {
+      const rows = await db
+        .select()
+        .from(schema.partners)
+        .where(eq(schema.partners.email, email))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    findPartnerById: async (id) => {
+      const rows = await db
+        .select()
+        .from(schema.partners)
+        .where(eq(schema.partners.id, id))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    createPartner: async (data) => {
+      const rows = await db
+        .insert(schema.partners)
+        .values({
+          name: data.name,
+          email: data.email,
+          company: data.company,
+          tier: data.tier as 'silver' | 'gold' | 'platinum',
+        })
+        .returning();
+      const row = rows[0];
+      if (!row) throw new Error('Failed to create partner');
+      return row;
+    },
+    updatePartner: async (id, data) => {
+      const patch: Partial<typeof schema.partners.$inferInsert> = {};
+      if (data.name !== undefined) patch.name = data.name;
+      if (data.company !== undefined) patch.company = data.company;
+      patch.updatedAt = new Date();
+      const rows = await db
+        .update(schema.partners)
+        .set(patch)
+        .where(eq(schema.partners.id, id))
+        .returning();
+      return rows[0] ?? null;
+    },
+    getEarnings: async (partnerId) => {
+      const rows = await db
+        .select({
+          totalCents: sum(schema.partnerPayouts.amountCents),
+          pendingCents: sum(schema.partnerPayouts.amountCents),
+        })
+        .from(schema.partnerPayouts)
+        .where(eq(schema.partnerPayouts.partnerId, partnerId));
+
+      // Compute split by status
+      const allPayouts = await db
+        .select({
+          amountCents: schema.partnerPayouts.amountCents,
+          status: schema.partnerPayouts.status,
+        })
+        .from(schema.partnerPayouts)
+        .where(eq(schema.partnerPayouts.partnerId, partnerId));
+
+      let totalCents = 0;
+      let pendingCents = 0;
+      let paidCents = 0;
+      for (const p of allPayouts) {
+        totalCents += p.amountCents;
+        if (p.status === 'paid') {
+          paidCents += p.amountCents;
+        } else if (p.status === 'pending' || p.status === 'processing') {
+          pendingCents += p.amountCents;
+        }
+      }
+      void rows; // used for type inference only
+      return { totalCents, pendingCents, paidCents, currency: 'USD' };
+    },
+    listPayouts: async (partnerId) => {
+      return db
+        .select()
+        .from(schema.partnerPayouts)
+        .where(eq(schema.partnerPayouts.partnerId, partnerId))
+        .orderBy(schema.partnerPayouts.createdAt);
+    },
+  });
+  console.warn('[ORDR:API] Partner routes configured');
 
   // ── 4.10. SLA checker — periodic background scan for breach notifications ──
   slaChecker = new SlaChecker(db);

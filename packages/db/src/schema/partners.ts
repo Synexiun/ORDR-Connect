@@ -32,17 +32,9 @@ import {
 // Enums
 // ---------------------------------------------------------------------------
 
-export const partnerTierEnum = pgEnum('partner_tier', [
-  'silver',
-  'gold',
-  'platinum',
-]);
+export const partnerTierEnum = pgEnum('partner_tier', ['silver', 'gold', 'platinum']);
 
-export const partnerStatusEnum = pgEnum('partner_status', [
-  'pending',
-  'active',
-  'suspended',
-]);
+export const partnerStatusEnum = pgEnum('partner_status', ['pending', 'active', 'suspended']);
 
 export const partnerPayoutStatusEnum = pgEnum('partner_payout_status', [
   'pending',
@@ -130,5 +122,36 @@ export const partnerPayouts = pgTable(
     index('partner_payouts_partner_id_idx').on(table.partnerId),
     index('partner_payouts_status_idx').on(table.status),
     index('partner_payouts_period_idx').on(table.periodStart, table.periodEnd),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Partner Referrals — monthly funnel tracking per partner
+// ---------------------------------------------------------------------------
+
+export const partnerReferrals = pgTable(
+  'partner_referrals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+
+    /** FK to partners */
+    partnerId: uuid('partner_id')
+      .notNull()
+      .references(() => partners.id, { onDelete: 'cascade' }),
+
+    /** Month bucket — YYYY-MM format */
+    month: varchar('month', { length: 7 }).notNull(),
+
+    clicks: integer('clicks').notNull().default(0),
+
+    signups: integer('signups').notNull().default(0),
+
+    conversions: integer('conversions').notNull().default(0),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('partner_referrals_partner_month_uniq').on(t.partnerId, t.month),
+    index('partner_referrals_partner_idx').on(t.partnerId),
   ],
 );

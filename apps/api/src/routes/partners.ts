@@ -30,16 +30,37 @@ import { requireAuth } from '../middleware/auth.js';
 
 // ─── Input Schemas ──────────────────────────────────────────────
 
-const registerSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(255),
-  email: z.string().email('Invalid email address').max(255),
-  company: z.string().min(1, 'Company is required').max(255),
-  tier: z.enum(['silver', 'gold', 'platinum']).default('silver'),
-});
+// Frontend uses contactName/companyName; tests use name/company — accept both
+const registerSchema = z
+  .object({
+    name: z.string().min(1).max(255).optional(),
+    contactName: z.string().min(1).max(255).optional(),
+    email: z.string().email('Invalid email address').max(255),
+    company: z.string().min(1).max(255).optional(),
+    companyName: z.string().min(1).max(255).optional(),
+    // accept DB tiers (tests) + frontend tier aliases
+    tier: z
+      .enum(['silver', 'gold', 'platinum', 'referral', 'reseller', 'strategic'])
+      .default('silver'),
+  })
+  .refine((d) => d.name ?? d.contactName, { message: 'Name is required', path: ['name'] })
+  .refine((d) => d.company ?? d.companyName, { message: 'Company is required', path: ['company'] });
+
+// Map frontend tier aliases to DB tiers
+const TIER_ALIAS: Record<string, 'silver' | 'gold' | 'platinum'> = {
+  referral: 'silver',
+  reseller: 'gold',
+  strategic: 'platinum',
+  silver: 'silver',
+  gold: 'gold',
+  platinum: 'platinum',
+};
 
 const updateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
+  contactName: z.string().min(1).max(255).optional(),
   company: z.string().min(1).max(255).optional(),
+  companyName: z.string().min(1).max(255).optional(),
 });
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -151,7 +172,10 @@ partnersRouter.post('/register', requireAuth(), async (c) => {
     throw new ValidationError('Invalid registration data', parseZodErrors(parsed.error), requestId);
   }
 
-  const { name, email, company, tier } = parsed.data;
+  const resolvedName = parsed.data.name ?? parsed.data.contactName ?? '';
+  const resolvedCompany = parsed.data.company ?? parsed.data.companyName ?? '';
+  const resolvedTier = TIER_ALIAS[parsed.data.tier] ?? 'silver';
+  const { email } = parsed.data;
 
   // Check for duplicate email
   const existing = await deps.findPartnerByEmail(email);
@@ -160,7 +184,12 @@ partnersRouter.post('/register', requireAuth(), async (c) => {
   }
 
   // Create partner account
-  const partner = await deps.createPartner({ name, email, company, tier });
+  const partner = await deps.createPartner({
+    name: resolvedName,
+    email,
+    company: resolvedCompany,
+    tier: resolvedTier,
+  });
 
   // Audit log — WORM (Rule 3)
   await deps.auditLogger.log({
@@ -171,7 +200,7 @@ partnersRouter.post('/register', requireAuth(), async (c) => {
     resource: 'partners',
     resourceId: partner.id,
     action: 'register_partner',
-    details: { tier, email, company },
+    details: { tier: resolvedTier, email, company: resolvedCompany },
     timestamp: new Date(),
   });
 
@@ -187,6 +216,11 @@ partnersRouter.post('/register', requireAuth(), async (c) => {
         status: partner.status,
         revenueSharePct: partner.revenueSharePct,
         createdAt: partner.createdAt,
+        // frontend alias fields
+        userId: partner.id,
+        contactName: partner.name,
+        companyName: partner.company,
+        commissionRate: partner.revenueSharePct / 100,
       },
     },
     201,
@@ -218,6 +252,11 @@ partnersRouter.get('/me', requireAuth(), async (c) => {
       revenueSharePct: partner.revenueSharePct,
       createdAt: partner.createdAt,
       updatedAt: partner.updatedAt,
+      // frontend alias fields
+      userId: partner.id,
+      contactName: partner.name,
+      companyName: partner.company,
+      commissionRate: partner.revenueSharePct / 100,
     },
   });
 });
@@ -244,9 +283,12 @@ partnersRouter.put('/me', requireAuth(), async (c) => {
     throw new NotFoundError('Partner account not found', requestId);
   }
 
+  const resolvedName = parsed.data.name ?? parsed.data.contactName;
+  const resolvedCompany = parsed.data.company ?? parsed.data.companyName;
+
   const updated = await deps.updatePartner(userId, {
-    ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-    ...(parsed.data.company !== undefined ? { company: parsed.data.company } : {}),
+    ...(resolvedName !== undefined ? { name: resolvedName } : {}),
+    ...(resolvedCompany !== undefined ? { company: resolvedCompany } : {}),
   });
   if (!updated) {
     throw new NotFoundError('Partner account not found', requestId);
@@ -277,6 +319,74 @@ partnersRouter.put('/me', requireAuth(), async (c) => {
       revenueSharePct: updated.revenueSharePct,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
+      // frontend alias fields
+      userId: updated.id,
+      contactName: updated.name,
+      companyName: updated.company,
+      commissionRate: updated.revenueSharePct / 100,
+    },
+  });
+});
+
+// ─── PATCH /me — Update partner profile (frontend alias for PUT) ─
+
+partnersRouter.patch('/me', requireAuth(), async (c) => {
+  if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
+
+  const requestId = c.get('requestId');
+  const { userId } = ensurePartnerContext(c);
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const body = await c.req.json().catch(() => null);
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('Invalid update data', parseZodErrors(parsed.error), requestId);
+  }
+
+  const existing = await deps.findPartnerById(userId);
+  if (!existing) {
+    throw new NotFoundError('Partner account not found', requestId);
+  }
+
+  const resolvedName = parsed.data.name ?? parsed.data.contactName;
+  const resolvedCompany = parsed.data.company ?? parsed.data.companyName;
+
+  const updated = await deps.updatePartner(userId, {
+    ...(resolvedName !== undefined ? { name: resolvedName } : {}),
+    ...(resolvedCompany !== undefined ? { company: resolvedCompany } : {}),
+  });
+  if (!updated) {
+    throw new NotFoundError('Partner account not found', requestId);
+  }
+
+  await deps.auditLogger.log({
+    tenantId: 'partner-program',
+    eventType: 'data.updated',
+    actorType: 'user',
+    actorId: userId,
+    resource: 'partners',
+    resourceId: userId,
+    action: 'update_partner_profile',
+    details: { fields: Object.keys(parsed.data) },
+    timestamp: new Date(),
+  });
+
+  return c.json({
+    success: true as const,
+    data: {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      company: updated.company,
+      tier: updated.tier,
+      status: updated.status,
+      revenueSharePct: updated.revenueSharePct,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+      userId: updated.id,
+      contactName: updated.name,
+      companyName: updated.company,
+      commissionRate: updated.revenueSharePct / 100,
     },
   });
 });
@@ -299,7 +409,20 @@ partnersRouter.get('/earnings', requireAuth(), async (c) => {
 
   return c.json({
     success: true as const,
-    data: earnings,
+    data: {
+      // DB field names (tests check these)
+      totalCents: earnings.totalCents,
+      pendingCents: earnings.pendingCents,
+      paidCents: earnings.paidCents,
+      currency: earnings.currency,
+      // frontend alias fields (dollars)
+      totalEarned: earnings.totalCents / 100,
+      pendingPayout: earnings.pendingCents / 100,
+      paidOut: earnings.paidCents / 100,
+      currentPeriodEarnings: 0,
+      referralCount: 0,
+      activeReferrals: 0,
+    },
   });
 });
 
@@ -321,7 +444,9 @@ partnersRouter.get('/payouts', requireAuth(), async (c) => {
 
   const safePayouts = payouts.map((p) => ({
     id: p.id,
+    // note: partnerId intentionally omitted (security — not exposed per Rule 7)
     amountCents: p.amountCents,
+    amount: p.amountCents / 100, // frontend alias (dollars)
     currency: p.currency,
     periodStart: p.periodStart,
     periodEnd: p.periodEnd,
@@ -333,6 +458,7 @@ partnersRouter.get('/payouts', requireAuth(), async (c) => {
   return c.json({
     success: true as const,
     data: safePayouts,
+    total: safePayouts.length,
   });
 });
 
