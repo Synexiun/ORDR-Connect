@@ -10,16 +10,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { marketplaceRouter, configureMarketplaceRoutes } from '../routes/marketplace.js';
 import { configureAuth } from '../middleware/auth.js';
+import { configureBillingGate } from '../middleware/plan-gate.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
-import { generateKeyPair } from '@ordr/crypto';
+import { generateKeyPair, FieldEncryptor } from '@ordr/crypto';
+import { SubscriptionManager, InMemorySubscriptionStore, MockStripeClient } from '@ordr/billing';
 
 // ─── Mock Data ──────────────────────────────────────────────────
 
@@ -59,6 +58,38 @@ interface MockInstall {
   installedAt: Date;
 }
 
+// ─── Response Body Types ─────────────────────────────────────────
+
+interface ListBody {
+  success: boolean;
+  data: MockAgent[];
+  meta: { total: number; limit: number; offset: number };
+}
+interface ItemBody {
+  success: boolean;
+  data: MockAgent;
+}
+interface InstallBody {
+  success: boolean;
+  data: MockInstall;
+}
+interface UninstallBody {
+  success: boolean;
+  data: { message: string };
+}
+interface ReviewBody {
+  success: boolean;
+  data: MockReview;
+}
+interface ReviewsBody {
+  success: boolean;
+  data: MockReview[];
+}
+
+function asJson<T>(res: Response): Promise<T> {
+  return res.json() as unknown as Promise<T>;
+}
+
 let jwtConfig: JwtConfig;
 let auditLogger: AuditLogger;
 let auditStore: InMemoryAuditStore;
@@ -69,11 +100,13 @@ let idCounter: number;
 
 const VALID_HASH = 'a'.repeat(64);
 
-async function makeJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'user-001',
     tid: overrides.tid ?? 'tenant-001',
@@ -116,7 +149,7 @@ function seedAgent(overrides: Partial<MockAgent> = {}): MockAgent {
 // ─── Setup ──────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -126,6 +159,29 @@ beforeEach(async () => {
 
   auditStore = new InMemoryAuditStore();
   auditLogger = new AuditLogger(auditStore);
+
+  // Configure billing gate so featureGate(FEATURES.MARKETPLACE) on install passes
+  const subStore = new InMemorySubscriptionStore();
+  await subStore.saveSubscription({
+    id: 'sub-test-001',
+    tenant_id: 'tenant-001',
+    plan_tier: 'professional',
+    status: 'active',
+    stripe_subscription_id: 'sub_test',
+    current_period_start: new Date(),
+    current_period_end: new Date(Date.now() + 30 * 86_400_000),
+    cancel_at_period_end: false,
+    created_at: new Date(),
+    updated_at: new Date(),
+  });
+  const fieldEncryptor = new FieldEncryptor(Buffer.from('test-key-32-bytes-for-unit-tests!'));
+  const subManager = new SubscriptionManager({
+    store: subStore,
+    stripe: new MockStripeClient(),
+    auditLogger,
+    fieldEncryptor,
+  });
+  configureBillingGate(subManager);
   agentStore = new Map<string, MockAgent>();
   reviewStore = new Map<string, MockReview>();
   installStore = new Map<string, MockInstall>();
@@ -133,58 +189,88 @@ beforeEach(async () => {
 
   configureMarketplaceRoutes({
     auditLogger,
-    listPublishedAgents: vi.fn(async ({ limit, offset, search }) => {
-      let agents = [...agentStore.values()].filter((a) => a.status === 'published');
-      if (search) {
-        const q = search.toLowerCase();
-        agents = agents.filter((a) => a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q));
-      }
-      const total = agents.length;
-      agents = agents.slice(offset, offset + limit);
-      return { agents, total };
-    }),
-    findAgentById: vi.fn(async (id: string) => agentStore.get(id) ?? null),
-    findAgentByNameVersion: vi.fn(async (name: string, version: string) => {
+    listPublishedAgents: vi.fn(
+      ({
+        limit,
+        offset,
+        search,
+      }: {
+        limit: number;
+        offset: number;
+        search?: string;
+        category?: string;
+      }) => {
+        let agents = [...agentStore.values()].filter((a) => a.status === 'published');
+        if (search !== undefined) {
+          const q = search.toLowerCase();
+          agents = agents.filter(
+            (a) => a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q),
+          );
+        }
+        const total = agents.length;
+        agents = agents.slice(offset, offset + limit);
+        return Promise.resolve({ agents, total });
+      },
+    ),
+    findAgentById: vi.fn((id: string) => Promise.resolve(agentStore.get(id) ?? null)),
+    findAgentByNameVersion: vi.fn((name: string, version: string) => {
       for (const a of agentStore.values()) {
-        if (a.name === name && a.version === version) return a;
+        if (a.name === name && a.version === version) return Promise.resolve(a);
       }
-      return null;
+      return Promise.resolve(null);
     }),
-    createAgent: vi.fn(async (data) => {
-      const id = `agent-${String(idCounter++).padStart(3, '0')}`;
-      const agent: MockAgent = {
-        id,
-        ...data,
-        downloads: 0,
-        rating: null,
-        status: 'review',
-        rejectionReason: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      agentStore.set(id, agent);
-      return agent;
-    }),
-    updateAgent: vi.fn(async (id: string, data) => {
-      const agent = agentStore.get(id);
-      if (!agent) return null;
-      const updated: MockAgent = {
-        ...agent,
-        ...(data.description !== undefined ? { description: data.description } : {}),
-        ...(data.manifest !== undefined ? { manifest: data.manifest } : {}),
-        ...(data.packageHash !== undefined ? { packageHash: data.packageHash } : {}),
-        updatedAt: new Date(),
-      };
-      agentStore.set(id, updated);
-      return updated;
-    }),
-    incrementDownloads: vi.fn(async (id: string) => {
+    createAgent: vi.fn(
+      (data: {
+        name: string;
+        version: string;
+        description: string;
+        author: string;
+        license: string;
+        manifest: Record<string, unknown>;
+        packageHash: string;
+        publisherId: string;
+      }) => {
+        const id = `agent-${String(idCounter++).padStart(3, '0')}`;
+        const agent: MockAgent = {
+          id,
+          ...data,
+          downloads: 0,
+          rating: null,
+          status: 'review',
+          rejectionReason: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        agentStore.set(id, agent);
+        return Promise.resolve(agent);
+      },
+    ),
+    updateAgent: vi.fn(
+      (
+        id: string,
+        data: { description?: string; manifest?: Record<string, unknown>; packageHash?: string },
+      ) => {
+        const agent = agentStore.get(id);
+        if (!agent) return Promise.resolve(null);
+        const updated: MockAgent = {
+          ...agent,
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.manifest !== undefined ? { manifest: data.manifest } : {}),
+          ...(data.packageHash !== undefined ? { packageHash: data.packageHash } : {}),
+          updatedAt: new Date(),
+        };
+        agentStore.set(id, updated);
+        return Promise.resolve(updated);
+      },
+    ),
+    incrementDownloads: vi.fn((id: string) => {
       const agent = agentStore.get(id);
       if (agent) {
         agentStore.set(id, { ...agent, downloads: agent.downloads + 1 });
       }
+      return Promise.resolve();
     }),
-    createInstall: vi.fn(async (data) => {
+    createInstall: vi.fn((data: { tenantId: string; agentId: string; version: string }) => {
       const id = `install-${String(idCounter++).padStart(3, '0')}`;
       const install: MockInstall = {
         id,
@@ -195,39 +281,41 @@ beforeEach(async () => {
         installedAt: new Date(),
       };
       installStore.set(`${data.tenantId}:${data.agentId}`, install);
-      return install;
+      return Promise.resolve(install);
     }),
-    findInstall: vi.fn(async (tenantId: string, agentId: string) => {
-      return installStore.get(`${tenantId}:${agentId}`) ?? null;
+    findInstall: vi.fn((tenantId: string, agentId: string) => {
+      return Promise.resolve(installStore.get(`${tenantId}:${agentId}`) ?? null);
     }),
-    removeInstall: vi.fn(async (tenantId: string, agentId: string) => {
+    removeInstall: vi.fn((tenantId: string, agentId: string) => {
       const key = `${tenantId}:${agentId}`;
-      if (!installStore.has(key)) return false;
+      if (!installStore.has(key)) return Promise.resolve(false);
       installStore.delete(key);
-      return true;
+      return Promise.resolve(true);
     }),
-    createReview: vi.fn(async (data) => {
-      const id = `review-${String(idCounter++).padStart(3, '0')}`;
-      const review: MockReview = {
-        id,
-        agentId: data.agentId,
-        reviewerId: data.reviewerId,
-        rating: data.rating,
-        comment: data.comment,
-        createdAt: new Date(),
-      };
-      reviewStore.set(`${data.agentId}:${data.reviewerId}`, review);
-      return review;
+    createReview: vi.fn(
+      (data: { agentId: string; reviewerId: string; rating: number; comment: string | null }) => {
+        const id = `review-${String(idCounter++).padStart(3, '0')}`;
+        const review: MockReview = {
+          id,
+          agentId: data.agentId,
+          reviewerId: data.reviewerId,
+          rating: data.rating,
+          comment: data.comment,
+          createdAt: new Date(),
+        };
+        reviewStore.set(`${data.agentId}:${data.reviewerId}`, review);
+        return Promise.resolve(review);
+      },
+    ),
+    findReviewByUser: vi.fn((agentId: string, reviewerId: string) => {
+      return Promise.resolve(reviewStore.get(`${agentId}:${reviewerId}`) ?? null);
     }),
-    findReviewByUser: vi.fn(async (agentId: string, reviewerId: string) => {
-      return reviewStore.get(`${agentId}:${reviewerId}`) ?? null;
-    }),
-    listReviews: vi.fn(async (agentId: string) => {
+    listReviews: vi.fn((agentId: string) => {
       const reviews: MockReview[] = [];
       for (const r of reviewStore.values()) {
         if (r.agentId === agentId) reviews.push(r);
       }
-      return reviews;
+      return Promise.resolve(reviews);
     }),
   });
 });
@@ -247,7 +335,7 @@ describe('GET /api/v1/marketplace', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<ListBody>(res);
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(2);
   });
@@ -264,7 +352,7 @@ describe('GET /api/v1/marketplace', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<ListBody>(res);
     expect(body.data).toHaveLength(2);
     expect(body.meta.limit).toBe(2);
     expect(body.meta.offset).toBe(1);
@@ -281,7 +369,7 @@ describe('GET /api/v1/marketplace', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<ListBody>(res);
     expect(body.data).toHaveLength(1);
     expect(body.data[0].name).toBe('billing-agent');
   });
@@ -295,7 +383,7 @@ describe('GET /api/v1/marketplace', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ListBody>(res);
     expect(body.meta).toBeDefined();
     expect(body.meta.total).toBe(1);
   });
@@ -313,7 +401,7 @@ describe('GET /api/v1/marketplace', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ListBody>(res);
     expect(body.data).toHaveLength(0);
     expect(body.meta.total).toBe(0);
   });
@@ -337,7 +425,7 @@ describe('GET /api/v1/marketplace', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ListBody>(res);
     expect(body.data).toHaveLength(0);
   });
 });
@@ -355,7 +443,7 @@ describe('GET /api/v1/marketplace/:agentId', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<ItemBody>(res);
     expect(body.data.id).toBe(agent.id);
     expect(body.data.name).toBe('detail-agent');
     expect(body.data.manifest).toBeDefined();
@@ -380,7 +468,7 @@ describe('GET /api/v1/marketplace/:agentId', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ItemBody>(res);
     expect(body.data.packageHash).toBe(VALID_HASH);
   });
 
@@ -393,7 +481,7 @@ describe('GET /api/v1/marketplace/:agentId', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ItemBody>(res);
     expect(body.data.publisherId).toBe('pub-123');
   });
 });
@@ -422,7 +510,7 @@ describe('POST /api/v1/marketplace', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = await asJson<ItemBody>(res);
     expect(body.success).toBe(true);
     expect(body.data.name).toBe('new-agent');
     expect(body.data.status).toBe('review');
@@ -586,7 +674,10 @@ describe('POST /api/v1/marketplace', () => {
       }),
     });
 
-    const events = [...auditStore.getAllEvents('marketplace'), ...auditStore.getAllEvents('tenant-001')];
+    const events = [
+      ...auditStore.getAllEvents('marketplace'),
+      ...auditStore.getAllEvents('tenant-001'),
+    ];
     const publishEvent = events.find((e) => e.action === 'publish_agent');
     expect(publishEvent).toBeDefined();
     expect(publishEvent?.resource).toBe('marketplace_agents');
@@ -630,7 +721,7 @@ describe('PUT /api/v1/marketplace/:agentId', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<ItemBody>(res);
     expect(body.data.description).toBe('Updated description');
   });
 
@@ -680,7 +771,10 @@ describe('PUT /api/v1/marketplace/:agentId', () => {
       body: JSON.stringify({ description: 'Updated' }),
     });
 
-    const events = [...auditStore.getAllEvents('marketplace'), ...auditStore.getAllEvents('tenant-001')];
+    const events = [
+      ...auditStore.getAllEvents('marketplace'),
+      ...auditStore.getAllEvents('tenant-001'),
+    ];
     const updateEvent = events.find((e) => e.action === 'update_agent');
     expect(updateEvent).toBeDefined();
   });
@@ -700,7 +794,7 @@ describe('POST /api/v1/marketplace/:agentId/install', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = await asJson<InstallBody>(res);
     expect(body.data.agentId).toBe(agent.id);
     expect(body.data.status).toBe('active');
   });
@@ -774,7 +868,10 @@ describe('POST /api/v1/marketplace/:agentId/install', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const events = [...auditStore.getAllEvents('marketplace'), ...auditStore.getAllEvents('tenant-001')];
+    const events = [
+      ...auditStore.getAllEvents('marketplace'),
+      ...auditStore.getAllEvents('tenant-001'),
+    ];
     const installEvent = events.find((e) => e.action === 'install_agent');
     expect(installEvent).toBeDefined();
     expect(installEvent?.resource).toBe('marketplace_installs');
@@ -803,7 +900,7 @@ describe('DELETE /api/v1/marketplace/:agentId/install', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<UninstallBody>(res);
     expect(body.success).toBe(true);
   });
 
@@ -834,7 +931,10 @@ describe('DELETE /api/v1/marketplace/:agentId/install', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const events = [...auditStore.getAllEvents('marketplace'), ...auditStore.getAllEvents('tenant-001')];
+    const events = [
+      ...auditStore.getAllEvents('marketplace'),
+      ...auditStore.getAllEvents('tenant-001'),
+    ];
     const uninstallEvent = events.find((e) => e.action === 'uninstall_agent');
     expect(uninstallEvent).toBeDefined();
   });
@@ -858,7 +958,7 @@ describe('POST /api/v1/marketplace/:agentId/review', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = await asJson<ReviewBody>(res);
     expect(body.data.rating).toBe(4);
     expect(body.data.comment).toBe('Great agent');
   });
@@ -989,7 +1089,10 @@ describe('POST /api/v1/marketplace/:agentId/review', () => {
       body: JSON.stringify({ rating: 4 }),
     });
 
-    const events = [...auditStore.getAllEvents('marketplace'), ...auditStore.getAllEvents('tenant-001')];
+    const events = [
+      ...auditStore.getAllEvents('marketplace'),
+      ...auditStore.getAllEvents('tenant-001'),
+    ];
     const reviewEvent = events.find((e) => e.action === 'submit_review');
     expect(reviewEvent).toBeDefined();
   });
@@ -1018,7 +1121,7 @@ describe('GET /api/v1/marketplace/:agentId/reviews', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await asJson<ReviewsBody>(res);
     expect(body.data).toHaveLength(1);
     expect(body.data[0].rating).toBe(5);
   });
@@ -1032,7 +1135,7 @@ describe('GET /api/v1/marketplace/:agentId/reviews', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ReviewsBody>(res);
     expect(body.data).toHaveLength(0);
   });
 
@@ -1064,7 +1167,7 @@ describe('GET /api/v1/marketplace/:agentId/reviews', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = await asJson<ReviewsBody>(res);
     expect(body.data[0].reviewerId).toBe('rev-42');
   });
 });
@@ -1122,7 +1225,10 @@ describe('Audit logging', () => {
       body: JSON.stringify({ rating: 4 }),
     });
 
-    const events = [...auditStore.getAllEvents('marketplace'), ...auditStore.getAllEvents('tenant-001')];
+    const events = [
+      ...auditStore.getAllEvents('marketplace'),
+      ...auditStore.getAllEvents('tenant-001'),
+    ];
     const marketplaceEvents = events.filter((e) =>
       ['publish_agent', 'update_agent', 'install_agent', 'submit_review'].includes(e.action),
     );

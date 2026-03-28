@@ -26,18 +26,18 @@ describe('MODEL_REGISTRY', () => {
     expect(config.costPerMillionOutput).toBe(1.25);
   });
 
-  it('standard tier uses claude-sonnet-4-5', () => {
+  it('standard tier uses claude-sonnet-4-6', () => {
     const config = MODEL_REGISTRY.standard;
     expect(config.provider).toBe('anthropic');
-    expect(config.modelName).toBe('claude-sonnet-4-5-20250514');
+    expect(config.modelName).toBe('claude-sonnet-4-6');
     expect(config.costPerMillionInput).toBe(3);
     expect(config.costPerMillionOutput).toBe(15);
   });
 
-  it('premium tier uses claude-opus-4-5', () => {
+  it('premium tier uses claude-opus-4-6', () => {
     const config = MODEL_REGISTRY.premium;
     expect(config.provider).toBe('anthropic');
-    expect(config.modelName).toBe('claude-opus-4-5-20250514');
+    expect(config.modelName).toBe('claude-opus-4-6');
     expect(config.costPerMillionInput).toBe(15);
     expect(config.costPerMillionOutput).toBe(75);
   });
@@ -55,10 +55,12 @@ describe('MODEL_REGISTRY', () => {
   });
 
   it('budget is cheapest, premium is most expensive', () => {
-    expect(MODEL_REGISTRY.budget.costPerMillionInput)
-      .toBeLessThan(MODEL_REGISTRY.standard.costPerMillionInput);
-    expect(MODEL_REGISTRY.standard.costPerMillionInput)
-      .toBeLessThan(MODEL_REGISTRY.premium.costPerMillionInput);
+    expect(MODEL_REGISTRY.budget.costPerMillionInput).toBeLessThan(
+      MODEL_REGISTRY.standard.costPerMillionInput,
+    );
+    expect(MODEL_REGISTRY.standard.costPerMillionInput).toBeLessThan(
+      MODEL_REGISTRY.premium.costPerMillionInput,
+    );
   });
 });
 
@@ -72,12 +74,12 @@ describe('selectModel', () => {
 
   it('returns the correct config for standard tier', () => {
     const config = selectModel('standard');
-    expect(config.modelName).toBe('claude-sonnet-4-5-20250514');
+    expect(config.modelName).toBe('claude-sonnet-4-6');
   });
 
   it('returns the correct config for premium tier', () => {
     const config = selectModel('premium');
-    expect(config.modelName).toBe('claude-opus-4-5-20250514');
+    expect(config.modelName).toBe('claude-opus-4-6');
   });
 });
 

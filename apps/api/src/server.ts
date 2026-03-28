@@ -34,7 +34,7 @@ import { loadConfig } from '@ordr/core';
 import type { ParsedConfig } from '@ordr/core';
 import { createConnection, createDrizzle, closeConnection, DrizzleAuditStore } from '@ordr/db';
 import * as schema from '@ordr/db';
-import { createKafkaClient, createProducer } from '@ordr/events';
+import { createKafkaClient, createProducer, EventProducer } from '@ordr/events';
 import type { Producer } from '@ordr/events';
 import { AuditLogger } from '@ordr/audit';
 import {
@@ -48,7 +48,14 @@ import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine } from '@ordr/compliance';
 import { LLMClient } from '@ordr/ai';
-import { and, eq, sum } from 'drizzle-orm';
+import {
+  AnalyticsQueries,
+  RealTimeCounters,
+  InMemoryAnalyticsStore,
+  InMemoryCounterStore,
+} from '@ordr/analytics';
+import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
+import { and, eq, sum, count, ilike, or, asc, type SQL } from 'drizzle-orm';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
@@ -70,6 +77,10 @@ import { configureProfileRoutes } from './routes/profile.js';
 import { configureSettingsRoutes } from './routes/settings.js';
 import { configureTicketRoutes } from './routes/tickets.js';
 import { configureReportRoutes } from './routes/reports.js';
+import { configureAnalyticsRoutes } from './routes/analytics.js';
+import { configureCustomerRoutes } from './routes/customers.js';
+import { configureAgentRoutes } from './routes/agents.js';
+import { configureMarketplaceRoutes } from './routes/marketplace.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -331,6 +342,370 @@ async function bootstrap(): Promise<void> {
   configureReportRoutes({ db });
   console.warn('[ORDR:API] Report routes configured');
 
+  // ── 4.16. Marketplace routes (agent marketplace CRUD, installs, reviews) ───
+  configureMarketplaceRoutes({
+    auditLogger,
+    listPublishedAgents: async ({ limit, offset, search, category }) => {
+      const conditions: SQL[] = [eq(schema.marketplaceAgents.status, 'published')];
+      if (search !== undefined && search !== '') {
+        const searchCond = or(
+          ilike(schema.marketplaceAgents.name, `%${search}%`),
+          ilike(schema.marketplaceAgents.description, `%${search}%`),
+          ilike(schema.marketplaceAgents.author, `%${search}%`),
+        );
+        if (searchCond !== undefined) conditions.push(searchCond);
+      }
+      if (category !== undefined && category !== '') {
+        conditions.push(ilike(schema.marketplaceAgents.author, `%${category}%`));
+      }
+      const whereClause = and(...conditions);
+      const [rows, totalRows] = await Promise.all([
+        db
+          .select()
+          .from(schema.marketplaceAgents)
+          .where(whereClause)
+          .orderBy(asc(schema.marketplaceAgents.name))
+          .limit(limit)
+          .offset(offset),
+        db.select({ total: count() }).from(schema.marketplaceAgents).where(whereClause),
+      ]);
+      return {
+        agents: rows.map((r) => ({
+          ...r,
+          manifest: (r.manifest ?? {}) as Record<string, unknown>,
+          rating: r.rating ?? null,
+          rejectionReason: r.rejectionReason ?? null,
+        })),
+        total: totalRows[0]?.total ?? 0,
+      };
+    },
+    findAgentById: async (id) => {
+      const rows = await db
+        .select()
+        .from(schema.marketplaceAgents)
+        .where(eq(schema.marketplaceAgents.id, id))
+        .limit(1);
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        manifest: (r.manifest ?? {}) as Record<string, unknown>,
+        rating: r.rating ?? null,
+        rejectionReason: r.rejectionReason ?? null,
+      };
+    },
+    findAgentByNameVersion: async (name, version) => {
+      const rows = await db
+        .select()
+        .from(schema.marketplaceAgents)
+        .where(
+          and(
+            eq(schema.marketplaceAgents.name, name),
+            eq(schema.marketplaceAgents.version, version),
+          ),
+        )
+        .limit(1);
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        manifest: (r.manifest ?? {}) as Record<string, unknown>,
+        rating: r.rating ?? null,
+        rejectionReason: r.rejectionReason ?? null,
+      };
+    },
+    createAgent: async (data) => {
+      const rows = await db
+        .insert(schema.marketplaceAgents)
+        .values({
+          name: data.name,
+          version: data.version,
+          description: data.description,
+          author: data.author,
+          license: data.license,
+          manifest: data.manifest,
+          packageHash: data.packageHash,
+          publisherId: data.publisherId,
+          status: 'draft',
+        })
+        .returning();
+      const r = rows[0];
+      if (!r) throw new Error('Failed to create marketplace agent');
+      return {
+        ...r,
+        manifest: (r.manifest ?? {}) as Record<string, unknown>,
+        rating: r.rating ?? null,
+        rejectionReason: r.rejectionReason ?? null,
+      };
+    },
+    updateAgent: async (id, data) => {
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      if (data.description !== undefined) patch['description'] = data.description;
+      if (data.manifest !== undefined) patch['manifest'] = data.manifest;
+      if (data.packageHash !== undefined) patch['packageHash'] = data.packageHash;
+      const rows = await db
+        .update(schema.marketplaceAgents)
+        .set(patch)
+        .where(eq(schema.marketplaceAgents.id, id))
+        .returning();
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        manifest: (r.manifest ?? {}) as Record<string, unknown>,
+        rating: r.rating ?? null,
+        rejectionReason: r.rejectionReason ?? null,
+      };
+    },
+    incrementDownloads: async (id) => {
+      // Fetch current downloads, increment, and write back (atomic enough for analytics)
+      const rows = await db
+        .select({ downloads: schema.marketplaceAgents.downloads })
+        .from(schema.marketplaceAgents)
+        .where(eq(schema.marketplaceAgents.id, id))
+        .limit(1);
+      const current = rows[0]?.downloads ?? 0;
+      await db
+        .update(schema.marketplaceAgents)
+        .set({ downloads: current + 1 })
+        .where(eq(schema.marketplaceAgents.id, id));
+    },
+    createInstall: async ({ tenantId, agentId, version }) => {
+      const rows = await db
+        .insert(schema.marketplaceInstalls)
+        .values({ tenantId, agentId, version, status: 'active' })
+        .returning();
+      const r = rows[0];
+      if (!r) throw new Error('Failed to create install record');
+      return { ...r, installedAt: r.installedAt };
+    },
+    findInstall: async (tenantId, agentId) => {
+      const rows = await db
+        .select()
+        .from(schema.marketplaceInstalls)
+        .where(
+          and(
+            eq(schema.marketplaceInstalls.tenantId, tenantId),
+            eq(schema.marketplaceInstalls.agentId, agentId),
+            eq(schema.marketplaceInstalls.status, 'active'),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    removeInstall: async (tenantId, agentId) => {
+      const rows = await db
+        .update(schema.marketplaceInstalls)
+        .set({ status: 'uninstalled' })
+        .where(
+          and(
+            eq(schema.marketplaceInstalls.tenantId, tenantId),
+            eq(schema.marketplaceInstalls.agentId, agentId),
+          ),
+        )
+        .returning();
+      return rows.length > 0;
+    },
+    createReview: async ({ agentId, reviewerId, rating, comment }) => {
+      const rows = await db
+        .insert(schema.marketplaceReviews)
+        .values({ agentId, reviewerId, rating, comment })
+        .returning();
+      const r = rows[0];
+      if (!r) throw new Error('Failed to create review');
+      return { ...r, comment: r.comment ?? null };
+    },
+    findReviewByUser: async (agentId, reviewerId) => {
+      const rows = await db
+        .select()
+        .from(schema.marketplaceReviews)
+        .where(
+          and(
+            eq(schema.marketplaceReviews.agentId, agentId),
+            eq(schema.marketplaceReviews.reviewerId, reviewerId),
+          ),
+        )
+        .limit(1);
+      const r = rows[0];
+      if (!r) return null;
+      return { ...r, comment: r.comment ?? null };
+    },
+    listReviews: async (agentId) => {
+      const rows = await db
+        .select()
+        .from(schema.marketplaceReviews)
+        .where(eq(schema.marketplaceReviews.agentId, agentId))
+        .orderBy(asc(schema.marketplaceReviews.createdAt));
+      return rows.map((r) => ({ ...r, comment: r.comment ?? null }));
+    },
+  });
+  console.warn('[ORDR:API] Marketplace routes configured');
+
+  // ── 4.17. Customer routes (CRUD with PII encryption + Kafka events) ─────────
+  const customerEventProducer = new EventProducer(kafkaProducer);
+  const customerFieldEncryptor = new FieldEncryptor(fieldEncryptionKey);
+  configureCustomerRoutes({
+    fieldEncryptor: customerFieldEncryptor,
+    auditLogger,
+    eventProducer: customerEventProducer,
+    findCustomerById: async (tenantId, customerId) => {
+      const rows = await db
+        .select()
+        .from(schema.customers)
+        .where(and(eq(schema.customers.tenantId, tenantId), eq(schema.customers.id, customerId)))
+        .limit(1);
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        email: r.email ?? null,
+        phone: r.phone ?? null,
+        metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+        healthScore: r.healthScore ?? null,
+        lifecycleStage: r.lifecycleStage ?? null,
+        assignedUserId: r.assignedUserId ?? null,
+        externalId: r.externalId ?? null,
+      };
+    },
+    listCustomers: async (tenantId, filters) => {
+      const conditions: SQL[] = [eq(schema.customers.tenantId, tenantId)];
+      if (filters.status !== undefined) {
+        conditions.push(
+          eq(schema.customers.status, filters.status as 'active' | 'inactive' | 'churned'),
+        );
+      }
+      if (filters.type !== undefined) {
+        conditions.push(eq(schema.customers.type, filters.type as 'individual' | 'company'));
+      }
+      if (filters.lifecycleStage !== undefined) {
+        conditions.push(
+          eq(
+            schema.customers.lifecycleStage,
+            filters.lifecycleStage as
+              | 'lead'
+              | 'qualified'
+              | 'opportunity'
+              | 'customer'
+              | 'churning'
+              | 'churned',
+          ),
+        );
+      }
+      const whereClause = and(...conditions);
+      const offset = (filters.page - 1) * filters.pageSize;
+      const [rows, totalRows] = await Promise.all([
+        db
+          .select()
+          .from(schema.customers)
+          .where(whereClause)
+          .orderBy(asc(schema.customers.createdAt))
+          .limit(filters.pageSize)
+          .offset(offset),
+        db.select({ total: count() }).from(schema.customers).where(whereClause),
+      ]);
+      const data = rows.map((r) => ({
+        ...r,
+        email: r.email ?? null,
+        phone: r.phone ?? null,
+        metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+        healthScore: r.healthScore ?? null,
+        lifecycleStage: r.lifecycleStage ?? null,
+        assignedUserId: r.assignedUserId ?? null,
+        externalId: r.externalId ?? null,
+      }));
+      return { data, total: totalRows[0]?.total ?? 0 };
+    },
+    createCustomer: async (tenantId, data) => {
+      const rows = await db
+        .insert(schema.customers)
+        .values({
+          tenantId,
+          externalId: typeof data['externalId'] === 'string' ? data['externalId'] : null,
+          type: (data['type'] as 'individual' | 'company' | undefined) ?? 'individual',
+          name: typeof data['name'] === 'string' ? data['name'] : '',
+          email: typeof data['email'] === 'string' ? data['email'] : null,
+          phone: typeof data['phone'] === 'string' ? data['phone'] : null,
+          metadata: (data['metadata'] ?? {}) as Record<string, unknown>,
+          lifecycleStage:
+            typeof data['lifecycleStage'] === 'string'
+              ? (data['lifecycleStage'] as
+                  | 'lead'
+                  | 'qualified'
+                  | 'opportunity'
+                  | 'customer'
+                  | 'churning'
+                  | 'churned')
+              : 'lead',
+          assignedUserId:
+            typeof data['assignedUserId'] === 'string' ? data['assignedUserId'] : null,
+        })
+        .returning();
+      const r = rows[0];
+      if (!r) throw new Error('Failed to create customer');
+      return {
+        ...r,
+        email: r.email ?? null,
+        phone: r.phone ?? null,
+        metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+        healthScore: r.healthScore ?? null,
+        lifecycleStage: r.lifecycleStage ?? null,
+        assignedUserId: r.assignedUserId ?? null,
+        externalId: r.externalId ?? null,
+      };
+    },
+    updateCustomer: async (tenantId, customerId, data) => {
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      const fields = [
+        'name',
+        'email',
+        'phone',
+        'metadata',
+        'status',
+        'lifecycleStage',
+        'healthScore',
+        'assignedUserId',
+      ] as const;
+      for (const f of fields) {
+        if (data[f] !== undefined) patch[f] = data[f];
+      }
+      const rows = await db
+        .update(schema.customers)
+        .set(patch)
+        .where(and(eq(schema.customers.tenantId, tenantId), eq(schema.customers.id, customerId)))
+        .returning();
+      const r = rows[0];
+      if (!r) return null;
+      return {
+        ...r,
+        email: r.email ?? null,
+        phone: r.phone ?? null,
+        metadata: (r.metadata ?? null) as Record<string, unknown> | null,
+        healthScore: r.healthScore ?? null,
+        lifecycleStage: r.lifecycleStage ?? null,
+        assignedUserId: r.assignedUserId ?? null,
+        externalId: r.externalId ?? null,
+      };
+    },
+    softDeleteCustomer: async (tenantId, customerId) => {
+      const rows = await db
+        .update(schema.customers)
+        .set({ status: 'churned', updatedAt: new Date() })
+        .where(and(eq(schema.customers.tenantId, tenantId), eq(schema.customers.id, customerId)))
+        .returning();
+      return rows.length > 0;
+    },
+  });
+  console.warn('[ORDR:API] Customer routes configured');
+
+  // ── 4.18. Analytics routes (InMemory store — Drizzle projection upgrade pending) ─
+  const analyticsStore = new InMemoryAnalyticsStore();
+  const counterStore = new InMemoryCounterStore();
+  configureAnalyticsRoutes({
+    queries: new AnalyticsQueries(analyticsStore),
+    realTimeCounters: new RealTimeCounters(counterStore),
+  });
+  console.warn('[ORDR:API] Analytics routes configured');
+
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();
   // Rules are registered here at startup.
@@ -360,6 +735,188 @@ async function bootstrap(): Promise<void> {
     );
   } else {
     console.warn('[ORDR:API] LLM client skipped — ANTHROPIC_API_KEY not set (agents disabled)');
+  }
+
+  // ── 5.6. Agent routes (sessions, HITL queue, kill switch) ─────────────────
+  {
+    const hitlQueue = new HitlQueue();
+    const agentEngineDeps = {
+      llmComplete: async (
+        messages: Parameters<ConstructorParameters<typeof AgentEngine>[0]['llmComplete']>[0],
+        systemPrompt: string,
+        meta: { tenant_id: string; correlation_id: string; agent_id: string },
+      ) => {
+        if (llmClient === null) {
+          return {
+            success: false as const,
+            error: new Error('LLM client not configured') as never,
+          };
+        }
+        return llmClient.complete({
+          messages,
+          modelTier: 'standard',
+          maxTokens: 4096,
+          temperature: 0.1,
+          systemPrompt,
+          metadata: meta,
+        }) as Promise<never>;
+      },
+      complianceCheck: (
+        action: string,
+        context: Parameters<ConstructorParameters<typeof AgentEngine>[0]['complianceCheck']>[1],
+      ) => {
+        const result = complianceEngine.evaluate({ ...context, action });
+        return { allowed: result.allowed, violations: result.violations };
+      },
+      auditLog: async (
+        input: Parameters<ConstructorParameters<typeof AgentEngine>[0]['auditLog']>[0],
+      ) => {
+        await auditLogger.log({
+          tenantId: input.tenantId,
+          eventType: 'agent.action',
+          actorType: 'agent',
+          actorId: input.actorId,
+          resource: input.resource,
+          resourceId: input.resourceId,
+          action: input.action,
+          details: input.details,
+          timestamp: input.timestamp,
+        });
+      },
+      tools: new Map(),
+    };
+    const agentEngine = new AgentEngine(agentEngineDeps, hitlQueue);
+    const agentEventProducer = new EventProducer(kafkaProducer);
+    configureAgentRoutes({
+      auditLogger,
+      eventProducer: agentEventProducer,
+      agentEngine,
+      hitlQueue,
+      findSessionById: async (tenantId, sessionId) => {
+        const rows = await db
+          .select()
+          .from(schema.agentSessions)
+          .where(
+            and(
+              eq(schema.agentSessions.tenantId, tenantId),
+              eq(schema.agentSessions.id, sessionId),
+            ),
+          )
+          .limit(1);
+        const r = rows[0];
+        if (!r) return null;
+        return {
+          sessionId: r.id,
+          tenantId: r.tenantId,
+          customerId: r.customerId,
+          agentRole: r.agentRole,
+          autonomyLevel: r.autonomyLevel,
+          status: r.status,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        };
+      },
+      listSessions: async (tenantId, filters) => {
+        const conditions: ReturnType<typeof eq>[] = [eq(schema.agentSessions.tenantId, tenantId)];
+        if (filters.status !== undefined) {
+          conditions.push(
+            eq(
+              schema.agentSessions.status,
+              filters.status as 'active' | 'completed' | 'failed' | 'cancelled' | 'timeout',
+            ),
+          );
+        }
+        if (filters.agentRole !== undefined) {
+          conditions.push(eq(schema.agentSessions.agentRole, filters.agentRole));
+        }
+        const whereClause = and(...conditions);
+        const offset = (filters.page - 1) * filters.pageSize;
+        const [rows, totalRows] = await Promise.all([
+          db
+            .select()
+            .from(schema.agentSessions)
+            .where(whereClause)
+            .orderBy(asc(schema.agentSessions.startedAt))
+            .limit(filters.pageSize)
+            .offset(offset),
+          db.select({ total: count() }).from(schema.agentSessions).where(whereClause),
+        ]);
+        const data = rows.map((r) => ({
+          sessionId: r.id,
+          tenantId: r.tenantId,
+          customerId: r.customerId,
+          agentRole: r.agentRole,
+          autonomyLevel: r.autonomyLevel,
+          status: r.status,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        }));
+        return { data, total: totalRows[0]?.total ?? 0 };
+      },
+      createSession: async (session) => {
+        const rows = await db
+          .insert(schema.agentSessions)
+          .values({
+            tenantId: session.tenantId,
+            customerId: session.customerId,
+            agentRole: session.agentRole,
+            autonomyLevel: session.autonomyLevel as
+              | 'rule_based'
+              | 'router'
+              | 'supervised'
+              | 'autonomous'
+              | 'full_autonomy',
+            status: 'active',
+          })
+          .returning();
+        const r = rows[0];
+        if (!r) throw new Error('Failed to create agent session');
+        return {
+          sessionId: r.id,
+          tenantId: r.tenantId,
+          customerId: r.customerId,
+          agentRole: r.agentRole,
+          autonomyLevel: r.autonomyLevel,
+          status: r.status,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        };
+      },
+      updateSessionStatus: async (tenantId, sessionId, status) => {
+        const rows = await db
+          .update(schema.agentSessions)
+          .set({
+            status: status as 'active' | 'completed' | 'failed' | 'cancelled' | 'timeout',
+            updatedAt: new Date(),
+            ...(status === 'completed' ||
+            status === 'failed' ||
+            status === 'cancelled' ||
+            status === 'timeout'
+              ? { completedAt: new Date() }
+              : {}),
+          })
+          .where(
+            and(
+              eq(schema.agentSessions.tenantId, tenantId),
+              eq(schema.agentSessions.id, sessionId),
+            ),
+          )
+          .returning();
+        const r = rows[0];
+        if (!r) return null;
+        return {
+          sessionId: r.id,
+          tenantId: r.tenantId,
+          customerId: r.customerId,
+          agentRole: r.agentRole,
+          autonomyLevel: r.autonomyLevel,
+          status: r.status,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        };
+      },
+    });
+    console.warn('[ORDR:API] Agent routes configured');
   }
 
   // ── 6. JWT key pair ────────────────────────────────────────────────────

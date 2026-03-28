@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import { ssoRouter, configureSSORoutes } from '../routes/sso.js';
 import { configureAuth } from '../middleware/auth.js';
+import { configureBillingGate } from '../middleware/plan-gate.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
@@ -21,19 +22,22 @@ import {
 } from '@ordr/auth';
 import type { SSOManagerConfig, JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
-import { generateKeyPair } from '@ordr/crypto';
+import { generateKeyPair, FieldEncryptor } from '@ordr/crypto';
+import { SubscriptionManager, InMemorySubscriptionStore, MockStripeClient } from '@ordr/billing';
 
 // ─── Fixtures ─────────────────────────────────────────────────────
 
-const STATE_KEY = 'a'.repeat(32);
+const STATE_KEY = 'aa'.repeat(32); // 64 hex chars = 32 bytes for AES-256
 
 let jwtConfig: JwtConfig;
 
-async function makeJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'user-001',
     tid: overrides.tid ?? 'tenant-001',
@@ -53,7 +57,7 @@ function createTestApp(): Hono<Env> {
 // ─── Setup ────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -74,6 +78,29 @@ beforeEach(async () => {
 
   const manager = new SSOManager(ssoConfig, client, connectionStore, STATE_KEY);
   configureSSORoutes({ ssoManager: manager, auditLogger });
+
+  // Configure billing gate — connections routes use featureGate(FEATURES.SSO)
+  const subStore = new InMemorySubscriptionStore();
+  await subStore.saveSubscription({
+    id: 'sub-sso-test',
+    tenant_id: 'tenant-001',
+    stripe_subscription_id: 'stripe-sso-test',
+    plan_tier: 'professional',
+    status: 'active',
+    current_period_start: new Date('2026-01-01'),
+    current_period_end: new Date('2027-01-01'),
+    cancel_at_period_end: false,
+    created_at: new Date('2026-01-01'),
+    updated_at: new Date('2026-01-01'),
+  });
+  configureBillingGate(
+    new SubscriptionManager({
+      store: subStore,
+      stripe: new MockStripeClient(),
+      auditLogger: new AuditLogger(new InMemoryAuditStore()),
+      fieldEncryptor: new FieldEncryptor(Buffer.from('test-key-32-bytes-for-unit-tests!')),
+    }),
+  );
 
   // Create a test connection
   await manager.createSSOConnection('tenant-001', {

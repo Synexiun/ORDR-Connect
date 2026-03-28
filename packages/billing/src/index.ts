@@ -34,6 +34,7 @@ export { PLAN_TIER_RANK } from './types.js';
 // ─── Plans ────────────────────────────────────────────────────────
 export {
   PLANS,
+  FEATURES,
   getAllPlans,
   getPlanByTier,
   hasFeature,
@@ -76,6 +77,7 @@ export {
   configurePlanGate,
   clearSubscriptionCache,
 } from './plan-gate.js';
+export type { BillingEnv } from './plan-gate.js';
 
 // ─── In-Memory Stores (dev / testing) ────────────────────────────
 export { InMemorySubscriptionStore, InMemoryUsageStore } from './in-memory-store.js';

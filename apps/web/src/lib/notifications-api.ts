@@ -67,28 +67,25 @@ export function listNotifications(
   if (params?.limit !== undefined) query.set('limit', String(params.limit));
 
   const qs = query.toString();
-  return apiClient.get<NotificationListResponse['data']>(
+  return apiClient.get<NotificationListResponse>(
     `/v1/notifications${qs.length > 0 ? `?${qs}` : ''}`,
-  ) as Promise<NotificationListResponse>;
+  );
 }
 
 export function markNotificationRead(id: string): Promise<NotificationResponse> {
-  return apiClient.patch<NotificationResponse['data']>(
+  return apiClient.patch<NotificationResponse>(
     `/v1/notifications/${encodeURIComponent(id)}/read`,
     {},
-  ) as Promise<NotificationResponse>;
+  );
 }
 
 export function dismissNotification(id: string): Promise<NotificationResponse> {
-  return apiClient.patch<NotificationResponse['data']>(
+  return apiClient.patch<NotificationResponse>(
     `/v1/notifications/${encodeURIComponent(id)}/dismiss`,
     {},
-  ) as Promise<NotificationResponse>;
+  );
 }
 
 export function markAllNotificationsRead(): Promise<MarkReadAllResponse> {
-  return apiClient.post<MarkReadAllResponse['data']>(
-    '/v1/notifications/mark-read-all',
-    {},
-  ) as Promise<MarkReadAllResponse>;
+  return apiClient.post<MarkReadAllResponse>('/v1/notifications/mark-read-all', {});
 }

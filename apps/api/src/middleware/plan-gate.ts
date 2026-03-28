@@ -27,9 +27,10 @@ import {
   SubscriptionNotFoundError,
 } from '@ordr/billing';
 export { FEATURES } from '@ordr/billing';
-import type { SubscriptionManager } from '@ordr/billing';
+import type { BillingEnv, SubscriptionManager } from '@ordr/billing';
 import type { PlanTier, UsageResource } from '@ordr/billing';
 import { createMiddleware } from 'hono/factory';
+import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../types.js';
 
 // ─── Module-level state ──────────────────────────────────────────
@@ -60,7 +61,7 @@ function getManager(): SubscriptionManager {
  * Returns 403 if the tenant's plan does not include the feature,
  * or if no active subscription is found.
  */
-export function featureGate(feature: string) {
+export function featureGate(feature: string): MiddlewareHandler<BillingEnv> {
   return requireFeature(feature, (tenantId) => getManager().getSubscription(tenantId));
 }
 
@@ -68,7 +69,7 @@ export function featureGate(feature: string) {
  * Gate a route on a minimum plan tier.
  * Returns 403 if the tenant's plan is below the required tier.
  */
-export function planGate(minimumTier: PlanTier) {
+export function planGate(minimumTier: PlanTier): MiddlewareHandler<BillingEnv> {
   return requirePlan(minimumTier, (tenantId) => getManager().getSubscription(tenantId));
 }
 

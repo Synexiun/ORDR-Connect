@@ -1,7 +1,5 @@
 /* eslint-disable
-   @typescript-eslint/no-unsafe-assignment,
-   @typescript-eslint/no-unsafe-argument,
-   @typescript-eslint/no-unsafe-member-access
+   @typescript-eslint/no-unsafe-assignment
    --
    NOTE: These rules are disabled because @ordr/ai has not been compiled to dist/ yet,
    so TypeScript's project service cannot resolve its types. Re-enable once packages
@@ -198,7 +196,8 @@ Provide an operational insight and recommended action.`;
         recommendedAction: typed.recommendedAction.slice(0, 200),
         confidence: Math.max(0, Math.min(1, typed.confidence)),
         modelUsed: 'claude-sonnet-4-6',
-        costCents: result.data.usage.total > 0 ? Math.ceil(result.data.usage.total * 0.018) : 1,
+        costCents:
+          result.data.tokenUsage.total > 0 ? Math.ceil(result.data.tokenUsage.total * 0.018) : 1,
       },
     });
   } catch {

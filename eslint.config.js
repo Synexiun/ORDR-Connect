@@ -76,6 +76,10 @@ export default tseslint.config(
       'eslint.config.js',
       '**/*.config.ts',
       '**/*.config.js',
+      // Package test files are excluded from package tsconfigs and can't be
+      // linted with typed rules without per-package tsconfig.test.json.
+      // App test files are handled by the project service (nearest tsconfig).
+      'packages/*/src/__tests__/**',
     ],
   },
 );

@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  SSOManager,
-  InMemorySSOClient,
-  InMemorySSOConnectionStore,
-} from '../sso.js';
+import { SSOManager, InMemorySSOClient, InMemorySSOConnectionStore } from '../sso.js';
 import type { SSOManagerConfig, SSOConnection } from '../sso.js';
 
 // ─── Test Helpers ──────────────────────────────────────────────────
@@ -14,17 +10,12 @@ const TEST_CONFIG: SSOManagerConfig = {
   redirectUri: 'https://app.test.com/sso/callback',
 };
 
-const STATE_ENCRYPTION_KEY = 'a'.repeat(32); // 32-byte key for testing
+const STATE_ENCRYPTION_KEY = 'aa'.repeat(32); // 64 hex chars = 32 bytes for AES-256
 
 function createTestSetup() {
   const client = new InMemorySSOClient();
   const connectionStore = new InMemorySSOConnectionStore();
-  const manager = new SSOManager(
-    TEST_CONFIG,
-    client,
-    connectionStore,
-    STATE_ENCRYPTION_KEY,
-  );
+  const manager = new SSOManager(TEST_CONFIG, client, connectionStore, STATE_ENCRYPTION_KEY);
 
   return { client, connectionStore, manager };
 }
@@ -60,11 +51,7 @@ describe('SSOManager.getAuthorizationUrl', () => {
   it('generates an authorization URL for a valid connection', async () => {
     await createActiveConnection(setup.connectionStore, 'tenant-001');
 
-    const result = await setup.manager.getAuthorizationUrl(
-      'tenant-001',
-      'conn-001',
-      'csrf-state',
-    );
+    const result = await setup.manager.getAuthorizationUrl('tenant-001', 'conn-001', 'csrf-state');
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -90,11 +77,7 @@ describe('SSOManager.getAuthorizationUrl', () => {
   });
 
   it('returns 404 for non-existent connection', async () => {
-    const result = await setup.manager.getAuthorizationUrl(
-      'tenant-001',
-      'no-such-conn',
-      'state',
-    );
+    const result = await setup.manager.getAuthorizationUrl('tenant-001', 'no-such-conn', 'state');
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.statusCode).toBe(404);
@@ -114,11 +97,7 @@ describe('SSOManager.getAuthorizationUrl', () => {
     };
     await setup.connectionStore.create(connection);
 
-    const result = await setup.manager.getAuthorizationUrl(
-      'tenant-001',
-      'conn-inactive',
-      'state',
-    );
+    const result = await setup.manager.getAuthorizationUrl('tenant-001', 'conn-inactive', 'state');
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.statusCode).toBe(400);
@@ -285,10 +264,7 @@ describe('SSOManager connection management', () => {
     expect(created.success).toBe(true);
 
     if (!created.success) return;
-    const deleteResult = await setup.manager.deleteSSOConnection(
-      'tenant-001',
-      created.data.id,
-    );
+    const deleteResult = await setup.manager.deleteSSOConnection('tenant-001', created.data.id);
     expect(deleteResult.success).toBe(true);
 
     const listResult = await setup.manager.getSSOConnections('tenant-001');
@@ -385,11 +361,7 @@ describe('SSO profile normalization', () => {
       rawAttributes: { custom: 'value' },
     });
 
-    const urlResult = await setup.manager.getAuthorizationUrl(
-      'tenant-001',
-      'conn-001',
-      'state',
-    );
+    const urlResult = await setup.manager.getAuthorizationUrl('tenant-001', 'conn-001', 'state');
     expect(urlResult.success).toBe(true);
 
     if (!urlResult.success) return;

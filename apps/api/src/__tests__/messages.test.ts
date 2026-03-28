@@ -15,8 +15,12 @@ import type { Env } from '../types.js';
 import { requestId } from '../middleware/request-id.js';
 import { messagesRouter, configureMessageRoutes } from '../routes/messages.js';
 import { configureAuth } from '../middleware/auth.js';
+import { configureBillingGate } from '../middleware/plan-gate.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import { ComplianceViolationError } from '@ordr/core';
+import { SubscriptionManager, InMemorySubscriptionStore, MockStripeClient } from '@ordr/billing';
+import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
+import { FieldEncryptor } from '@ordr/crypto';
 
 // Mock @ordr/auth so requireAuth() succeeds with our test context
 vi.mock('@ordr/auth', () => ({
@@ -131,19 +135,52 @@ describe('Message Routes', () => {
       } as never,
       consentStore: {} as never,
       complianceGate: {
-        check: vi.fn().mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
+        check: vi
+          .fn()
+          .mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
       } as never,
       smsProvider: {
-        send: vi.fn().mockResolvedValue({ success: true, data: { messageId: 'sms-1', status: 'sent' } }),
+        send: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: { messageId: 'sms-1', status: 'sent' } }),
       } as never,
       emailProvider: {
-        send: vi.fn().mockResolvedValue({ success: true, data: { messageId: 'email-1', status: 'queued' } }),
+        send: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: { messageId: 'email-1', status: 'queued' } }),
       } as never,
       findMessageById: vi.fn().mockResolvedValue(mockMessage),
       listMessages: vi.fn().mockResolvedValue({ data: [mockMessage], total: 1 }),
       createMessage: vi.fn().mockResolvedValue(mockMessage),
-      getCustomerContact: vi.fn().mockResolvedValue({ contact: '+14155551234', contentBody: 'Hello World' }),
+      getCustomerContact: vi
+        .fn()
+        .mockResolvedValue({ contact: '+14155551234', contentBody: 'Hello World' }),
     });
+
+    // Configure billing gate — messages router uses quotaGate('messages') on POST /send
+    const subStore = new InMemorySubscriptionStore();
+    void subStore.saveSubscription({
+      id: 'sub-test-001',
+      tenant_id: 'tenant-1',
+      plan_tier: 'professional',
+      status: 'active',
+      stripe_subscription_id: 'sub_test',
+      current_period_start: new Date(),
+      current_period_end: new Date(Date.now() + 30 * 86_400_000),
+      cancel_at_period_end: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+    const billingAudit = new AuditLogger(new InMemoryAuditStore());
+    const fieldEncryptor = new FieldEncryptor(Buffer.from('test-key-32-bytes-for-unit-tests!'));
+    configureBillingGate(
+      new SubscriptionManager({
+        store: subStore,
+        stripe: new MockStripeClient(),
+        auditLogger: billingAudit,
+        fieldEncryptor,
+      }),
+    );
   });
 
   // ---- GET / ------------------------------------------------------------------
@@ -154,7 +191,11 @@ describe('Message Routes', () => {
       const res = await app.request('/api/v1/messages');
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { success: boolean; data: Record<string, unknown>[]; pagination: { total: number } };
+      const body = (await res.json()) as {
+        success: boolean;
+        data: Record<string, unknown>[];
+        pagination: { total: number };
+      };
       expect(body.success).toBe(true);
       expect(body.data.length).toBe(1);
       expect(body.pagination.total).toBe(1);
@@ -164,7 +205,7 @@ describe('Message Routes', () => {
       const app = createTestApp();
       const res = await app.request('/api/v1/messages');
 
-      const body = await res.json() as { data: Record<string, unknown>[] };
+      const body = (await res.json()) as { data: Record<string, unknown>[] };
       for (const msg of body.data) {
         expect(msg).not.toHaveProperty('content');
         expect(msg).not.toHaveProperty('body');
@@ -175,7 +216,9 @@ describe('Message Routes', () => {
 
     it('supports customerId filter', async () => {
       const app = createTestApp();
-      const res = await app.request('/api/v1/messages?customerId=00000000-0000-0000-0000-000000000001');
+      const res = await app.request(
+        '/api/v1/messages?customerId=00000000-0000-0000-0000-000000000001',
+      );
 
       expect(res.status).toBe(200);
     });
@@ -196,7 +239,7 @@ describe('Message Routes', () => {
       const res = await app.request('/api/v1/messages/msg-1');
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { success: boolean; data: Record<string, unknown> };
+      const body = (await res.json()) as { success: boolean; data: Record<string, unknown> };
       expect(body.success).toBe(true);
       expect(body.data.id).toBe('msg-1');
     });
@@ -205,7 +248,7 @@ describe('Message Routes', () => {
       const app = createTestApp();
       const res = await app.request('/api/v1/messages/msg-1');
 
-      const body = await res.json() as { data: Record<string, unknown> };
+      const body = (await res.json()) as { data: Record<string, unknown> };
       expect(body.data).not.toHaveProperty('content');
       expect(body.data).not.toHaveProperty('contentRef');
     });

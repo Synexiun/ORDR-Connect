@@ -436,6 +436,7 @@ describe('Agent Event Handlers', () => {
       graphEnricher: mockGraph as never,
       eventProducer: mockProducer as never,
       auditLogger: mockAudit as never,
+      notificationWriter: { insert: vi.fn().mockResolvedValue(undefined) } as never,
     });
 
     const event = makeEvent('agent.triggered', 'tenant-1', {
@@ -484,12 +485,10 @@ describe('Agent Event Handlers', () => {
 
 describe('Outbound Message Handlers', () => {
   it('processes outbound message through consent → compliance → send pipeline', async () => {
-    const mockSend = vi
-      .fn()
-      .mockResolvedValue({
-        success: true,
-        data: { messageId: 'sms-1', providerMessageId: 'provider-1', status: 'sent' },
-      });
+    const mockSend = vi.fn().mockResolvedValue({
+      success: true,
+      data: { messageId: 'sms-1', providerMessageId: 'provider-1', status: 'sent' },
+    });
     const mockAudit = createMockAuditLogger();
     const mockProducer = createMockEventProducer();
 
@@ -545,6 +544,7 @@ describe('Outbound Message Handlers', () => {
       stateMachine: {} as never,
       getCustomerContact: vi.fn(),
       updateMessageStatus: mockUpdateStatus,
+      notificationWriter: { insert: vi.fn().mockResolvedValue(undefined) } as never,
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
@@ -586,6 +586,7 @@ describe('Outbound Message Handlers', () => {
       stateMachine: {} as never,
       getCustomerContact: vi.fn(),
       updateMessageStatus: mockUpdateStatus,
+      notificationWriter: { insert: vi.fn().mockResolvedValue(undefined) } as never,
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
@@ -652,12 +653,10 @@ describe('Outbound Message Handlers', () => {
           .mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
       } as never,
       smsProvider: {
-        send: vi
-          .fn()
-          .mockResolvedValue({
-            success: true,
-            data: { messageId: 'sms-x', providerMessageId: 'p-1', status: 'sent' },
-          }),
+        send: vi.fn().mockResolvedValue({
+          success: true,
+          data: { messageId: 'sms-x', providerMessageId: 'p-1', status: 'sent' },
+        }),
       } as never,
       emailProvider: { send: vi.fn() } as never,
       eventProducer: mockProducer as never,
