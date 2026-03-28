@@ -44,9 +44,18 @@ import {
   RealStripeClient,
 } from '@ordr/billing';
 import { FieldEncryptor } from '@ordr/crypto';
-import { loadKeyPair } from '@ordr/auth';
+import {
+  loadKeyPair,
+  OrganizationManager,
+  InMemoryOrgStore,
+  InMemorySSOClient,
+  InMemorySSOConnectionStore,
+  SSOManager,
+} from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
-import { ComplianceEngine } from '@ordr/compliance';
+import { ComplianceEngine, ComplianceGate } from '@ordr/compliance';
+import { ConsentManager, SmsProvider, EmailProvider } from '@ordr/channels';
+import type { ConsentStore, TwilioClient, SendGridClient } from '@ordr/channels';
 import { LLMClient } from '@ordr/ai';
 import {
   AnalyticsQueries,
@@ -81,6 +90,9 @@ import { configureAnalyticsRoutes } from './routes/analytics.js';
 import { configureCustomerRoutes } from './routes/customers.js';
 import { configureAgentRoutes } from './routes/agents.js';
 import { configureMarketplaceRoutes } from './routes/marketplace.js';
+import { configureOrgRoutes } from './routes/organizations.js';
+import { configureSSORoutes } from './routes/sso.js';
+import { configureMessageRoutes } from './routes/messages.js';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -1189,6 +1201,150 @@ async function bootstrap(): Promise<void> {
     });
 
     console.warn('[ORDR:API] Branding routes configured');
+  }
+
+  // ── 8.1 Organizations ──────────────────────────────────────────────────
+  configureOrgRoutes({
+    orgManager: new OrganizationManager(new InMemoryOrgStore()),
+    auditLogger,
+  });
+  console.warn('[ORDR:API] Organization routes configured');
+
+  // ── 8.2 SSO ────────────────────────────────────────────────────────────
+  {
+    const ssoStateKey =
+      process.env['WORKOS_SSO_STATE_KEY'] ?? fieldEncryptionKey.toString('hex').slice(0, 32);
+    configureSSORoutes({
+      ssoManager: new SSOManager(
+        {
+          apiKey: process.env['WORKOS_API_KEY'] ?? '',
+          clientId: process.env['WORKOS_CLIENT_ID'] ?? '',
+          redirectUri: `${process.env['API_BASE_URL'] ?? 'http://localhost:3000'}/api/v1/sso/callback`,
+        },
+        new InMemorySSOClient(),
+        new InMemorySSOConnectionStore(),
+        ssoStateKey,
+      ),
+      auditLogger,
+    });
+    console.warn('[ORDR:API] SSO routes configured');
+  }
+
+  // ── 8.3 Messages ───────────────────────────────────────────────────────
+  {
+    const db = createDrizzle(dbConnection, schema);
+
+    // Stub TwilioClient — used when TWILIO_ACCOUNT_SID is not set
+    const stubTwilioClient: TwilioClient = {
+      messages: {
+        create: async () => ({
+          sid: 'stub-sid',
+          status: 'sent',
+          errorCode: null,
+          errorMessage: null,
+        }),
+      },
+    };
+
+    // Stub SendGridClient — used when SENDGRID_API_KEY is not set
+    const stubSendGridClient: SendGridClient = {
+      send: async () => ({ statusCode: 202, headers: {} }),
+    };
+
+    const inMemoryConsentStore: ConsentStore = {
+      getConsent: async () => undefined,
+      saveConsent: async () => {
+        /* no-op */
+      },
+      revokeConsent: async () => {
+        /* no-op */
+      },
+    };
+
+    configureMessageRoutes({
+      auditLogger,
+      eventProducer: new EventProducer(kafkaProducer),
+      consentManager: new ConsentManager(),
+      consentStore: inMemoryConsentStore,
+      complianceGate: new ComplianceGate(complianceEngine),
+      smsProvider: new SmsProvider({
+        client: stubTwilioClient,
+        fromNumber: process.env['TWILIO_FROM_NUMBER'] ?? '+15550000000',
+        authToken: process.env['TWILIO_AUTH_TOKEN'] ?? '',
+      }),
+      emailProvider: new EmailProvider({
+        client: stubSendGridClient,
+        fromEmail: process.env['SENDGRID_FROM_EMAIL'] ?? 'noreply@ordr.dev',
+        fromName: process.env['SENDGRID_FROM_NAME'] ?? 'ORDR Connect',
+      }),
+
+      findMessageById: async (tenantId, messageId) => {
+        const rows = await db
+          .select()
+          .from(schema.messages)
+          .where(and(eq(schema.messages.tenantId, tenantId), eq(schema.messages.id, messageId)))
+          .limit(1);
+        return rows[0] ?? null;
+      },
+
+      listMessages: async (tenantId, filters) => {
+        const conditions: SQL[] = [eq(schema.messages.tenantId, tenantId)];
+        if (filters.customerId !== undefined)
+          conditions.push(eq(schema.messages.customerId, filters.customerId));
+        if (filters.channel !== undefined)
+          conditions.push(eq(schema.messages.channel, filters.channel as never));
+        if (filters.status !== undefined)
+          conditions.push(eq(schema.messages.status, filters.status as never));
+        if (filters.direction !== undefined)
+          conditions.push(eq(schema.messages.direction, filters.direction as never));
+
+        const offset = (filters.page - 1) * filters.pageSize;
+        const [rows, [countRow]] = await Promise.all([
+          db
+            .select()
+            .from(schema.messages)
+            .where(and(...conditions))
+            .limit(filters.pageSize)
+            .offset(offset)
+            .orderBy(asc(schema.messages.createdAt)),
+          db
+            .select({ total: count() })
+            .from(schema.messages)
+            .where(and(...conditions)),
+        ]);
+        return { data: rows, total: countRow?.total ?? 0 };
+      },
+
+      createMessage: async (data) => {
+        const inserted = await db
+          .insert(schema.messages)
+          .values({
+            id: data.id,
+            tenantId: data.tenantId,
+            customerId: data.customerId,
+            channel: data.channel as never,
+            direction: data.direction as never,
+            status: data.status as never,
+            contentRef: data.contentRef,
+          })
+          .returning();
+        return inserted[0]!;
+      },
+
+      getCustomerContact: async (tenantId, customerId, channel) => {
+        const rows = await db
+          .select({ email: schema.customers.email, phone: schema.customers.phone })
+          .from(schema.customers)
+          .where(and(eq(schema.customers.tenantId, tenantId), eq(schema.customers.id, customerId)))
+          .limit(1);
+        if (!rows[0]) return null;
+        const contact = channel === 'email' ? rows[0].email : rows[0].phone;
+        if (!contact) return null;
+        const decrypted = new FieldEncryptor(fieldEncryptionKey).decryptField(channel, contact);
+        return { contact: decrypted, contentBody: '' };
+      },
+    });
+    console.warn('[ORDR:API] Message routes configured');
   }
 
   // ── 9. Create and start Hono app ───────────────────────────────────────
