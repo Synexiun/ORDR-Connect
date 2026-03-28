@@ -35,6 +35,9 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  GitBranch,
+  Link2,
+  Clock,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -77,6 +80,14 @@ const navSections: NavSection[] = [
   {
     label: 'COMPLIANCE',
     items: [{ to: '/compliance', label: 'Compliance', icon: ShieldCheck }],
+  },
+  {
+    label: 'AUTOMATION',
+    items: [
+      { to: '/workflows', label: 'Workflows', icon: GitBranch },
+      { to: '/integrations', label: 'Integrations', icon: Link2 },
+      { to: '/scheduler', label: 'Scheduler', icon: Clock },
+    ],
   },
   {
     label: 'PLATFORM',

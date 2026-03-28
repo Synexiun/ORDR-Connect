@@ -69,6 +69,13 @@ const SampleDashboard = lazy(() =>
   import('./pages/SampleDashboard').then((m) => ({ default: m.SampleDashboard })),
 );
 const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
+const Workflows = lazy(() => import('./pages/Workflows').then((m) => ({ default: m.Workflows })));
+const Integrations = lazy(() =>
+  import('./pages/Integrations').then((m) => ({ default: m.Integrations })),
+);
+const SchedulerMonitor = lazy(() =>
+  import('./pages/SchedulerMonitor').then((m) => ({ default: m.SchedulerMonitor })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -167,6 +174,9 @@ export function App(): ReactNode {
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/audit-log" element={<AuditLog />} />
+                <Route path="/workflows" element={<Workflows />} />
+                <Route path="/integrations" element={<Integrations />} />
+                <Route path="/scheduler" element={<SchedulerMonitor />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

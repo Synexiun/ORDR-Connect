@@ -9,7 +9,12 @@ import { ActivityFeed } from '../components/activity-feed/ActivityFeed';
 import { SparkLine } from '../components/charts/SparkLine';
 import { DonutChart } from '../components/charts/DonutChart';
 import { AreaChart } from '../components/charts/AreaChart';
-import { fetchDashboardSummary, fetchRealTimeCounters } from '../lib/analytics-api';
+import {
+  fetchDashboardSummary,
+  fetchRealTimeCounters,
+  fetchChannelMetrics,
+  fetchTrend,
+} from '../lib/analytics-api';
 import { useInterval } from '../hooks/useInterval';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import {
@@ -44,6 +49,12 @@ interface AgentPerformance {
 interface MiniTrendPoint {
   date: string;
   value: number;
+}
+
+interface DonutSegment {
+  label: string;
+  value: number;
+  color: string;
 }
 
 // --- Helpers ---
@@ -94,8 +105,21 @@ const agentSparkData = [9, 10, 11, 10, 12, 11, 12];
 const complianceSparkData = [91, 93, 94, 93, 95, 95, 96];
 const revenueSparkData = [980, 1020, 1080, 1120, 1190, 1240, 1284];
 
-// Channel distribution mock data for DonutChart
-const mockChannelDistribution = [
+// Channel color map (stable assignment by channel name)
+const CHANNEL_COLORS: Record<string, string> = {
+  email: '#3b82f6',
+  sms: '#10b981',
+  voice: '#f59e0b',
+  chat: '#8b5cf6',
+  whatsapp: '#06b6d4',
+  webhook: '#ec4899',
+};
+function channelColor(ch: string): string {
+  return CHANNEL_COLORS[ch.toLowerCase()] ?? '#6b7280';
+}
+
+// Fallback mock data — used when APIs are unavailable
+const mockChannelDistribution: DonutSegment[] = [
   { label: 'Email', value: 4280, color: '#3b82f6' },
   { label: 'SMS', value: 2150, color: '#10b981' },
   { label: 'Voice', value: 1340, color: '#f59e0b' },
@@ -103,13 +127,13 @@ const mockChannelDistribution = [
   { label: 'Webhook', value: 520, color: '#06b6d4' },
 ];
 
-// Revenue trend mock data for AreaChart (30 days)
+// Revenue trend fallback (30 days)
 const mockRevenueTrend = Array.from({ length: 30 }, (_, i) => ({
   x: new Date(Date.now() - (29 - i) * 86400000).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   }),
-  y: Math.round(32000 + Math.sin(i * 0.3) * 8000 + i * 400 + Math.random() * 2000),
+  y: Math.round(32000 + Math.sin(i * 0.3) * 8000 + i * 400),
 }));
 
 // System health statuses
@@ -129,12 +153,15 @@ export function Dashboard(): ReactNode {
   const [agentPerf, setAgentPerf] = useState<AgentPerformance | null>(null);
   const [deliveryTrend, setDeliveryTrend] = useState<MiniTrendPoint[]>([]);
   const [agentSparkline, setAgentSparkline] = useState<MiniTrendPoint[]>([]);
+  const [channelDistribution, setChannelDistribution] = useState(mockChannelDistribution);
+  const [revenueTrend, setRevenueTrend] = useState(mockRevenueTrend);
   const [hitlPending, setHitlPending] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
+      // Core KPIs — if this fails, full fallback to mock
       const summary = await fetchDashboardSummary();
       setKpis({
         totalCustomers: summary.totalCustomers,
@@ -144,8 +171,45 @@ export function Dashboard(): ReactNode {
       });
       setAgentPerf({ ...mockAgentPerf, activeNow: summary.activeAgents });
       setHitlPending(summary.hitlPending);
-      setDeliveryTrend(mockDeliveryTrend);
-      setAgentSparkline(mockAgentSparkline);
+
+      // Chart data — each fetched independently with per-source fallback
+      const [channelRes, revenueTrendRes, deliveryRes, agentTrendRes] = await Promise.allSettled([
+        fetchChannelMetrics('7d'),
+        fetchTrend('revenue', '30d'),
+        fetchTrend('delivery', '7d'),
+        fetchTrend('agent_performance', '7d'),
+      ]);
+
+      if (channelRes.status === 'fulfilled' && channelRes.value.channels.length > 0) {
+        setChannelDistribution(
+          channelRes.value.channels.map((ch) => ({
+            label: ch.channel.charAt(0).toUpperCase() + ch.channel.slice(1),
+            value: ch.volume,
+            color: channelColor(ch.channel),
+          })),
+        );
+      }
+
+      if (revenueTrendRes.status === 'fulfilled' && revenueTrendRes.value.data.length > 0) {
+        setRevenueTrend(
+          revenueTrendRes.value.data.map((pt) => ({
+            x: new Date(pt.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            y: pt.value,
+          })),
+        );
+      }
+
+      const deliveryPoints =
+        deliveryRes.status === 'fulfilled' && deliveryRes.value.data.length > 0
+          ? deliveryRes.value.data
+          : mockDeliveryTrend;
+      setDeliveryTrend(deliveryPoints);
+
+      const agentPoints =
+        agentTrendRes.status === 'fulfilled' && agentTrendRes.value.data.length > 0
+          ? agentTrendRes.value.data
+          : mockAgentSparkline;
+      setAgentSparkline(agentPoints);
     } catch {
       setKpis(mockKpis);
       setAgentPerf(mockAgentPerf);
@@ -459,7 +523,7 @@ export function Dashboard(): ReactNode {
             }
           >
             <AreaChart
-              series={mockRevenueTrend}
+              series={revenueTrend}
               height={220}
               color="#3b82f6"
               showGrid
@@ -481,13 +545,11 @@ export function Dashboard(): ReactNode {
         >
           <div className="flex items-center justify-center py-2">
             <DonutChart
-              segments={mockChannelDistribution}
+              segments={channelDistribution}
               size={160}
               thickness={20}
               showLabels
-              centerLabel={formatNumber(
-                mockChannelDistribution.reduce((sum, s) => sum + s.value, 0),
-              )}
+              centerLabel={formatNumber(channelDistribution.reduce((sum, s) => sum + s.value, 0))}
             />
           </div>
         </Card>

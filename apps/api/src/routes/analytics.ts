@@ -18,6 +18,9 @@ import { METRIC_NAMES, GRANULARITIES } from '@ordr/analytics';
 import type { MetricName } from '@ordr/analytics';
 import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
+import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import type { OrdrDatabase } from '@ordr/db';
+import { paymentRecords } from '@ordr/db';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
@@ -40,6 +43,7 @@ const trendParamSchema = z.object({
     'customer_engagement',
     'response-rate',
     'response-time',
+    'revenue',
   ] as const),
 });
 
@@ -69,6 +73,8 @@ const realTimeQuerySchema = z.object({
 interface AnalyticsDependencies {
   readonly queries: AnalyticsQueries;
   readonly realTimeCounters: RealTimeCounters;
+  /** Optional — used only for revenue trend (queries payment_records directly) */
+  readonly db?: OrdrDatabase;
 }
 
 let deps: AnalyticsDependencies | null = null;
@@ -110,7 +116,6 @@ const analyticsRouter = new Hono<Env>();
 // All routes require authentication + analytics:read permission + analytics plan feature
 analyticsRouter.use('*', requireAuth());
 analyticsRouter.use('*', requirePermissionMiddleware('analytics', 'read'));
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
 analyticsRouter.use('*', featureGate(FEATURES.ANALYTICS));
 
 // ─── GET /dashboard — Dashboard summary ──────────────────────────
@@ -287,6 +292,59 @@ analyticsRouter.get('/trends/:metric', async (c): Promise<Response> => {
 
     granularity: queryParsed.data.granularity,
   };
+
+  // ── Revenue trend — queries payment_records directly (PostgreSQL) ──────────
+  // Bypasses the ClickHouse analytics store; computes SUM(amount_cents) per day.
+  // SOC2 CC6.1: tenant_id scoped; only 'completed' payments included.
+  if (paramParsed.data.metric === 'revenue') {
+    if (deps.db === undefined) {
+      // DB not injected (test env) — return empty series
+      return c.json({
+        success: true as const,
+        data: [],
+        metric: 'revenue',
+        timeRange: {
+          from: timeRange.from.toISOString(),
+          to: timeRange.to.toISOString(),
+          granularity: timeRange.granularity,
+        },
+      });
+    }
+
+    const rows = await deps.db
+      .select({
+        date: sql<string>`date_trunc('day', ${paymentRecords.createdAt})::date::text`,
+        totalCents: sql<string>`COALESCE(SUM(${paymentRecords.amountCents}), 0)`,
+      })
+      .from(paymentRecords)
+      .where(
+        and(
+          eq(paymentRecords.tenantId, ctx.tenantId),
+          gte(paymentRecords.createdAt, timeRange.from),
+          lte(paymentRecords.createdAt, timeRange.to),
+          eq(paymentRecords.status, 'completed'),
+        ),
+      )
+      .groupBy(sql`date_trunc('day', ${paymentRecords.createdAt})`)
+      .orderBy(sql`date_trunc('day', ${paymentRecords.createdAt})`);
+
+    const trendPoints = rows.map((r) => ({
+      date: r.date,
+      // Convert cents → dollars; keep as integer for charting
+      value: Math.round(parseInt(r.totalCents, 10) / 100),
+    }));
+
+    return c.json({
+      success: true as const,
+      data: trendPoints,
+      metric: 'revenue',
+      timeRange: {
+        from: timeRange.from.toISOString(),
+        to: timeRange.to.toISOString(),
+        granularity: timeRange.granularity,
+      },
+    });
+  }
 
   let result;
   switch (paramParsed.data.metric) {

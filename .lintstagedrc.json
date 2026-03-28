@@ -1,4 +1,5 @@
 {
+  "*": ["gitleaks protect --staged --redact --no-banner"],
   "*.{ts,tsx}": ["eslint --fix --max-warnings=0 --no-warn-ignored", "prettier --write"],
   "*.{js,jsx,mjs,cjs}": ["eslint --fix --max-warnings=0 --no-warn-ignored", "prettier --write"],
   "*.{json,yaml,yml}": ["prettier --write"]

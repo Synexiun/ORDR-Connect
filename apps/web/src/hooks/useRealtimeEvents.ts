@@ -1,7 +1,7 @@
 /**
  * useRealtimeEvents — Server-Sent Events hook for real-time ORDR-Connect updates.
  *
- * Connects to the SSE stream at /v1/events/stream, routes typed events to registered
+ * Connects to the SSE stream at /v1/realtime/stream, routes typed events to registered
  * handlers, and auto-reconnects on disconnect.
  *
  * SECURITY (CLAUDE.md Rules 2, 3, 5):
@@ -52,7 +52,7 @@ export function useRealtimeEvents(
   options: UseRealtimeEventsOptions = {},
 ): void {
   const {
-    endpoint = '/api/v1/events/stream',
+    endpoint = '/api/v1/realtime/stream',
     reconnectDelayMs = 5_000,
     reconnect = true,
   } = options;

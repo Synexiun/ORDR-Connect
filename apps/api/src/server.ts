@@ -743,6 +743,7 @@ async function bootstrap(): Promise<void> {
   configureAnalyticsRoutes({
     queries: new AnalyticsQueries(analyticsStore),
     realTimeCounters: new RealTimeCounters(counterStore),
+    db,
   });
   console.warn('[ORDR:API] Analytics routes configured');
 

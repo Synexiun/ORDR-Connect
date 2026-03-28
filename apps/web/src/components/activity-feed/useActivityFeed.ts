@@ -1,14 +1,17 @@
 /**
- * useActivityFeed — Hook for polling real-time activity events.
+ * useActivityFeed — SSE-backed real-time activity event feed.
  *
- * Polls /api/v1/analytics/real-time every N seconds (default 5s).
- * Maintains event buffer, deduplicates by event ID, caps at maxItems.
+ * Subscribes to the ORDR-Connect SSE stream (/api/v1/realtime/stream) and
+ * collects typed events into a capped, deduplicated feed buffer.
  *
- * MVP: Uses polling. Will migrate to WebSocket when infrastructure is ready.
+ * Falls back to mock events for graceful degradation when no SSE token is
+ * available or the API is unreachable.
+ *
+ * COMPLIANCE: No PHI/PII in event descriptions — metadata only.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiClient } from '../../lib/api';
+import { useState, useCallback, useRef } from 'react';
+import { useRealtimeEvents } from '../../hooks/useRealtimeEvents';
 
 export interface FeedEvent {
   id: string;
@@ -20,6 +23,7 @@ export interface FeedEvent {
 
 interface UseActivityFeedOptions {
   maxItems?: number;
+  /** @deprecated Ignored — feed is now SSE-driven. Kept for backward compat. */
   pollInterval?: number;
 }
 
@@ -29,166 +33,161 @@ interface UseActivityFeedReturn {
   error: string | null;
 }
 
-// --- Mock events for graceful degradation ---
+// ── Event type → severity mapping ─────────────────────────────────
 
-const mockEventTypes = [
-  {
-    type: 'agent.session',
-    description: 'Collection agent completed session for account',
-    severity: 'success' as const,
-  },
-  {
-    type: 'compliance.check',
-    description: 'HIPAA compliance check passed for tenant operations',
-    severity: 'info' as const,
-  },
+function severityForType(eventType: string): FeedEvent['severity'] {
+  if (
+    eventType.includes('violation') ||
+    eventType.includes('error') ||
+    eventType.includes('failed') ||
+    eventType.includes('hitl')
+  ) {
+    return 'danger';
+  }
+  if (
+    eventType.includes('warning') ||
+    eventType.includes('escalation') ||
+    eventType.includes('risk') ||
+    eventType.includes('pending')
+  ) {
+    return 'warning';
+  }
+  if (
+    eventType.includes('completed') ||
+    eventType.includes('verified') ||
+    eventType.includes('delivered') ||
+    eventType.includes('created')
+  ) {
+    return 'success';
+  }
+  return 'info';
+}
+
+function descriptionForEvent(eventType: string, data: Record<string, unknown>): string {
+  if (typeof data['description'] === 'string') return data['description'];
+  if (typeof data['message'] === 'string') return data['message'];
+  return eventType.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function timestampFromData(data: Record<string, unknown>): string {
+  return typeof data['timestamp'] === 'string' ? data['timestamp'] : new Date().toISOString();
+}
+
+function idFromData(data: Record<string, unknown>): string {
+  return typeof data['eventId'] === 'string'
+    ? data['eventId']
+    : `sse-${Date.now()}-${Math.random()}`;
+}
+
+// ── Mock fallback ─────────────────────────────────────────────────
+
+const MOCK_TEMPLATES: Array<{
+  type: string;
+  description: string;
+  severity: FeedEvent['severity'];
+}> = [
+  { type: 'agent.session', description: 'Collection agent completed session', severity: 'success' },
+  { type: 'compliance.check', description: 'HIPAA compliance check passed', severity: 'info' },
   {
     type: 'channel.delivery',
-    description: 'SMS delivery batch completed: 847/850 delivered',
-    severity: 'info' as const,
+    description: 'SMS delivery batch: 847/850 delivered',
+    severity: 'info',
   },
   {
     type: 'agent.escalation',
     description: 'Agent requested human review: low confidence',
-    severity: 'warning' as const,
+    severity: 'warning',
   },
   {
     type: 'audit.verified',
     description: 'Merkle root verified for event batch',
-    severity: 'success' as const,
+    severity: 'success',
   },
   {
     type: 'compliance.violation',
     description: 'TCPA quiet hours violation blocked',
-    severity: 'danger' as const,
+    severity: 'danger',
   },
-  {
-    type: 'customer.created',
-    description: 'New enterprise customer onboarded',
-    severity: 'info' as const,
-  },
+  { type: 'customer.created', description: 'New enterprise customer onboarded', severity: 'info' },
   {
     type: 'hitl.pending',
     description: 'Financial action requires human approval',
-    severity: 'warning' as const,
-  },
-  {
-    type: 'channel.delivery',
-    description: 'Email batch delivered: 1,240/1,245 successful',
-    severity: 'success' as const,
-  },
-  {
-    type: 'system.health',
-    description: 'All services healthy, audit chain verified',
-    severity: 'info' as const,
-  },
-  {
-    type: 'agent.session',
-    description: 'Onboarding agent completed welcome sequence',
-    severity: 'success' as const,
-  },
-  {
-    type: 'customer.risk',
-    description: 'Health score degradation detected for 3 accounts',
-    severity: 'warning' as const,
+    severity: 'warning',
   },
 ];
 
-function generateMockEvent(index: number): FeedEvent {
-  const templateIndex = index % mockEventTypes.length;
-  const template =
-    templateIndex < mockEventTypes.length ? mockEventTypes[templateIndex] : mockEventTypes[0];
-  if (template === undefined) {
-    return {
-      id: `feed-${Date.now()}-${index}`,
-      type: 'system',
-      description: '',
-      timestamp: new Date().toISOString(),
-      severity: 'info' as const,
-    };
-  }
+function makeMockEvent(index: number): FeedEvent {
+  const t = MOCK_TEMPLATES[index % MOCK_TEMPLATES.length] ?? MOCK_TEMPLATES[0];
   return {
-    id: `feed-${Date.now()}-${index}`,
-    type: template.type,
-    description: template.description,
-    timestamp: new Date(Date.now() - index * 120000).toISOString(),
-    severity: template.severity,
+    id: `mock-${index}`,
+    type: t.type,
+    description: t.description,
+    timestamp: new Date(Date.now() - index * 90_000).toISOString(),
+    severity: t.severity,
   };
 }
 
+// ── SSE event type list (all monitored types) ─────────────────────
+
+const MONITORED_TYPES: ReadonlyArray<string> = [
+  'agent.session_completed',
+  'agent.hitl_created',
+  'agent.error',
+  'compliance.violation',
+  'compliance.check_passed',
+  'workflow.started',
+  'workflow.completed',
+  'workflow.failed',
+  'customer.created',
+  'billing.payment_succeeded',
+  'billing.payment_failed',
+  'system.health',
+];
+
+// ── Hook ──────────────────────────────────────────────────────────
+
 export function useActivityFeed({
   maxItems = 100,
-  pollInterval = 5000,
 }: UseActivityFeedOptions = {}): UseActivityFeedReturn {
   const [events, setEvents] = useState<FeedEvent[]>(() =>
-    Array.from({ length: 10 }, (_, i) => generateMockEvent(i)),
+    Array.from({ length: 8 }, (_, i) => makeMockEvent(i)),
   );
-  const [isPolling, setIsPolling] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const seenIdsRef = useRef(
-    new Set<string>(Array.from({ length: 10 }, (_, i) => `feed-${Date.now()}-${i}`)),
-  );
-  const pollCountRef = useRef(0);
+  const seenIdsRef = useRef(new Set<string>(Array.from({ length: 8 }, (_, i) => `mock-${i}`)));
 
-  const fetchEvents = useCallback(async () => {
-    try {
-      const response = await apiClient.get<{ events: FeedEvent[] }>('/v1/analytics/real-time');
-
-      const newEvents = response.events.filter((e) => !seenIdsRef.current.has(e.id));
-
-      if (newEvents.length > 0) {
-        for (const e of newEvents) {
-          seenIdsRef.current.add(e.id);
+  const addEvent = useCallback(
+    (event: FeedEvent) => {
+      if (seenIdsRef.current.has(event.id)) return;
+      seenIdsRef.current.add(event.id);
+      setEvents((prev) => {
+        const next = [event, ...prev];
+        if (next.length > maxItems) {
+          const removed = next.slice(maxItems);
+          for (const e of removed) seenIdsRef.current.delete(e.id);
+          return next.slice(0, maxItems);
         }
+        return next;
+      });
+    },
+    [maxItems],
+  );
 
-        setEvents((prev) => {
-          const merged = [...newEvents, ...prev];
-          // Trim to maxItems
-          if (merged.length > maxItems) {
-            const removed = merged.slice(maxItems);
-            for (const e of removed) {
-              seenIdsRef.current.delete(e.id);
-            }
-            return merged.slice(0, maxItems);
-          }
-          return merged;
+  // Build handlers map for all monitored event types
+  const handlers = Object.fromEntries(
+    MONITORED_TYPES.map((type) => [
+      type,
+      (data: Record<string, unknown>) => {
+        addEvent({
+          id: idFromData(data),
+          type,
+          description: descriptionForEvent(type, data),
+          timestamp: timestampFromData(data),
+          severity: severityForType(type),
         });
-      }
+      },
+    ]),
+  );
 
-      setError(null);
-    } catch {
-      // Graceful degradation — generate mock event periodically
-      pollCountRef.current += 1;
-      if (pollCountRef.current % 3 === 0) {
-        const mockEvent = generateMockEvent(pollCountRef.current);
-        mockEvent.id = `feed-poll-${Date.now()}`;
-        mockEvent.timestamp = new Date().toISOString();
+  useRealtimeEvents(handlers);
 
-        if (!seenIdsRef.current.has(mockEvent.id)) {
-          seenIdsRef.current.add(mockEvent.id);
-          setEvents((prev) => {
-            const updated = [mockEvent, ...prev];
-            if (updated.length > maxItems) {
-              return updated.slice(0, maxItems);
-            }
-            return updated;
-          });
-        }
-      }
-    }
-  }, [maxItems]);
-
-  useEffect(() => {
-    setIsPolling(true);
-    const intervalId = setInterval(() => {
-      void fetchEvents();
-    }, pollInterval);
-
-    return () => {
-      clearInterval(intervalId);
-      setIsPolling(false);
-    };
-  }, [fetchEvents, pollInterval]);
-
-  return { events, isPolling, error };
+  return { events, isPolling: true, error: null };
 }
