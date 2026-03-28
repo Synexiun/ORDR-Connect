@@ -93,6 +93,25 @@ import { configureMarketplaceRoutes } from './routes/marketplace.js';
 import { configureOrgRoutes } from './routes/organizations.js';
 import { configureSSORoutes } from './routes/sso.js';
 import { configureMessageRoutes } from './routes/messages.js';
+import { configureBillingRoutes } from './routes/billing.js';
+import { configureRealtimeRoutes } from './routes/realtime.js';
+import { configureWorkflowRoutes } from './routes/workflow.js';
+import { configureSearchRoutes } from './routes/search.js';
+import { configureSchedulerRoutes } from './routes/scheduler.js';
+import { configureIntegrationRoutes } from './routes/integrations.js';
+import { ChannelManager } from '@ordr/realtime';
+import { EventPublisher } from '@ordr/realtime';
+import {
+  WorkflowEngine,
+  InMemoryDefinitionStore,
+  InMemoryInstanceStore,
+  InMemoryStepResultStore,
+} from '@ordr/workflow';
+import { SearchEngine, SearchIndexer, InMemorySearchStore } from '@ordr/search';
+import { JobScheduler, InMemorySchedulerStore } from '@ordr/scheduler';
+import { SalesforceAdapter, HubSpotAdapter } from '@ordr/integrations';
+import type { CRMAdapter } from './routes/integrations.js';
+import { UsageTracker, InMemoryUsageStore, DrizzleUsageStore } from '@ordr/billing';
 import type postgres from 'postgres';
 
 // ---- State -----------------------------------------------------------------
@@ -1346,6 +1365,162 @@ async function bootstrap(): Promise<void> {
     });
     console.warn('[ORDR:API] Message routes configured');
   }
+
+  // ── Phase 6: Operational Completeness ─────────────────────────────────
+
+  // ── P6.1. Billing routes (subscription + usage + Stripe webhooks) ─────
+  const usageStore =
+    config.nodeEnv === 'production' ? new DrizzleUsageStore(db) : new InMemoryUsageStore();
+  configureBillingRoutes({
+    subscriptionManager,
+    usageTracker: new UsageTracker(usageStore),
+    stripeWebhookSecret: process.env['STRIPE_WEBHOOK_SECRET'] ?? '',
+  });
+  console.warn('[ORDR:API] Billing routes configured');
+
+  // ── P6.2. Realtime SSE routes (ChannelManager + EventPublisher) ─────
+  const channelManager = new ChannelManager();
+  channelManager.startCleanup(60_000); // prune stale connections every 60s
+  const realtimeAuditLogger = {
+    log: (entry: {
+      readonly eventType: string;
+      readonly tenantId: string;
+      readonly resource: string;
+      readonly resourceId: string;
+      readonly action: string;
+      readonly details: Record<string, unknown>;
+      readonly timestamp: Date;
+    }): Promise<void> =>
+      auditLogger
+        .log({ ...entry, eventType: 'agent.action', actorType: 'system', actorId: 'realtime' })
+        .then(() => undefined),
+  };
+  configureRealtimeRoutes({
+    channelManager,
+    publisher: new EventPublisher(channelManager, realtimeAuditLogger),
+    jwtConfig,
+  });
+  console.warn('[ORDR:API] Realtime routes configured');
+
+  // ── P6.3. Workflow engine routes ──────────────────────────────────────
+  const workflowAuditLogger = {
+    log: async (entry: {
+      readonly tenantId: string;
+      readonly eventType: string;
+      readonly actorType: 'system' | 'user';
+      readonly actorId: string;
+      readonly resource: string;
+      readonly resourceId: string;
+      readonly action: string;
+      readonly details: Record<string, unknown>;
+      readonly timestamp: Date;
+    }) =>
+      auditLogger.log({
+        ...entry,
+        eventType: 'agent.action',
+      }),
+  };
+  const workflowInstanceStore = new InMemoryInstanceStore();
+  const workflowEngine = new WorkflowEngine({
+    definitionStore: new InMemoryDefinitionStore(),
+    instanceStore: workflowInstanceStore,
+    stepResultStore: new InMemoryStepResultStore(),
+    auditLogger: workflowAuditLogger,
+  });
+  configureWorkflowRoutes({ engine: workflowEngine, instanceStore: workflowInstanceStore });
+  console.warn('[ORDR:API] Workflow routes configured');
+
+  // ── P6.4. Search engine routes ────────────────────────────────────────
+  const searchStore = new InMemorySearchStore();
+  configureSearchRoutes({
+    engine: new SearchEngine(searchStore),
+    indexer: new SearchIndexer(searchStore),
+  });
+  console.warn('[ORDR:API] Search routes configured');
+
+  // ── P6.5. Scheduler routes ────────────────────────────────────────────
+  const schedulerAuditLog = async (entry: {
+    readonly eventType: string;
+    readonly resource: string;
+    readonly resourceId: string;
+    readonly action: string;
+    readonly details: Record<string, unknown>;
+    readonly timestamp: Date;
+  }) => {
+    await auditLogger.log({
+      tenantId: 'system',
+      eventType: entry.eventType as import('@ordr/audit').AuditEventType,
+      actorType: 'system',
+      actorId: 'scheduler',
+      resource: entry.resource,
+      resourceId: entry.resourceId,
+      action: entry.action,
+      details: entry.details,
+      timestamp: entry.timestamp,
+    });
+  };
+  const schedulerAlert = async (_alert: {
+    readonly severity: 'p1' | 'p2' | 'p3';
+    readonly jobType: string;
+    readonly instanceId: string;
+    readonly error: string;
+    readonly timestamp: Date;
+  }) => {
+    // In production: page on-call via PagerDuty for p1, alert for p2/p3
+    console.error('[ORDR:Scheduler] Dead-letter alert:', _alert);
+  };
+  const schedulerStore = new InMemorySchedulerStore();
+  const jobScheduler = new JobScheduler(schedulerStore, schedulerAuditLog, schedulerAlert);
+  configureSchedulerRoutes({ scheduler: jobScheduler, store: schedulerStore });
+  console.warn('[ORDR:API] Scheduler routes configured');
+
+  // ── P6.6. CRM integration routes ────────────────────────────────────────
+  // Adapters are initialized with a lightweight fetch-based HTTP client.
+  // Credentials come from per-tenant OAuth tokens stored in DB (not env vars).
+  const fetchHttpClient = {
+    get: async (url: string, headers: Readonly<Record<string, string>>) => {
+      const res = await fetch(url, { headers });
+      const body: unknown = res.headers.get('content-type')?.includes('application/json')
+        ? await res.json()
+        : await res.text();
+      return { status: res.status, headers: Object.fromEntries(res.headers), body };
+    },
+    post: async (url: string, body: unknown, headers: Readonly<Record<string, string>>) => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const resBody: unknown = res.headers.get('content-type')?.includes('application/json')
+        ? await res.json()
+        : await res.text();
+      return { status: res.status, headers: Object.fromEntries(res.headers), body: resBody };
+    },
+    patch: async (url: string, body: unknown, headers: Readonly<Record<string, string>>) => {
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const resBody: unknown = res.headers.get('content-type')?.includes('application/json')
+        ? await res.json()
+        : await res.text();
+      return { status: res.status, headers: Object.fromEntries(res.headers), body: resBody };
+    },
+    delete: async (url: string, headers: Readonly<Record<string, string>>) => {
+      const res = await fetch(url, { method: 'DELETE', headers });
+      const resBody: unknown = res.headers.get('content-type')?.includes('application/json')
+        ? await res.json()
+        : await res.text();
+      return { status: res.status, headers: Object.fromEntries(res.headers), body: resBody };
+    },
+  };
+  const crmAdapters = new Map<string, CRMAdapter>([
+    ['salesforce', new SalesforceAdapter(fetchHttpClient) as unknown as CRMAdapter],
+    ['hubspot', new HubSpotAdapter(fetchHttpClient) as unknown as CRMAdapter],
+  ]);
+  configureIntegrationRoutes({ adapters: crmAdapters });
+  console.warn('[ORDR:API] Integration routes configured (salesforce, hubspot)');
 
   // ── 9. Create and start Hono app ───────────────────────────────────────
   const app = createApp({

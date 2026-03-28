@@ -31,6 +31,11 @@
     "@ordr/kernel": "workspace:*",
     "@ordr/observability": "workspace:*",
     "@ordr/ai": "workspace:*",
+    "@ordr/realtime": "workspace:*",
+    "@ordr/workflow": "workspace:*",
+    "@ordr/search": "workspace:*",
+    "@ordr/scheduler": "workspace:*",
+    "@ordr/integrations": "workspace:*",
     "drizzle-orm": "^0.36.0",
     "postgres": "^3.4.0",
     "zod": "^3.23.0"

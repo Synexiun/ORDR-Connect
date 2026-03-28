@@ -126,12 +126,27 @@ importers:
       '@ordr/graph':
         specifier: workspace:*
         version: link:../../packages/graph
+      '@ordr/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@ordr/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
       '@ordr/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@ordr/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
+      '@ordr/scheduler':
+        specifier: workspace:*
+        version: link:../../packages/scheduler
+      '@ordr/search':
+        specifier: workspace:*
+        version: link:../../packages/search
+      '@ordr/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
       drizzle-orm:
         specifier: ^0.36.0
         version: 0.36.4(@opentelemetry/api@1.9.0)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)

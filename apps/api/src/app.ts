@@ -70,6 +70,12 @@ import { settingsRouter } from './routes/settings.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { reportsRouter } from './routes/reports.js';
 import { openapiRouter } from './routes/openapi.js';
+import { billingRouter } from './routes/billing.js';
+import { realtimeRouter } from './routes/realtime.js';
+import { workflowRouter } from './routes/workflow.js';
+import { searchRouter } from './routes/search.js';
+import { schedulerRouter } from './routes/scheduler.js';
+import { integrationsRouter } from './routes/integrations.js';
 
 // ---- App Factory -----------------------------------------------------------
 
@@ -245,6 +251,25 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // OpenAPI spec — public API documentation (no auth required)
   app.route('/api/v1/openapi.json', openapiRouter);
+
+  // ── Phase 6: Operational Completeness ───────────────────────────────────
+  // Billing — subscription management, usage quotas, Stripe webhooks
+  app.route('/api/v1/billing', billingRouter);
+
+  // Realtime — SSE stream, event publishing, channel stats
+  app.route('/api/v1/realtime', realtimeRouter);
+
+  // Workflow — multi-step workflow orchestration
+  app.route('/api/v1/workflows', workflowRouter);
+
+  // Search — full-text search, suggestions, faceted search
+  app.route('/api/v1/search', searchRouter);
+
+  // Scheduler — scheduled jobs, cron management, dead-letter queue
+  app.route('/api/v1/scheduler', schedulerRouter);
+
+  // Integrations — CRM connectors (Salesforce, HubSpot) OAuth + sync
+  app.route('/api/v1/integrations', integrationsRouter);
 
   return app;
 }
