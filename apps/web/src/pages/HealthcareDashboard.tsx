@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useEffect, useCallback } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -20,72 +20,25 @@ import {
   Brain,
 } from '../components/icons';
 
-// --- Types ---
+import {
+  getPatientQueue,
+  getAppointments,
+  getCarePlans,
+  getComplianceStatus,
+  getAgentActivity,
+} from '../lib/healthcare-api';
+import type {
+  PatientQueueItem,
+  AppointmentItem,
+  CarePlanStatus,
+  ComplianceStatus,
+  AgentActivityItem,
+} from '../lib/healthcare-api';
+
+// Types are imported from healthcare-api.ts — see import block above.
 // SECURITY: All patient data uses tokenized identifiers.
 // No PHI (Protected Health Information) is displayed in this dashboard.
 // HIPAA §164.312(a)(1) — Access control + §164.502(b) — Minimum necessary.
-
-interface PatientQueueItem {
-  /** Tokenized patient identifier — NOT the real name (HIPAA safe) */
-  tokenId: string;
-  /** Priority level (not PHI) */
-  priority: 'urgent' | 'high' | 'normal' | 'low';
-  /** Queue position */
-  position: number;
-  /** Wait time in minutes */
-  waitMinutes: number;
-  /** Department (not PHI) */
-  department: string;
-}
-
-interface AppointmentItem {
-  id: string;
-  /** Tokenized patient reference */
-  patientToken: string;
-  /** Appointment time */
-  scheduledAt: string;
-  /** Duration in minutes */
-  durationMinutes: number;
-  /** Appointment type (not PHI) */
-  type: 'consultation' | 'follow-up' | 'procedure' | 'screening';
-  /** Completion status */
-  status: 'scheduled' | 'in-progress' | 'completed' | 'cancelled';
-}
-
-interface CarePlanStatus {
-  id: string;
-  /** Tokenized patient reference */
-  patientToken: string;
-  /** Plan phase (not PHI) */
-  phase: 'assessment' | 'planning' | 'implementation' | 'evaluation';
-  /** Completion percentage */
-  completionPct: number;
-  /** Last updated */
-  updatedAt: string;
-}
-
-interface ComplianceStatus {
-  /** Overall compliance level */
-  level: 'green' | 'yellow' | 'red';
-  /** HIPAA audit score */
-  hipaaScore: number;
-  /** Last audit date */
-  lastAuditDate: string;
-  /** Open findings count */
-  openFindings: number;
-  /** Checks passed / total */
-  checksPassed: number;
-  checksTotal: number;
-}
-
-interface AgentActivityItem {
-  id: string;
-  agentName: string;
-  action: string;
-  status: 'completed' | 'pending' | 'failed';
-  timestamp: string;
-  confidence: number;
-}
 
 // --- Constants ---
 
@@ -243,20 +196,32 @@ export function HealthcareDashboard(): ReactNode {
   const [compliance, setCompliance] = useState<ComplianceStatus | null>(null);
   const [agentActivity, setAgentActivity] = useState<AgentActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    try {
-      // Healthcare-specific backend routes are not yet implemented.
-      // This dashboard operates in demo mode with representative mock data.
-      setQueue(mockQueue);
-      setAppointments(mockAppointments);
-      setCarePlans(mockCarePlans);
-      setCompliance(mockCompliance);
-      setAgentActivity(mockAgentActivity);
-    } finally {
+    void Promise.allSettled([
+      getPatientQueue(),
+      getAppointments(),
+      getCarePlans(),
+      getComplianceStatus(),
+      getAgentActivity(),
+    ]).then(([queueRes, apptRes, plansRes, compRes, activityRes]) => {
+      if (!isMounted.current) return;
+      setQueue(queueRes.status === 'fulfilled' ? queueRes.value : mockQueue);
+      setAppointments(apptRes.status === 'fulfilled' ? apptRes.value : mockAppointments);
+      setCarePlans(plansRes.status === 'fulfilled' ? plansRes.value : mockCarePlans);
+      setCompliance(compRes.status === 'fulfilled' ? compRes.value : mockCompliance);
+      setAgentActivity(activityRes.status === 'fulfilled' ? activityRes.value : mockAgentActivity);
       setLoading(false);
-    }
+    });
   }, []);
 
   useEffect(() => {
