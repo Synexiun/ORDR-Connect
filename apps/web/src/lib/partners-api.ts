@@ -86,3 +86,31 @@ export function registerAsPartner(body: {
     body,
   );
 }
+
+// ── Partner Stats ───────────────────────────────────────────────────
+
+export interface PartnerMonthlyEarning {
+  readonly month: string;
+  readonly amountCents: number;
+}
+
+export interface PartnerReferralFunnel {
+  readonly month: string;
+  readonly clicks: number;
+  readonly signups: number;
+  readonly conversions: number;
+}
+
+export interface PartnerStatsData {
+  readonly monthly: PartnerMonthlyEarning[];
+  readonly funnel: PartnerReferralFunnel[];
+}
+
+export function getPartnerStats(months = 6): Promise<{
+  readonly success: true;
+  readonly data: PartnerStatsData;
+}> {
+  return apiClient.get<{ readonly success: true; readonly data: PartnerStatsData }>(
+    `/v1/partners/stats?months=${String(months)}`,
+  );
+}

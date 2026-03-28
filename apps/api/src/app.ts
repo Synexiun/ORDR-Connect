@@ -62,6 +62,7 @@ import { eventsRouter } from './routes/events.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { healthcareRouter } from './routes/healthcare.js';
 import { devUsageRouter } from './routes/developer-usage.js';
+import { partnerStatsRouter } from './routes/partner-stats.js';
 import { openapiRouter } from './routes/openapi.js';
 
 // ---- App Factory -----------------------------------------------------------
@@ -191,6 +192,10 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Marketplace admin routes — agent security review pipeline
   app.route('/api/v1/admin/marketplace', marketplaceReviewRouter);
+
+  // Partner stats — monthly earnings, referral funnel (DB-backed)
+  // NOTE: mounted before /api/v1/partners so /stats takes precedence
+  app.route('/api/v1/partners/stats', partnerStatsRouter);
 
   // Partner program routes — registration, earnings, payouts
   app.route('/api/v1/partners', partnersRouter);

@@ -10,6 +10,7 @@ import {
   getPartnerProfile,
   getEarnings,
   listPayouts,
+  getPartnerStats,
   type Partner,
   type EarningsSummary as ApiEarnings,
   type Payout,
@@ -232,7 +233,7 @@ const mockPublishedAgents: PublishedAgentSummary[] = [
   },
 ];
 
-const mockMonthlyEarnings: MonthlyEarning[] = [
+const fallbackMonthlyEarnings: MonthlyEarning[] = [
   { month: 'Oct', amountCents: 65000 },
   { month: 'Nov', amountCents: 78000 },
   { month: 'Dec', amountCents: 92000 },
@@ -264,10 +265,11 @@ export function PartnerDashboard(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [profileRes, earningsRes, payoutsRes] = await Promise.allSettled([
+      const [profileRes, earningsRes, payoutsRes, statsRes] = await Promise.allSettled([
         getPartnerProfile(),
         getEarnings(),
         listPayouts(),
+        getPartnerStats(6),
       ]);
 
       setProfile(
@@ -280,14 +282,21 @@ export function PartnerDashboard(): ReactNode {
         payoutsRes.status === 'fulfilled' ? payoutsRes.value.data.map(adaptPayout) : mockPayouts,
       );
       setPublishedAgents(mockPublishedAgents);
-      setMonthlyEarnings(mockMonthlyEarnings);
-      setReferralFunnel(mockReferralFunnel);
+
+      if (statsRes.status === 'fulfilled') {
+        const { monthly, funnel } = statsRes.value.data;
+        setMonthlyEarnings(monthly.length > 0 ? monthly : fallbackMonthlyEarnings);
+        setReferralFunnel(funnel.length > 0 ? funnel : mockReferralFunnel);
+      } else {
+        setMonthlyEarnings(fallbackMonthlyEarnings);
+        setReferralFunnel(mockReferralFunnel);
+      }
     } catch {
       setProfile(mockProfile);
       setEarnings(mockEarnings);
       setPayouts(mockPayouts);
       setPublishedAgents(mockPublishedAgents);
-      setMonthlyEarnings(mockMonthlyEarnings);
+      setMonthlyEarnings(fallbackMonthlyEarnings);
       setReferralFunnel(mockReferralFunnel);
     } finally {
       setLoading(false);
