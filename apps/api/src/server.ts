@@ -227,6 +227,57 @@ async function bootstrap(): Promise<void> {
   configureAudit(auditLogger);
   console.warn('[ORDR:API] Audit logger initialized');
 
+  // ── 4.4. Military-grade threat detection ───────────────────────────────
+  // All security components are singletons — initialized here and wired into
+  // the threat detection middleware via configureThreatDetection().
+  // DLP is enabled in production only (response scanning adds CPU overhead).
+  {
+    const {
+      AnomalyDetector,
+      AttackDetector,
+      DLPScanner,
+      ThreatScorer,
+      SecurityEventBus,
+      IPIntelligence,
+    } = await import('@ordr/security');
+    const { configureThreatDetection } = await import('./middleware/threat-detection.js');
+
+    const securityEventBus = new SecurityEventBus();
+    // Log all critical/high security events to WORM audit trail
+    securityEventBus.subscribe((secEvent) => {
+      if (secEvent.severity === 'critical' || secEvent.severity === 'high') {
+        void auditLogger.log({
+          tenantId: secEvent.tenantId ?? 'system',
+          actorId: secEvent.actorId ?? 'unknown',
+          actorType: 'system',
+          eventType: 'compliance.violation',
+          action: `security.${secEvent.type}`,
+          resource: 'request',
+          resourceId: secEvent.requestId,
+          details: {
+            ip: secEvent.ip,
+            userAgent: secEvent.userAgent,
+            path: secEvent.path,
+            severity: secEvent.severity,
+            eventDetails: secEvent.details,
+          },
+          timestamp: new Date(),
+        });
+      }
+    });
+
+    configureThreatDetection({
+      anomalyDetector: new AnomalyDetector(),
+      attackDetector: new AttackDetector(),
+      dlpScanner: new DLPScanner(),
+      threatScorer: new ThreatScorer(),
+      securityEventBus,
+      ipIntelligence: new IPIntelligence(),
+      dlpEnabled: config.nodeEnv === 'production',
+    });
+    console.warn('[ORDR:API] Military-grade threat detection initialized');
+  }
+
   // ── 4.5. Billing / Plan Gate ───────────────────────────────────────────
   // Uses DrizzleSubscriptionStore when the DB connection is available (production).
   // Uses RealStripeClient when STRIPE_SECRET_KEY is set; falls back to

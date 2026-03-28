@@ -134,3 +134,13 @@ export type {
 } from './custom-roles.js';
 
 export { CustomRoleManager, InMemoryRoleStore } from './custom-roles.js';
+
+// ─── Replay Prevention ────────────────────────────────────────────
+export type { NonceStore, RedisLikeNonceClient } from './nonce-store.js';
+
+export { InMemoryNonceStore, RedisNonceStore } from './nonce-store.js';
+
+// ─── Token Binding ────────────────────────────────────────────────
+export type { TokenBinderConfig, FingerprintVerification } from './token-binder.js';
+
+export { TokenBinder, FINGERPRINT_CLAIM } from './token-binder.js';

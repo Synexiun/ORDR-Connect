@@ -30,6 +30,7 @@
     "@ordr/agent-runtime": "workspace:*",
     "@ordr/kernel": "workspace:*",
     "@ordr/observability": "workspace:*",
+    "@ordr/security": "workspace:*",
     "@ordr/ai": "workspace:*",
     "@ordr/realtime": "workspace:*",
     "@ordr/workflow": "workspace:*",

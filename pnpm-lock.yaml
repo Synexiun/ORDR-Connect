@@ -147,6 +147,9 @@ importers:
       '@ordr/search':
         specifier: workspace:*
         version: link:../../packages/search
+      '@ordr/security':
+        specifier: workspace:*
+        version: link:../../packages/security
       '@ordr/workflow':
         specifier: workspace:*
         version: link:../../packages/workflow
@@ -717,6 +720,22 @@ importers:
       drizzle-orm:
         specifier: ^0.36.0
         version: 0.36.4(@opentelemetry/api@1.9.0)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/security:
+    dependencies:
+      '@ordr/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ordr/crypto':
+        specifier: workspace:*
+        version: link:../crypto
     devDependencies:
       typescript:
         specifier: ^5.7.0

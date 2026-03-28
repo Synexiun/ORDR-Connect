@@ -38,6 +38,7 @@ import { securityHeaders } from './middleware/security-headers.js';
 import { audit } from './middleware/audit.js';
 import { globalErrorHandler } from './middleware/error-handler.js';
 import { rateLimitMiddleware } from './middleware/rate-limit.js';
+import { threatDetectionMiddleware } from './middleware/threat-detection.js';
 import { createTracingMiddleware } from '@ordr/observability';
 import { healthRouter } from './routes/health.js';
 import { authRouter } from './routes/auth.js';
@@ -81,6 +82,7 @@ import { integrationsRouter } from './routes/integrations.js';
 import { auditLogsRouter } from './routes/audit-logs.js';
 import { createMetricsRouter } from './routes/metrics.js';
 import type { MetricsRegistry } from '@ordr/observability';
+import type { ThreatDetectionConfig } from './middleware/threat-detection.js';
 
 // ---- App Factory -----------------------------------------------------------
 
@@ -89,6 +91,8 @@ export interface AppConfig {
   readonly nodeEnv: string;
   /** Prometheus metrics registry — when provided, /metrics is mounted */
   readonly metrics?: MetricsRegistry | undefined;
+  /** Threat detection config — when provided, military-grade security middleware is active */
+  readonly threatDetection?: ThreatDetectionConfig | undefined;
 }
 
 export function createApp(config: AppConfig): Hono<Env> {
@@ -96,6 +100,11 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // ── 1. Request ID — MUST be first (all other middleware uses it) ────────
   app.use('*', requestId);
+
+  // ── 1.5. Threat Detection — military-grade per-request security analysis ─
+  // Runs BEFORE auth, rate limiting, and business logic.
+  // No-op when not configured (uses module-level singletons via configure*).
+  app.use('*', threatDetectionMiddleware);
 
   // ── 2. Security headers — defense-in-depth ──────────────────────────────
   app.use('*', securityHeaders);

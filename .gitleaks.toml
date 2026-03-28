@@ -26,6 +26,14 @@ regexes = [
   '''dummy[_-]?token''',
   '''placeholder''',
   '''ordr_dev_password''',
+  # AWS official documentation example key (not a real credential)
+  '''AKIAIOSFODNN7EXAMPLE''',
+  # DLP scanner test fixtures — truncated/fake PEM headers used to verify detection logic
+  '''MIIEowIBAAKCAQEA''',
+  '''MHQCAQEEIBkg''',
+  '''MIIEvAIBADANBgkqhk''',
+  # Test JWT with obviously-fake signature suffix (not a valid token)
+  '''SomeSignatureHere123456789''',
 ]
 
 [[rules]]
