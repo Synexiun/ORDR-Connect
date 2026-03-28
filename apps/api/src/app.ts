@@ -70,6 +70,7 @@ import { settingsRouter } from './routes/settings.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { reportsRouter } from './routes/reports.js';
 import { openapiRouter } from './routes/openapi.js';
+import { tenantsRouter } from './routes/tenants.js';
 import { billingRouter } from './routes/billing.js';
 import { realtimeRouter } from './routes/realtime.js';
 import { workflowRouter } from './routes/workflow.js';
@@ -151,14 +152,8 @@ export function createApp(config: AppConfig): Hono<Env> {
   // Auth routes
   app.route('/api/v1/auth', authRouter);
 
-  // Tenant routes (placeholder for future implementation)
-  app.get('/api/v1/tenants', (c) => {
-    return c.json({
-      success: true as const,
-      data: [],
-      message: 'Tenant management routes — coming soon',
-    });
-  });
+  // Tenant management — provisioning, lifecycle, self-service
+  app.route('/api/v1/tenants', tenantsRouter);
 
   // Customer routes
   app.route('/api/v1/customers', customersRouter);

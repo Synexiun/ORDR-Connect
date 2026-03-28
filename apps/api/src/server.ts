@@ -64,7 +64,7 @@ import {
   InMemoryCounterStore,
 } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
-import { and, eq, sum, count, ilike, or, asc, type SQL } from 'drizzle-orm';
+import { and, eq, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
@@ -99,6 +99,7 @@ import { configureWorkflowRoutes } from './routes/workflow.js';
 import { configureSearchRoutes } from './routes/search.js';
 import { configureSchedulerRoutes } from './routes/scheduler.js';
 import { configureIntegrationRoutes } from './routes/integrations.js';
+import { configureTenantRoutes } from './routes/tenants.js';
 import { ChannelManager } from '@ordr/realtime';
 import { EventPublisher } from '@ordr/realtime';
 import {
@@ -1521,6 +1522,114 @@ async function bootstrap(): Promise<void> {
   ]);
   configureIntegrationRoutes({ adapters: crmAdapters });
   console.warn('[ORDR:API] Integration routes configured (salesforce, hubspot)');
+
+  // ── P6.7. Tenant management routes ──────────────────────────────────────
+  configureTenantRoutes({
+    getTenant: async (id) => {
+      const rows = await db
+        .select({
+          id: schema.tenants.id,
+          name: schema.tenants.name,
+          slug: schema.tenants.slug,
+          plan: schema.tenants.plan,
+          status: schema.tenants.status,
+          isolationTier: schema.tenants.isolationTier,
+          createdAt: schema.tenants.createdAt,
+          updatedAt: schema.tenants.updatedAt,
+        })
+        .from(schema.tenants)
+        .where(eq(schema.tenants.id, id))
+        .limit(1);
+      return rows[0];
+    },
+    listTenants: async (filters) => {
+      const conditions = [
+        filters.status !== undefined ? eq(schema.tenants.status, filters.status) : undefined,
+        filters.plan !== undefined ? eq(schema.tenants.plan, filters.plan) : undefined,
+      ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const cols = {
+        id: schema.tenants.id,
+        name: schema.tenants.name,
+        slug: schema.tenants.slug,
+        plan: schema.tenants.plan,
+        status: schema.tenants.status,
+        isolationTier: schema.tenants.isolationTier,
+        createdAt: schema.tenants.createdAt,
+        updatedAt: schema.tenants.updatedAt,
+      };
+      const [rows, countRows] = await Promise.all([
+        db
+          .select(cols)
+          .from(schema.tenants)
+          .where(where)
+          .orderBy(desc(schema.tenants.createdAt))
+          .limit(filters.limit)
+          .offset(filters.offset),
+        db.select({ total: count() }).from(schema.tenants).where(where),
+      ]);
+      return { data: rows, total: countRows[0]?.total ?? 0 };
+    },
+    createTenant: async (data) => {
+      const rows = await db
+        .insert(schema.tenants)
+        .values({
+          name: data.name,
+          slug: data.slug,
+          plan: data.plan,
+          isolationTier: data.isolationTier,
+          status: 'active',
+        })
+        .returning({
+          id: schema.tenants.id,
+          name: schema.tenants.name,
+          slug: schema.tenants.slug,
+          plan: schema.tenants.plan,
+          status: schema.tenants.status,
+          isolationTier: schema.tenants.isolationTier,
+          createdAt: schema.tenants.createdAt,
+          updatedAt: schema.tenants.updatedAt,
+        });
+      if (rows[0] === undefined) throw new Error('[ORDR:API] Failed to create tenant');
+      return rows[0];
+    },
+    updateTenant: async (id, patch) => {
+      const rows = await db
+        .update(schema.tenants)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(schema.tenants.id, id))
+        .returning({
+          id: schema.tenants.id,
+          name: schema.tenants.name,
+          slug: schema.tenants.slug,
+          plan: schema.tenants.plan,
+          status: schema.tenants.status,
+          isolationTier: schema.tenants.isolationTier,
+          createdAt: schema.tenants.createdAt,
+          updatedAt: schema.tenants.updatedAt,
+        });
+      return rows[0];
+    },
+    updateTenantStatus: async (id, status) => {
+      const rows = await db
+        .update(schema.tenants)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(schema.tenants.id, id))
+        .returning({
+          id: schema.tenants.id,
+          name: schema.tenants.name,
+          slug: schema.tenants.slug,
+          plan: schema.tenants.plan,
+          status: schema.tenants.status,
+          isolationTier: schema.tenants.isolationTier,
+          createdAt: schema.tenants.createdAt,
+          updatedAt: schema.tenants.updatedAt,
+        });
+      return rows[0];
+    },
+    auditLogger,
+  });
+  console.warn('[ORDR:API] Tenant routes configured');
 
   // ── 9. Create and start Hono app ───────────────────────────────────────
   const app = createApp({
