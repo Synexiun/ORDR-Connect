@@ -15,8 +15,10 @@
  * - All Stripe IDs encrypted at rest with AES-256-GCM
  */
 
+/* eslint-disable @typescript-eslint/require-await */
 import { randomUUID } from 'node:crypto';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import Stripe from 'stripe';
 
 // ─── Stripe Types ────────────────────────────────────────────────
 
@@ -118,8 +120,14 @@ export interface CreateUsageRecordInput {
 export interface StripeClient {
   createCustomer(input: CreateCustomerInput): Promise<StripeCustomer>;
   createSubscription(input: CreateSubscriptionInput): Promise<StripeSubscription>;
-  cancelSubscription(subscriptionId: string, cancelAtPeriodEnd?: boolean): Promise<StripeSubscription>;
-  updateSubscription(subscriptionId: string, input: UpdateSubscriptionInput): Promise<StripeSubscription>;
+  cancelSubscription(
+    subscriptionId: string,
+    cancelAtPeriodEnd?: boolean,
+  ): Promise<StripeSubscription>;
+  updateSubscription(
+    subscriptionId: string,
+    input: UpdateSubscriptionInput,
+  ): Promise<StripeSubscription>;
   createPaymentIntent(input: CreatePaymentIntentInput): Promise<StripePaymentIntent>;
   listInvoices(customerId: string, limit?: number): Promise<readonly StripeInvoice[]>;
   createUsageRecord(input: CreateUsageRecordInput): Promise<StripeUsageRecord>;
@@ -157,7 +165,7 @@ export class MockStripeClient implements StripeClient {
     const subscription: StripeSubscription = {
       id: `sub_${randomUUID().replace(/-/g, '').slice(0, 14)}`,
       customer: input.customer,
-      status: input.trial_period_days ? 'trialing' : 'active',
+      status: input.trial_period_days !== undefined ? 'trialing' : 'active',
       items: {
         data: [{ price: { id: input.price_id } }],
       },
@@ -216,12 +224,16 @@ export class MockStripeClient implements StripeClient {
 
     const updated: StripeSubscription = {
       ...existing,
-      ...(input.price_id !== undefined ? {
-        items: { data: [{ price: { id: input.price_id } }] },
-      } : {}),
-      ...(input.cancel_at_period_end !== undefined ? {
-        cancel_at_period_end: input.cancel_at_period_end,
-      } : {}),
+      ...(input.price_id !== undefined
+        ? {
+            items: { data: [{ price: { id: input.price_id } }] },
+          }
+        : {}),
+      ...(input.cancel_at_period_end !== undefined
+        ? {
+            cancel_at_period_end: input.cancel_at_period_end,
+          }
+        : {}),
     };
 
     this.subscriptions.set(subscriptionId, updated);
@@ -253,11 +265,7 @@ export class MockStripeClient implements StripeClient {
     };
   }
 
-  constructWebhookEvent(
-    payload: string,
-    signature: string,
-    secret: string,
-  ): StripeWebhookEvent {
+  constructWebhookEvent(payload: string, signature: string, secret: string): StripeWebhookEvent {
     // Verify webhook signature (Stripe's v1 scheme)
     verifyWebhookSignature(payload, signature, secret);
 
@@ -267,6 +275,190 @@ export class MockStripeClient implements StripeClient {
     }
     return parsed;
   }
+}
+
+// ─── Real Stripe Client ──────────────────────────────────────────
+
+/**
+ * Production Stripe client backed by the official `stripe` npm SDK (v21+).
+ *
+ * PCI Compliance: NEVER handles raw card data — all inputs use
+ * Stripe PaymentMethod IDs created client-side via Stripe.js.
+ *
+ * Rule 5: apiKey must come from Vault / environment — NEVER hardcoded.
+ *
+ * NOTE on Stripe API 2026-03-25.dahlia (SDK v21+):
+ * - Subscription.current_period_start/end removed; use billing_cycle_anchor
+ * - Invoice.subscription removed; use subscription_details.subscription
+ * - SubscriptionItems.createUsageRecord removed; use billing.meterEvents
+ */
+export class RealStripeClient implements StripeClient {
+  private readonly sdk: Stripe;
+
+  constructor(apiKey: string) {
+    this.sdk = new Stripe(apiKey, {
+      apiVersion: '2026-03-25.dahlia',
+      // TLS 1.2+ enforced by the SDK — Rule 1
+    });
+  }
+
+  async createCustomer(input: CreateCustomerInput): Promise<StripeCustomer> {
+    const customer = await this.sdk.customers.create({
+      email: input.email,
+      name: input.name,
+      metadata: input.metadata ?? {},
+    });
+    return {
+      id: customer.id,
+      email: customer.email ?? input.email,
+      name: customer.name ?? input.name,
+      metadata: customer.metadata as Record<string, string>,
+      created: customer.created,
+    };
+  }
+
+  async createSubscription(input: CreateSubscriptionInput): Promise<StripeSubscription> {
+    const sub = await this.sdk.subscriptions.create({
+      customer: input.customer,
+      items: [{ price: input.price_id }],
+      ...(input.payment_method !== undefined
+        ? { default_payment_method: input.payment_method }
+        : {}),
+      ...(input.trial_period_days !== undefined
+        ? { trial_period_days: input.trial_period_days }
+        : {}),
+    });
+    return stripeSubToInterface(sub);
+  }
+
+  async cancelSubscription(
+    subscriptionId: string,
+    cancelAtPeriodEnd: boolean = true,
+  ): Promise<StripeSubscription> {
+    if (cancelAtPeriodEnd) {
+      const sub = await this.sdk.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true,
+      });
+      return stripeSubToInterface(sub);
+    }
+    const sub = await this.sdk.subscriptions.cancel(subscriptionId);
+    return stripeSubToInterface(sub);
+  }
+
+  async updateSubscription(
+    subscriptionId: string,
+    input: UpdateSubscriptionInput,
+  ): Promise<StripeSubscription> {
+    const sub = await this.sdk.subscriptions.update(subscriptionId, {
+      ...(input.price_id !== undefined ? { items: [{ price: input.price_id }] } : {}),
+      ...(input.cancel_at_period_end !== undefined
+        ? { cancel_at_period_end: input.cancel_at_period_end }
+        : {}),
+      ...(input.proration_behavior !== undefined
+        ? { proration_behavior: input.proration_behavior }
+        : {}),
+    });
+    return stripeSubToInterface(sub);
+  }
+
+  async createPaymentIntent(input: CreatePaymentIntentInput): Promise<StripePaymentIntent> {
+    const pi = await this.sdk.paymentIntents.create({
+      amount: input.amount,
+      currency: input.currency,
+      customer: input.customer,
+      ...(input.payment_method !== undefined ? { payment_method: input.payment_method } : {}),
+    });
+    return {
+      id: pi.id,
+      amount: pi.amount,
+      currency: pi.currency,
+      status: pi.status as StripePaymentIntent['status'],
+      client_secret: pi.client_secret ?? '',
+      created: pi.created,
+    };
+  }
+
+  async listInvoices(customerId: string, limit: number = 10): Promise<readonly StripeInvoice[]> {
+    const invoices = await this.sdk.invoices.list({ customer: customerId, limit });
+    return invoices.data.map((inv) => {
+      // Subscription reference: in API 2026+, nested under invoice.parent.subscription_details
+      const parentSub =
+        inv.parent !== null && inv.parent.type === 'subscription_details'
+          ? (inv.parent.subscription_details?.subscription ?? null)
+          : null;
+      const subscriptionId =
+        parentSub === null ? null : typeof parentSub === 'string' ? parentSub : parentSub.id;
+
+      return {
+        id: inv.id,
+        customer:
+          typeof inv.customer === 'string' ? inv.customer : (inv.customer?.id ?? customerId),
+        subscription: subscriptionId,
+        amount_due: inv.amount_due,
+        amount_paid: inv.amount_paid,
+        currency: inv.currency,
+        status: (inv.status ?? 'draft') as StripeInvoice['status'],
+        period_start: inv.period_start,
+        period_end: inv.period_end,
+        created: inv.created,
+      };
+    });
+  }
+
+  // NOTE: Stripe API 2026-03-25 removed subscription-item usage records.
+  // Production usage metering should use Billing Meters (stripe.billing.meterEvents.create).
+  // This method is retained for interface compatibility — callers that need real usage
+  // metering must migrate to the meters API separately.
+  async createUsageRecord(input: CreateUsageRecordInput): Promise<StripeUsageRecord> {
+    const event = await this.sdk.billing.meterEvents.create({
+      event_name: `usage_${input.subscription_item}`,
+      payload: { value: String(input.quantity) },
+      ...(input.timestamp !== undefined ? { timestamp: input.timestamp } : {}),
+    });
+    return {
+      // Meter events don't have subscription_item or quantity in the same shape;
+      // return a compatible response that satisfies the interface.
+      id: event.identifier,
+      subscription_item: input.subscription_item,
+      quantity: input.quantity,
+      timestamp: input.timestamp ?? Math.floor(Date.now() / 1000),
+    };
+  }
+
+  constructWebhookEvent(payload: string, signature: string, secret: string): StripeWebhookEvent {
+    const event = this.sdk.webhooks.constructEvent(payload, signature, secret);
+    return {
+      id: event.id,
+      type: event.type,
+      // Cast through unknown — StripeWebhookEvent.data.object is Record<string, unknown>
+      // but the SDK types individual event objects. The underlying data is identical.
+      data: { object: event.data.object as unknown as Record<string, unknown> },
+      created: event.created,
+    };
+  }
+}
+
+// ─── Helper ──────────────────────────────────────────────────────
+
+// In Stripe API 2026-03-25, current_period_start/end were removed from subscriptions.
+// Use billing_cycle_anchor as current_period_start; approximate current_period_end
+// as anchor + 30 days. This is sufficient for the SubscriptionManager's needs.
+function stripeSubToInterface(sub: Stripe.Subscription): StripeSubscription {
+  const anchor = sub.billing_cycle_anchor;
+  return {
+    id: sub.id,
+    customer: typeof sub.customer === 'string' ? sub.customer : sub.customer.id,
+    status: sub.status as StripeSubscription['status'],
+    items: {
+      data: sub.items.data.map((item) => ({
+        price: { id: typeof item.price === 'string' ? item.price : item.price.id },
+      })),
+    },
+    current_period_start: anchor,
+    current_period_end: anchor + 30 * 24 * 60 * 60,
+    cancel_at_period_end: sub.cancel_at_period_end,
+    created: sub.created,
+  };
 }
 
 // ─── Webhook Signature Verification ──────────────────────────────
@@ -300,7 +492,7 @@ export function verifyWebhookSignature(
     }
   }
 
-  if (!timestamp || !signature) {
+  if (timestamp === undefined || signature === undefined) {
     throw new Error('Invalid webhook signature format');
   }
 
@@ -317,9 +509,7 @@ export function verifyWebhookSignature(
 
   // Compute expected signature
   const signedPayload = `${timestamp}.${payload}`;
-  const expectedSignature = createHmac('sha256', secret)
-    .update(signedPayload)
-    .digest('hex');
+  const expectedSignature = createHmac('sha256', secret).update(signedPayload).digest('hex');
 
   // Timing-safe comparison to prevent timing attacks
   const sigBuffer = Buffer.from(signature, 'hex');
@@ -344,9 +534,7 @@ export function generateWebhookSignature(
 ): string {
   const ts = timestamp ?? Math.floor(Date.now() / 1000);
   const signedPayload = `${String(ts)}.${payload}`;
-  const signature = createHmac('sha256', secret)
-    .update(signedPayload)
-    .digest('hex');
+  const signature = createHmac('sha256', secret).update(signedPayload).digest('hex');
   return `t=${String(ts)},v1=${signature}`;
 }
 

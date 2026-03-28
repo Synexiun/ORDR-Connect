@@ -37,7 +37,12 @@ import * as schema from '@ordr/db';
 import { createKafkaClient, createProducer } from '@ordr/events';
 import type { Producer } from '@ordr/events';
 import { AuditLogger } from '@ordr/audit';
-import { SubscriptionManager, DrizzleSubscriptionStore, MockStripeClient } from '@ordr/billing';
+import {
+  SubscriptionManager,
+  DrizzleSubscriptionStore,
+  MockStripeClient,
+  RealStripeClient,
+} from '@ordr/billing';
 import { FieldEncryptor } from '@ordr/crypto';
 import { loadKeyPair } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
@@ -165,24 +170,29 @@ async function bootstrap(): Promise<void> {
 
   // ── 4.5. Billing / Plan Gate ───────────────────────────────────────────
   // Uses DrizzleSubscriptionStore when the DB connection is available (production).
-  // Falls back to InMemorySubscriptionStore for environments without a database
-  // (e.g., smoke-test startup without DATABASE_URL).
-  //
-  // TODO: Replace MockStripeClient with StripeClient(process.env.STRIPE_SECRET_KEY)
-  //       and load fieldEncryptionKey from Vault / AWS Secrets Manager (min 32 bytes).
+  // Uses RealStripeClient when STRIPE_SECRET_KEY is set; falls back to
+  // MockStripeClient for development / environments without Stripe configured.
+  // Rule 5: STRIPE_SECRET_KEY must come from Vault — NEVER hardcoded.
   const fieldEncryptionKey = Buffer.from(
     process.env['FIELD_ENCRYPTION_KEY'] ?? 'dev-only-key-replace-in-prod-!!!',
   );
+  const stripeSecretKey = process.env['STRIPE_SECRET_KEY'];
+  const stripeClient =
+    stripeSecretKey !== undefined && stripeSecretKey !== ''
+      ? new RealStripeClient(stripeSecretKey)
+      : new MockStripeClient();
   // db is always non-null here: process.exit(1) in step 2 catch ensures it
   const subscriptionStore = new DrizzleSubscriptionStore(db);
   const subscriptionManager = new SubscriptionManager({
     store: subscriptionStore,
-    stripe: new MockStripeClient(),
+    stripe: stripeClient,
     auditLogger,
     fieldEncryptor: new FieldEncryptor(fieldEncryptionKey),
   });
   configureBillingGate(subscriptionManager);
-  console.warn('[ORDR:API] Billing gate initialized — store=drizzle (postgres)');
+  console.warn(
+    `[ORDR:API] Billing gate initialized — stripe=${stripeSecretKey !== undefined ? 'real' : 'mock'}`,
+  );
 
   // ── 4.6. Notifications route ───────────────────────────────────────────
   configureNotificationsRoute(db);

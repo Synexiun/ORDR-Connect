@@ -44,6 +44,7 @@ export {
 
 // ─── Stripe Client ───────────────────────────────────────────────
 export {
+  RealStripeClient,
   MockStripeClient,
   verifyWebhookSignature,
   generateWebhookSignature,
