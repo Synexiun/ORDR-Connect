@@ -51,6 +51,14 @@ vi.mock('../lib/auth', () => ({
   }),
 }));
 
+vi.mock('../hooks/useCommandPalette', () => ({
+  useCommandPalette: () => ({
+    commands: [],
+    asyncResults: [],
+    onQueryChange: vi.fn(),
+  }),
+}));
+
 vi.mock('../components/ThemeProvider', () => ({
   useBranding: () => ({
     brand: {

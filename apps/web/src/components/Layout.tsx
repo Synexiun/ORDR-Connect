@@ -15,6 +15,8 @@ import { cn } from '../lib/cn';
 import { Sidebar } from './layout/Sidebar';
 import { TopBar } from './layout/TopBar';
 import { useKeyboardShortcuts, createDefaultShortcuts } from '../hooks/useKeyboardShortcuts';
+import { CommandPalette } from './ui/CommandPalette';
+import { useCommandPalette } from '../hooks/useCommandPalette';
 
 // ─── LocalStorage Key ────────────────────────────────────────
 
@@ -33,6 +35,7 @@ function getInitialCollapsed(): boolean {
 export function Layout(): ReactNode {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { commands, asyncResults, onQueryChange } = useCommandPalette();
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
@@ -68,6 +71,12 @@ export function Layout(): ReactNode {
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
+      {/* Command Palette — Ctrl+K, tenant-scoped live search */}
+      <CommandPalette
+        commands={commands}
+        asyncResults={asyncResults}
+        onQueryChange={onQueryChange}
+      />
       {/* Mobile overlay */}
       {mobileOpen && (
         <div

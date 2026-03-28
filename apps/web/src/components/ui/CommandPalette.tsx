@@ -12,9 +12,17 @@ interface Command {
 
 interface CommandPaletteProps {
   commands: Command[];
+  /** Additional results injected from async sources (e.g. live search API) */
+  asyncResults?: Command[];
+  /** Called when the query string changes — allows parent to drive async search */
+  onQueryChange?: (query: string) => void;
 }
 
-export function CommandPalette({ commands }: CommandPaletteProps): ReactNode {
+export function CommandPalette({
+  commands,
+  asyncResults = [],
+  onQueryChange,
+}: CommandPaletteProps): ReactNode {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [focusIndex, setFocusIndex] = useState(0);
@@ -36,27 +44,34 @@ export function CommandPalette({ commands }: CommandPaletteProps): ReactNode {
     };
   }, []);
 
-  // Focus input when opened
+  // Focus input when opened; notify parent to clear async results
   useEffect(() => {
     if (open) {
       setQuery('');
       setFocusIndex(0);
+      onQueryChange?.('');
       // Delay to allow dialog to render
       requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
     }
-  }, [open]);
+  }, [open, onQueryChange]);
 
   const filtered = useMemo(() => {
-    if (query.trim() === '') return commands;
-    const lower = query.toLowerCase();
-    return commands.filter(
-      (cmd) =>
-        cmd.label.toLowerCase().includes(lower) ||
-        (cmd.group !== undefined && cmd.group.toLowerCase().includes(lower)),
-    );
-  }, [commands, query]);
+    const base =
+      query.trim() === ''
+        ? commands
+        : (() => {
+            const lower = query.toLowerCase();
+            return commands.filter(
+              (cmd) =>
+                cmd.label.toLowerCase().includes(lower) ||
+                (cmd.group !== undefined && cmd.group.toLowerCase().includes(lower)),
+            );
+          })();
+    // Async results (live search) are appended after static matches
+    return asyncResults.length > 0 ? [...base, ...asyncResults] : base;
+  }, [commands, asyncResults, query]);
 
   // Group filtered results
   const grouped = useMemo(() => {
@@ -157,8 +172,10 @@ export function CommandPalette({ commands }: CommandPaletteProps): ReactNode {
             type="text"
             value={query}
             onChange={(e) => {
-              setQuery(e.target.value);
+              const v = e.target.value;
+              setQuery(v);
               setFocusIndex(0);
+              onQueryChange?.(v);
             }}
             onKeyDown={handleInputKeyDown}
             placeholder="Type a command..."
