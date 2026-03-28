@@ -68,6 +68,7 @@ const TeamManagement = lazy(() =>
 const SampleDashboard = lazy(() =>
   import('./pages/SampleDashboard').then((m) => ({ default: m.SampleDashboard })),
 );
+const AuditLog = lazy(() => import('./pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -165,6 +166,7 @@ export function App(): ReactNode {
                 <Route path="/tickets/:id" element={<TicketDetail />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/team" element={<TeamManagement />} />
+                <Route path="/audit-log" element={<AuditLog />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

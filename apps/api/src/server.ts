@@ -74,6 +74,7 @@ import { configureBrandingRoutes } from './routes/branding.js';
 import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
+import { configureAuditLogsRoute } from './routes/audit-logs.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
 import { configurePartnerStatsRoute } from './routes/partner-stats.js';
@@ -252,6 +253,10 @@ async function bootstrap(): Promise<void> {
   // ── 4.6. Notifications route ───────────────────────────────────────────
   configureNotificationsRoute(db);
   console.warn('[ORDR:API] Notifications route configured');
+
+  // ── 4.6.1. Audit logs route ────────────────────────────────────────────
+  configureAuditLogsRoute(db);
+  console.warn('[ORDR:API] Audit logs route configured');
 
   // ── 4.7. Healthcare routes ─────────────────────────────────────────────
   configureHealthcareRoutes(db);

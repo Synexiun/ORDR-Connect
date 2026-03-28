@@ -77,6 +77,7 @@ import { workflowRouter } from './routes/workflow.js';
 import { searchRouter } from './routes/search.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { integrationsRouter } from './routes/integrations.js';
+import { auditLogsRouter } from './routes/audit-logs.js';
 
 // ---- App Factory -----------------------------------------------------------
 
@@ -265,6 +266,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Integrations — CRM connectors (Salesforce, HubSpot) OAuth + sync
   app.route('/api/v1/integrations', integrationsRouter);
+
+  // Audit Logs — immutable WORM audit trail viewer (tenant_admin+)
+  app.route('/api/v1/audit-logs', auditLogsRouter);
 
   return app;
 }
