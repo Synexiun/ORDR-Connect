@@ -35,3 +35,6 @@ export type { MigrationRecord, MigrationResult, MigrationStatus } from './migrat
 
 // Database seeder
 export { seedDatabase } from './seed.js';
+
+// DrizzleAuditStore — PostgreSQL-backed WORM audit log store
+export { DrizzleAuditStore } from './drizzle-audit-store.js';

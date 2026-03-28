@@ -449,6 +449,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@ordr/audit':
+        specifier: workspace:*
+        version: link:../audit
       drizzle-orm:
         specifier: ^0.36.0
         version: 0.36.4(@opentelemetry/api@1.9.0)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)

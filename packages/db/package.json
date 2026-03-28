@@ -5,7 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -22,6 +27,7 @@
     "push": "drizzle-kit push"
   },
   "dependencies": {
+    "@ordr/audit": "workspace:*",
     "drizzle-orm": "^0.36.0",
     "postgres": "^3.4.0"
   },

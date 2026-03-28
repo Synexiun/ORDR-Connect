@@ -32,11 +32,11 @@ import { Limb } from '@ordr/kernel';
 import type { LimbEnv } from '@ordr/kernel';
 import { loadConfig } from '@ordr/core';
 import type { ParsedConfig } from '@ordr/core';
-import { createConnection, createDrizzle, closeConnection } from '@ordr/db';
+import { createConnection, createDrizzle, closeConnection, DrizzleAuditStore } from '@ordr/db';
 import * as schema from '@ordr/db';
 import { createKafkaClient, createProducer } from '@ordr/events';
 import type { Producer } from '@ordr/events';
-import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
+import { AuditLogger } from '@ordr/audit';
 import { SubscriptionManager, DrizzleSubscriptionStore, MockStripeClient } from '@ordr/billing';
 import { FieldEncryptor } from '@ordr/crypto';
 import { loadKeyPair } from '@ordr/auth';
@@ -154,8 +154,7 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 4. Audit logger ────────────────────────────────────────────────────
-  // In production, replace InMemoryAuditStore with a database-backed store
-  const auditStore = new InMemoryAuditStore();
+  const auditStore = new DrizzleAuditStore(db);
   const auditLogger = new AuditLogger(auditStore);
   configureAudit(auditLogger);
   console.warn('[ORDR:API] Audit logger initialized');
