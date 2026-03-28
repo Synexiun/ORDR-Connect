@@ -8,7 +8,7 @@
  * - Outbound messages → consent → compliance → send → audit pipeline
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createCustomerEventsHandler } from '../handlers/customer-events.js';
 import { createInteractionEventsHandler } from '../handlers/interaction-events.js';
 import { createAgentEventsHandler } from '../handlers/agent-events.js';
@@ -55,7 +55,14 @@ function createMockAgentEngine() {
         autonomyLevel: 'supervised',
         tools: new Map(),
         memory: { observations: new Map(), steps: [] },
-        budget: { maxTokens: 100000, maxCostCents: 500, maxActions: 20, usedTokens: 0, usedCostCents: 0, usedActions: 0 },
+        budget: {
+          maxTokens: 100000,
+          maxCostCents: 500,
+          maxActions: 20,
+          usedTokens: 0,
+          usedCostCents: 0,
+          usedActions: 0,
+        },
         killSwitch: { active: false, reason: '', killedAt: null },
         triggerEventId: 'event-1',
         startedAt: new Date(),
@@ -131,7 +138,11 @@ describe('Customer Event Handlers', () => {
     });
 
     const event = makeEvent('customer.created', 'tenant-1', {
-      customerId: 'cust-1', name: 'Jane', email: 'jane@example.com', type: 'individual', lifecycleStage: 'lead',
+      customerId: 'cust-1',
+      name: 'Jane',
+      email: 'jane@example.com',
+      type: 'individual',
+      lifecycleStage: 'lead',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -164,7 +175,10 @@ describe('Customer Event Handlers', () => {
 
   it('handles graph enrichment failures gracefully', async () => {
     const mockGraph = createMockGraphEnricher();
-    mockGraph.handleCustomerCreated.mockResolvedValue({ success: false, error: { message: 'Graph error', code: 'INTERNAL' } });
+    mockGraph.handleCustomerCreated.mockResolvedValue({
+      success: false,
+      error: { message: 'Graph error', code: 'INTERNAL' },
+    });
     const mockAudit = createMockAuditLogger();
     const handler = createCustomerEventsHandler({
       graphEnricher: mockGraph as never,
@@ -172,7 +186,11 @@ describe('Customer Event Handlers', () => {
     });
 
     const event = makeEvent('customer.created', 'tenant-1', {
-      customerId: 'cust-1', name: 'Bob', email: 'bob@example.com', type: 'individual', lifecycleStage: 'lead',
+      customerId: 'cust-1',
+      name: 'Bob',
+      email: 'bob@example.com',
+      type: 'individual',
+      lifecycleStage: 'lead',
     });
 
     // Should not throw
@@ -183,6 +201,41 @@ describe('Customer Event Handlers', () => {
 
 // ---- Interaction Events -----------------------------------------------------
 
+function createMockNBAPipeline(action = 'no_action') {
+  return {
+    evaluate: vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        id: 'decision-1',
+        tenantId: 'tenant-1',
+        customerId: 'cust-1',
+        action,
+        channel: undefined,
+        parameters: {},
+        score: 0.8,
+        confidence: 0.9,
+        reasoning: 'test reasoning',
+      },
+    }),
+  };
+}
+
+function createMockOrchestrator() {
+  return {
+    dispatch: vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        sessionId: 'session-1',
+        result: 'completed',
+        totalSteps: 3,
+        totalCost: 10,
+        totalTokens: 500,
+        description: 'Session completed',
+      },
+    }),
+  };
+}
+
 describe('Interaction Event Handlers', () => {
   it('calls graphEnricher.handleInteractionLogged', async () => {
     const mockGraph = createMockGraphEnricher();
@@ -190,6 +243,10 @@ describe('Interaction Event Handlers', () => {
     const handler = createInteractionEventsHandler({
       graphEnricher: mockGraph as never,
       auditLogger: mockAudit as never,
+      nbaPipeline: createMockNBAPipeline() as never,
+      orchestrator: createMockOrchestrator() as never,
+      eventProducer: createMockEventProducer() as never,
+      getCustomerProfile: vi.fn().mockResolvedValue(null),
     });
 
     const event = makeEvent('interaction.logged', 'tenant-1', {
@@ -217,10 +274,18 @@ describe('Interaction Event Handlers', () => {
     const handler = createInteractionEventsHandler({
       graphEnricher: mockGraph as never,
       auditLogger: mockAudit as never,
+      nbaPipeline: createMockNBAPipeline() as never,
+      orchestrator: createMockOrchestrator() as never,
+      eventProducer: createMockEventProducer() as never,
+      getCustomerProfile: vi.fn().mockResolvedValue(null),
     });
 
     const event = makeEvent('interaction.logged', 'tenant-1', {
-      interactionId: 'int-1', customerId: 'cust-1', channel: 'email', direction: 'inbound', type: 'message',
+      interactionId: 'int-1',
+      customerId: 'cust-1',
+      channel: 'email',
+      direction: 'inbound',
+      type: 'message',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -228,6 +293,71 @@ describe('Interaction Event Handlers', () => {
     expect(mockAudit.log).toHaveBeenCalledWith(
       expect.objectContaining({ resource: 'interaction_graph' }),
     );
+  });
+
+  it('dispatches to orchestrator when NBA returns an actionable decision', async () => {
+    const mockGraph = createMockGraphEnricher();
+    const mockAudit = createMockAuditLogger();
+    const mockNBA = createMockNBAPipeline('send_sms');
+    const mockOrchestrator = createMockOrchestrator();
+    const mockProducer = createMockEventProducer();
+
+    const handler = createInteractionEventsHandler({
+      graphEnricher: mockGraph as never,
+      auditLogger: mockAudit as never,
+      nbaPipeline: mockNBA as never,
+      orchestrator: mockOrchestrator as never,
+      eventProducer: mockProducer as never,
+      getCustomerProfile: vi.fn().mockResolvedValue(null),
+    });
+
+    const event = makeEvent('interaction.logged', 'tenant-1', {
+      interactionId: 'int-2',
+      customerId: 'cust-2',
+      channel: 'sms',
+      direction: 'inbound',
+      type: 'message',
+    });
+
+    await handler(event as EventEnvelope<unknown>);
+
+    expect(mockNBA.evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', customerId: 'cust-2' }),
+    );
+    expect(mockOrchestrator.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'send_sms', id: 'decision-1' }),
+      'tenant-1',
+      'cust-2',
+    );
+    expect(mockProducer.publish).toHaveBeenCalled();
+  });
+
+  it('skips NBA evaluation for outbound interactions', async () => {
+    const mockGraph = createMockGraphEnricher();
+    const mockAudit = createMockAuditLogger();
+    const mockNBA = createMockNBAPipeline('send_sms');
+
+    const handler = createInteractionEventsHandler({
+      graphEnricher: mockGraph as never,
+      auditLogger: mockAudit as never,
+      nbaPipeline: mockNBA as never,
+      orchestrator: createMockOrchestrator() as never,
+      eventProducer: createMockEventProducer() as never,
+      getCustomerProfile: vi.fn().mockResolvedValue(null),
+    });
+
+    const event = makeEvent('interaction.logged', 'tenant-1', {
+      interactionId: 'int-3',
+      customerId: 'cust-3',
+      channel: 'sms',
+      direction: 'outbound',
+      type: 'message',
+    });
+
+    await handler(event as EventEnvelope<unknown>);
+
+    // NBA should NOT be called for outbound (we sent it, customer didn't initiate)
+    expect(mockNBA.evaluate).not.toHaveBeenCalled();
   });
 });
 
@@ -280,7 +410,10 @@ describe('Agent Event Handlers', () => {
     });
 
     const event = makeEvent('agent.triggered', 'tenant-1', {
-      sessionId: 'session-1', customerId: 'cust-1', agentRole: 'follow_up', autonomyLevel: 'supervised',
+      sessionId: 'session-1',
+      customerId: 'cust-1',
+      agentRole: 'follow_up',
+      autonomyLevel: 'supervised',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -306,7 +439,10 @@ describe('Agent Event Handlers', () => {
     });
 
     const event = makeEvent('agent.triggered', 'tenant-1', {
-      sessionId: 'session-1', customerId: 'cust-1', agentRole: 'collections', autonomyLevel: 'supervised',
+      sessionId: 'session-1',
+      customerId: 'cust-1',
+      agentRole: 'collections',
+      autonomyLevel: 'supervised',
     });
 
     // Should not throw
@@ -348,7 +484,12 @@ describe('Agent Event Handlers', () => {
 
 describe('Outbound Message Handlers', () => {
   it('processes outbound message through consent → compliance → send pipeline', async () => {
-    const mockSend = vi.fn().mockResolvedValue({ success: true, data: { messageId: 'sms-1', providerMessageId: 'provider-1', status: 'sent' } });
+    const mockSend = vi
+      .fn()
+      .mockResolvedValue({
+        success: true,
+        data: { messageId: 'sms-1', providerMessageId: 'provider-1', status: 'sent' },
+      });
     const mockAudit = createMockAuditLogger();
     const mockProducer = createMockEventProducer();
 
@@ -358,14 +499,18 @@ describe('Outbound Message Handlers', () => {
       } as never,
       consentStore: {} as never,
       complianceGate: {
-        check: vi.fn().mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
+        check: vi
+          .fn()
+          .mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
       } as never,
       smsProvider: { send: mockSend } as never,
       emailProvider: { send: vi.fn() } as never,
       eventProducer: mockProducer as never,
       auditLogger: mockAudit as never,
       stateMachine: {} as never,
-      getCustomerContact: vi.fn().mockResolvedValue({ contact: '+14155551234', contentBody: 'Hello' }),
+      getCustomerContact: vi
+        .fn()
+        .mockResolvedValue({ contact: '+14155551234', contentBody: 'Hello' }),
       updateMessageStatus: vi.fn().mockResolvedValue(undefined),
     });
 
@@ -387,7 +532,9 @@ describe('Outbound Message Handlers', () => {
 
     const handler = createOutboundMessagesHandler({
       consentManager: {
-        verifyConsentForSend: vi.fn().mockResolvedValue({ success: false, error: { message: 'No consent' } }),
+        verifyConsentForSend: vi
+          .fn()
+          .mockResolvedValue({ success: false, error: { message: 'No consent' } }),
       } as never,
       consentStore: {} as never,
       complianceGate: { check: vi.fn() } as never,
@@ -401,7 +548,10 @@ describe('Outbound Message Handlers', () => {
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
-      messageId: 'msg-2', customerId: 'cust-1', channel: 'sms', contentRef: 'ref-456',
+      messageId: 'msg-2',
+      customerId: 'cust-1',
+      channel: 'sms',
+      contentRef: 'ref-456',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -439,7 +589,10 @@ describe('Outbound Message Handlers', () => {
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
-      messageId: 'msg-3', customerId: 'cust-1', channel: 'sms', contentRef: 'ref-789',
+      messageId: 'msg-3',
+      customerId: 'cust-1',
+      channel: 'sms',
+      contentRef: 'ref-789',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -455,9 +608,15 @@ describe('Outbound Message Handlers', () => {
     const mockAudit = createMockAuditLogger();
 
     const handler = createOutboundMessagesHandler({
-      consentManager: { verifyConsentForSend: vi.fn().mockResolvedValue({ success: true }) } as never,
+      consentManager: {
+        verifyConsentForSend: vi.fn().mockResolvedValue({ success: true }),
+      } as never,
       consentStore: {} as never,
-      complianceGate: { check: vi.fn().mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }) } as never,
+      complianceGate: {
+        check: vi
+          .fn()
+          .mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
+      } as never,
       smsProvider: { send: vi.fn() } as never,
       emailProvider: { send: vi.fn() } as never,
       eventProducer: createMockEventProducer() as never,
@@ -468,7 +627,10 @@ describe('Outbound Message Handlers', () => {
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
-      messageId: 'msg-4', customerId: 'cust-1', channel: 'sms', contentRef: 'ref-000',
+      messageId: 'msg-4',
+      customerId: 'cust-1',
+      channel: 'sms',
+      contentRef: 'ref-000',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -480,22 +642,38 @@ describe('Outbound Message Handlers', () => {
     const mockProducer = createMockEventProducer();
 
     const handler = createOutboundMessagesHandler({
-      consentManager: { verifyConsentForSend: vi.fn().mockResolvedValue({ success: true }) } as never,
+      consentManager: {
+        verifyConsentForSend: vi.fn().mockResolvedValue({ success: true }),
+      } as never,
       consentStore: {} as never,
-      complianceGate: { check: vi.fn().mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }) } as never,
+      complianceGate: {
+        check: vi
+          .fn()
+          .mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
+      } as never,
       smsProvider: {
-        send: vi.fn().mockResolvedValue({ success: true, data: { messageId: 'sms-x', providerMessageId: 'p-1', status: 'sent' } }),
+        send: vi
+          .fn()
+          .mockResolvedValue({
+            success: true,
+            data: { messageId: 'sms-x', providerMessageId: 'p-1', status: 'sent' },
+          }),
       } as never,
       emailProvider: { send: vi.fn() } as never,
       eventProducer: mockProducer as never,
       auditLogger: createMockAuditLogger() as never,
       stateMachine: {} as never,
-      getCustomerContact: vi.fn().mockResolvedValue({ contact: '+14155551234', contentBody: 'Test' }),
+      getCustomerContact: vi
+        .fn()
+        .mockResolvedValue({ contact: '+14155551234', contentBody: 'Test' }),
       updateMessageStatus: vi.fn().mockResolvedValue(undefined),
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
-      messageId: 'msg-5', customerId: 'cust-1', channel: 'sms', contentRef: 'ref-111',
+      messageId: 'msg-5',
+      customerId: 'cust-1',
+      channel: 'sms',
+      contentRef: 'ref-111',
     });
 
     await handler(event as EventEnvelope<unknown>);
@@ -510,24 +688,39 @@ describe('Outbound Message Handlers', () => {
     });
 
     const handler = createOutboundMessagesHandler({
-      consentManager: { verifyConsentForSend: vi.fn().mockResolvedValue({ success: true }) } as never,
+      consentManager: {
+        verifyConsentForSend: vi.fn().mockResolvedValue({ success: true }),
+      } as never,
       consentStore: {} as never,
-      complianceGate: { check: vi.fn().mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }) } as never,
+      complianceGate: {
+        check: vi
+          .fn()
+          .mockReturnValue({ allowed: true, results: [], violations: [], timestamp: new Date() }),
+      } as never,
       smsProvider: { send: vi.fn() } as never,
       emailProvider: { send: mockEmailSend } as never,
       eventProducer: createMockEventProducer() as never,
       auditLogger: createMockAuditLogger() as never,
       stateMachine: {} as never,
-      getCustomerContact: vi.fn().mockResolvedValue({ contact: 'test@example.com', contentBody: '<p>Hello</p>' }),
+      getCustomerContact: vi
+        .fn()
+        .mockResolvedValue({ contact: 'test@example.com', contentBody: '<p>Hello</p>' }),
       updateMessageStatus: vi.fn().mockResolvedValue(undefined),
     });
 
     const event = makeEvent('outbound.message', 'tenant-1', {
-      messageId: 'msg-6', customerId: 'cust-1', channel: 'email', contentRef: 'ref-222',
+      messageId: 'msg-6',
+      customerId: 'cust-1',
+      channel: 'email',
+      contentRef: 'ref-222',
     });
 
     await handler(event as EventEnvelope<unknown>);
 
-    expect(mockEmailSend).toHaveBeenCalledWith('test@example.com', 'Message from ORDR-Connect', '<p>Hello</p>');
+    expect(mockEmailSend).toHaveBeenCalledWith(
+      'test@example.com',
+      'Message from ORDR-Connect',
+      '<p>Hello</p>',
+    );
   });
 });

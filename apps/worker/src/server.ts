@@ -21,10 +21,21 @@ import type { AuditLogger } from '@ordr/audit';
 import type { AgentEngine } from '@ordr/agent-runtime';
 import type { GraphEnricher } from '@ordr/graph';
 import type { ComplianceGate } from '@ordr/compliance';
-import type { ConsentManager, ConsentStore, SmsProvider, EmailProvider, MessageStateMachine } from '@ordr/channels';
+import type {
+  ConsentManager,
+  ConsentStore,
+  SmsProvider,
+  EmailProvider,
+  MessageStateMachine,
+} from '@ordr/channels';
 import type { EventProducer } from '@ordr/events';
 import { createCustomerEventsHandler } from './handlers/customer-events.js';
-import { createInteractionEventsHandler } from './handlers/interaction-events.js';
+import {
+  createInteractionEventsHandler,
+  type NBAEvaluator,
+  type AgentDispatcher,
+  type CustomerProfileSnapshot,
+} from './handlers/interaction-events.js';
 import { createAgentEventsHandler } from './handlers/agent-events.js';
 import { createOutboundMessagesHandler } from './handlers/outbound-messages.js';
 
@@ -42,20 +53,28 @@ export interface WorkerDependencies {
   readonly smsProvider: SmsProvider;
   readonly emailProvider: EmailProvider;
   readonly stateMachine: MessageStateMachine;
+  /** NBA pipeline — evaluates inbound interactions to produce Next-Best-Action decisions. */
+  readonly nbaPipeline: NBAEvaluator;
+  /** Agent orchestrator — dispatches NBA decisions to the correct agent role. */
+  readonly orchestrator: AgentDispatcher;
+  /** Fetch customer profile for NBA context. Returns null if unavailable. */
+  readonly getCustomerProfile: (
+    tenantId: string,
+    customerId: string,
+  ) => Promise<CustomerProfileSnapshot | null>;
   readonly getCustomerContact: (
     tenantId: string,
     customerId: string,
     channel: string,
   ) => Promise<{ readonly contact: string; readonly contentBody: string } | null>;
-  readonly updateMessageStatus: (
-    messageId: string,
-    status: string,
-  ) => Promise<void>;
+  readonly updateMessageStatus: (messageId: string, status: string) => Promise<void>;
 }
 
 // ─── Worker Startup ──────────────────────────────────────────────
 
-export async function startWorker(deps: WorkerDependencies): Promise<{ stop: () => Promise<void> }> {
+export async function startWorker(
+  deps: WorkerDependencies,
+): Promise<{ stop: () => Promise<void> }> {
   const { consumer, auditLogger } = deps;
 
   // Register handlers for each topic
@@ -69,10 +88,14 @@ export async function startWorker(deps: WorkerDependencies): Promise<{ stop: () 
   handlers.set('customer.created', customerHandler);
   handlers.set('customer.updated', customerHandler);
 
-  // Interaction event handlers
+  // Interaction event handlers — graph enrichment + NBA pipeline + orchestrator dispatch
   const interactionHandler = createInteractionEventsHandler({
     graphEnricher: deps.graphEnricher,
     auditLogger: deps.auditLogger,
+    nbaPipeline: deps.nbaPipeline,
+    orchestrator: deps.orchestrator,
+    eventProducer: deps.eventProducer,
+    getCustomerProfile: deps.getCustomerProfile,
   });
   handlers.set('interaction.logged', interactionHandler);
 
@@ -112,7 +135,7 @@ export async function startWorker(deps: WorkerDependencies): Promise<{ stop: () 
   // Start consuming
   await consumer.start();
 
-  console.log('[ORDR:WORKER] Worker started — consuming from Kafka topics');
+  console.warn('[ORDR:WORKER] Worker started — consuming from Kafka topics');
 
   // Audit log worker startup
   await auditLogger.log({
@@ -136,7 +159,7 @@ export async function startWorker(deps: WorkerDependencies): Promise<{ stop: () 
 
   // Graceful shutdown
   const stop = async (): Promise<void> => {
-    console.log('[ORDR:WORKER] Shutting down gracefully...');
+    console.warn('[ORDR:WORKER] Shutting down gracefully...');
     await consumer.stop();
 
     await auditLogger.log({
@@ -151,7 +174,7 @@ export async function startWorker(deps: WorkerDependencies): Promise<{ stop: () 
       timestamp: new Date(),
     });
 
-    console.log('[ORDR:WORKER] Worker stopped');
+    console.warn('[ORDR:WORKER] Worker stopped');
   };
 
   // Register signal handlers
