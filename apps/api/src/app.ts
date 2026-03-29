@@ -80,6 +80,8 @@ import { searchRouter } from './routes/search.js';
 import { schedulerRouter } from './routes/scheduler.js';
 import { integrationsRouter } from './routes/integrations.js';
 import { auditLogsRouter } from './routes/audit-logs.js';
+import { messagingRouter } from './routes/messaging.js';
+import { cobrowseRouter } from './routes/cobrowse.js';
 import { createMetricsRouter } from './routes/metrics.js';
 import type { MetricsRegistry } from '@ordr/observability';
 import type { ThreatDetectionConfig } from './middleware/threat-detection.js';
@@ -289,6 +291,12 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Audit Logs — immutable WORM audit trail viewer (tenant_admin+)
   app.route('/api/v1/audit-logs', auditLogsRouter);
+
+  // Internal messaging — enterprise chat, channels, DMs, presence, SSE
+  app.route('/api/v1/messaging', messagingRouter);
+
+  // Co-browsing / remote assistance — WebRTC signaling, session management
+  app.route('/api/v1/cobrowse', cobrowseRouter);
 
   // Prometheus metrics — network-restricted; no auth; no PHI in labels (Rule 6)
   if (config.metrics !== undefined) {
