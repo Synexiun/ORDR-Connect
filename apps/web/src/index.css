@@ -37,8 +37,8 @@
 
   /* Scrollbar styling */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 4px;
+    height: 4px;
   }
 
   ::-webkit-scrollbar-track {
@@ -46,12 +46,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: theme('colors.border.DEFAULT');
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: theme('colors.border.light');
+    background: rgba(251, 191, 36, 0.30);
   }
 }
 
@@ -62,7 +62,7 @@
   }
 
   .nav-link-active {
-    @apply bg-brand-accent/10 text-brand-accent;
+    @apply bg-[#fbbf24]/10 text-[#fbbf24];
   }
 
   .nav-section-label {
@@ -75,7 +75,7 @@
 
   /* KPI Cards */
   .kpi-card {
-    @apply rounded-xl border border-border bg-surface-secondary p-5 shadow-kpi transition-shadow duration-200 hover:shadow-card-hover;
+    @apply rounded-xl border border-border bg-surface-secondary/80 p-5 shadow-kpi backdrop-blur-md transition-shadow duration-200 hover:shadow-card-hover;
   }
 
   .kpi-card-blue {
@@ -100,11 +100,11 @@
 
   /* Metric values */
   .metric-value {
-    @apply font-mono text-2xl font-bold text-content;
+    @apply font-mono text-2xl font-black tabular-nums text-content;
   }
 
   .metric-label {
-    @apply text-2xs font-semibold uppercase tracking-wider text-content-tertiary;
+    @apply text-2xs font-mono uppercase tracking-[0.12em] text-content-tertiary;
   }
 
   .metric-delta-up {
@@ -117,15 +117,29 @@
 
   /* Section */
   .section-title {
-    @apply text-lg font-semibold text-content;
+    @apply text-lg font-bold text-content;
   }
 
   /* Page header */
   .page-title {
-    @apply text-xl font-bold text-content;
+    @apply text-xl font-black tracking-tighter text-content;
   }
 
   .page-subtitle {
     @apply text-sm text-content-secondary;
+  }
+
+  /* Ops scrollbar (3px, for dense panels) */
+  .ops-scrollbar::-webkit-scrollbar {
+    width: 3px;
+  }
+
+  .ops-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+  }
+
+  .ops-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(251, 191, 36, 0.30);
   }
 }

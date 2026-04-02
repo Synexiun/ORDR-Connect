@@ -31,7 +31,7 @@ export function Card({
   return (
     <div
       className={cn(
-        'rounded-xl border border-border bg-surface-secondary shadow-kpi',
+        'rounded-xl border border-border bg-surface-secondary/80 shadow-kpi backdrop-blur-md',
         'transition-all duration-200 hover:shadow-card-hover',
         accent && accentBorder[accent],
         className,
@@ -39,7 +39,11 @@ export function Card({
     >
       {(title !== undefined || actions !== undefined) && (
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          {title !== undefined && <h3 className="text-sm font-semibold text-content">{title}</h3>}
+          {title !== undefined && (
+            <h3 className="text-xs font-mono font-semibold uppercase tracking-[0.1em] text-content-tertiary">
+              {title}
+            </h3>
+          )}
           {actions !== undefined && <div className="flex items-center gap-2">{actions}</div>}
         </div>
       )}

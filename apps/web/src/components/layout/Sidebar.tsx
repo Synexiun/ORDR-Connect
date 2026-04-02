@@ -174,7 +174,7 @@ export function Sidebar({
               className="h-7 w-7 shrink-0 rounded-lg object-contain"
             />
           ) : (
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-accent text-xs font-bold text-white">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-accent text-xs font-bold text-[#060608]">
               O
             </div>
           )}
