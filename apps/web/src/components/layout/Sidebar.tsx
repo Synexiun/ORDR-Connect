@@ -40,6 +40,7 @@ import {
   Clock,
   Search,
   DollarSign,
+  Network,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -59,6 +60,7 @@ const navSections: NavSection[] = [
   {
     label: 'OPERATIONS',
     items: [
+      { to: '/ops', label: 'Ops Center', icon: Network },
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/interactions', label: 'Interactions', icon: MessageSquare },

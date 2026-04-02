@@ -7,6 +7,7 @@ import { Landing } from './pages/Landing';
 import { Login } from './pages/Login';
 import { Spinner } from './components/ui/Spinner';
 
+const OpsCenter = lazy(() => import('./pages/OpsCenter').then((m) => ({ default: m.OpsCenter })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Customers = lazy(() => import('./pages/Customers').then((m) => ({ default: m.Customers })));
 const CustomerDetail = lazy(() =>
@@ -140,6 +141,16 @@ export function App(): ReactNode {
                   <GuestRoute>
                     <Login />
                   </GuestRoute>
+                }
+              />
+
+              {/* Protected — full-screen (no Layout shell) */}
+              <Route
+                path="/ops"
+                element={
+                  <ProtectedRoute>
+                    <OpsCenter />
+                  </ProtectedRoute>
                 }
               />
 

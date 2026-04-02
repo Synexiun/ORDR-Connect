@@ -156,4 +156,22 @@ export {
   UserCog,
   ToggleLeft,
   ToggleRight,
+
+  // Chat & Communications
+  Paperclip,
+  Smile,
+  AtSign,
+  Video,
+  VideoOff,
+  Pin,
+  BellOff,
+  Archive,
+  Mic,
+  MicOff,
+  Circle,
+  MousePointerClick,
+  Maximize,
+  Minimize,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
