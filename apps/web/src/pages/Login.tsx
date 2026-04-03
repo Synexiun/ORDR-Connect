@@ -48,7 +48,7 @@ export function Login(): ReactNode {
       <div className="w-full max-w-sm">
         {/* Brand */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-accent text-sm font-bold text-white">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-accent text-sm font-bold text-[#060608]">
             O
           </div>
           <h1 className="font-mono text-xl font-bold tracking-tight text-content">

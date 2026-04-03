@@ -365,7 +365,7 @@ function ChannelItem({ channel, isActive, onClick }: ChannelItemProps): ReactNod
         {channel.name}
       </span>
       {(channel.unreadCount ?? 0) > 0 && (
-        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-accent px-1 text-[10px] font-bold text-white">
+        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-accent px-1 text-[10px] font-bold text-[#060608]">
           {channel.unreadCount}
         </span>
       )}
@@ -1300,7 +1300,7 @@ export function Chat(): ReactNode {
                     <button
                       className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
                         (editingId !== null ? editContent.trim() : messageInput.trim()).length > 0
-                          ? 'bg-brand-accent text-white hover:bg-brand-accent/90'
+                          ? 'bg-brand-accent text-[#060608] hover:bg-brand-accent/90'
                           : 'text-content-tertiary'
                       }`}
                       onClick={editingId !== null ? handleEditSave : handleSend}

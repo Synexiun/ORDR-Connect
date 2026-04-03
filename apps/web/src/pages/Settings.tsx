@@ -571,7 +571,7 @@ export function Settings(): ReactNode {
                       }}
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                         selected
-                          ? 'bg-brand-accent text-white'
+                          ? 'bg-brand-accent text-[#060608]'
                           : 'bg-surface-tertiary text-content-secondary hover:bg-border-light'
                       }`}
                     >

@@ -413,7 +413,7 @@ export function ReportBuilder(): ReactNode {
               <span
                 className={`flex h-6 w-6 items-center justify-center rounded-full text-2xs font-bold ${
                   i === step
-                    ? 'bg-brand-accent text-white'
+                    ? 'bg-brand-accent text-[#060608]'
                     : i < step
                       ? 'bg-emerald-400/20 text-emerald-400'
                       : 'bg-surface-tertiary text-content-tertiary'

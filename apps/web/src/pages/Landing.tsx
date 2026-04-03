@@ -665,7 +665,7 @@ export function Landing(): ReactNode {
       <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-canvas/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-accent text-xs font-bold text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-accent text-xs font-bold text-[#060608]">
               O
             </div>
             <span className="font-mono text-lg font-bold tracking-tight">
@@ -1234,7 +1234,7 @@ export function Landing(): ReactNode {
           <div className="grid grid-cols-1 gap-12 sm:grid-cols-3">
             <div>
               <div className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent text-2xs font-bold text-white">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent text-2xs font-bold text-[#060608]">
                   O
                 </div>
                 <span className="font-mono text-sm font-bold tracking-tight">

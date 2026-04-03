@@ -223,7 +223,7 @@ export function DatePicker({
                     'mx-auto flex h-8 w-8 items-center justify-center rounded-md text-xs transition-colors duration-100',
                     cell.inMonth ? 'text-content' : 'text-content-tertiary',
                     isSelected
-                      ? 'bg-brand-accent text-white'
+                      ? 'bg-brand-accent text-[#060608]'
                       : isToday
                         ? 'bg-surface-tertiary font-semibold'
                         : 'hover:bg-surface-tertiary',

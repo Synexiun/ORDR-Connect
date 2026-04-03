@@ -187,7 +187,7 @@ export function Search(): ReactNode {
               }}
               className={`rounded-full px-3 py-0.5 text-xs font-medium transition-colors ${
                 entityFilter === f.value
-                  ? 'bg-brand-accent text-white'
+                  ? 'bg-brand-accent text-[#060608]'
                   : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary'
               }`}
               aria-pressed={entityFilter === f.value}

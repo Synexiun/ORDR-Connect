@@ -462,7 +462,7 @@ export function Marketplace(): ReactNode {
             }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
               category === cat.key
-                ? 'bg-brand-accent text-white'
+                ? 'bg-brand-accent text-[#060608]'
                 : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary hover:text-content'
             }`}
           >
