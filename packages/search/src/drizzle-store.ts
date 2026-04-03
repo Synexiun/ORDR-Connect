@@ -2,7 +2,7 @@
  * @ordr/search — Drizzle-backed SearchIndexStore + SearchStore
  *
  * Implements full-text search using PostgreSQL tsvector/GIN indexes.
- * The search() method calls to_tsquery() for accurate ranked results.
+ * The search() method calls websearch_to_tsquery() for accurate ranked results.
  * The suggest() method uses ILIKE prefix matching for fast autocomplete.
  * The facetedSearch() method returns per-entity-type bucket counts.
  *
@@ -17,7 +17,7 @@
  * - Full entity data requires a separate authorized API call
  */
 
-import { eq, and, sql, type SQL } from 'drizzle-orm';
+import { eq, and, ne, sql, inArray, gte, lte, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as schema from '@ordr/db';
 import type { SearchIndexStore, IndexUpsertInput } from './indexer.js';
@@ -164,66 +164,108 @@ export class DrizzleSearchStore implements SearchIndexStore, SearchStore {
   // ── SearchStore ──────────────────────────────────────────────
 
   async search(params: SearchStoreParams): Promise<SearchStoreResult> {
-    const { tenantId, queryText, entityType, limit, offset } = params;
+    const { tenantId, queryText, entityType, filters, sort, fuzzy, limit, offset } = params;
+    const trimmed = queryText.trim();
+    const hasFts = trimmed.length > 0;
 
-    // Build WHERE conditions
+    // websearch_to_tsquery is safe for raw user input — handles phrases,
+    // negation, and special characters without throwing syntax errors.
+    const scoreExpr = hasFts
+      ? sql`ts_rank(to_tsvector('english', content_vector), websearch_to_tsquery('english', ${trimmed}))`
+      : sql`1.0::float`;
+
+    // Build WHERE conditions — all in one place to avoid count/result divergence
     const conditions: SQL[] = [eq(schema.searchIndex.tenantId, tenantId)];
 
     if (entityType !== undefined) {
       conditions.push(eq(schema.searchIndex.entityType, entityType));
     }
 
-    // Full-text match via PostgreSQL to_tsquery
-    if (queryText.trim().length > 0) {
-      const tsQuery = queryText.trim().split(/\s+/).join(' & ');
-      conditions.push(
-        sql`to_tsvector('english', ${schema.searchIndex.contentVector}) @@ to_tsquery('english', ${tsQuery})`,
-      );
+    if (hasFts) {
+      if (fuzzy) {
+        // Fuzzy: FTS union trigram similarity (requires pg_trgm — migration 0010)
+        conditions.push(
+          sql`(
+            to_tsvector('english', content_vector) @@ websearch_to_tsquery('english', ${trimmed})
+            OR display_title % ${trimmed}
+          )`,
+        );
+      } else {
+        conditions.push(
+          sql`to_tsvector('english', content_vector) @@ websearch_to_tsquery('english', ${trimmed})`,
+        );
+      }
+    }
+
+    // Apply caller-supplied filters (entity_type, indexed_at)
+    for (const filter of filters) {
+      if (filter.field === 'entity_type') {
+        if (filter.operator === 'eq') {
+          conditions.push(eq(schema.searchIndex.entityType, filter.value as SearchableEntityType));
+        } else if (filter.operator === 'neq') {
+          conditions.push(ne(schema.searchIndex.entityType, filter.value as SearchableEntityType));
+        } else if (filter.operator === 'in' && Array.isArray(filter.value)) {
+          conditions.push(
+            inArray(schema.searchIndex.entityType, filter.value as SearchableEntityType[]),
+          );
+        }
+      }
+
+      if (filter.field === 'indexed_at' && typeof filter.value === 'string') {
+        const ts = new Date(filter.value);
+        if (filter.operator === 'gte') {
+          conditions.push(gte(schema.searchIndex.indexedAt, ts));
+        } else if (filter.operator === 'lte') {
+          conditions.push(lte(schema.searchIndex.indexedAt, ts));
+        }
+      }
     }
 
     const where = and(...conditions);
 
-    // Total count
-    const countResult = await this.db
-      .select({ count: sql<string>`COUNT(*)` })
-      .from(schema.searchIndex)
-      .where(where);
-    const total = parseInt(countResult[0]?.count ?? '0', 10);
+    // ORDER BY — respect caller sort preference
+    const orderExpr: SQL =
+      sort.field === 'indexed_at'
+        ? sort.direction === 'asc'
+          ? sql`indexed_at ASC`
+          : sql`indexed_at DESC`
+        : sort.field === 'updated_at'
+          ? sort.direction === 'asc'
+            ? sql`updated_at ASC`
+            : sql`updated_at DESC`
+          : sort.direction === 'asc'
+            ? sql`score ASC`
+            : sql`score DESC`;
 
-    // Results with ts_rank score
+    // Single query — COUNT(*) OVER () avoids a second round-trip to the DB
     const rowsResult = await this.db.execute(
       sql`SELECT
             id, entity_type, entity_id, display_title, display_subtitle,
             metadata, indexed_at, content_vector,
-            CASE WHEN ${sql.raw(queryText.trim().length > 0 ? 'TRUE' : 'FALSE')}
-              THEN ts_rank(to_tsvector('english', content_vector), to_tsquery('english', ${queryText.trim().split(/\s+/).join(' & ')}))
-              ELSE 1.0
-            END AS score
+            ${scoreExpr} AS score,
+            COUNT(*) OVER () AS total_count
           FROM search_index
-          WHERE tenant_id = ${tenantId}
-          ${entityType !== undefined ? sql`AND entity_type = ${entityType}` : sql``}
-          ${
-            queryText.trim().length > 0
-              ? sql`AND to_tsvector('english', content_vector) @@ to_tsquery('english', ${queryText.trim().split(/\s+/).join(' & ')})`
-              : sql``
-          }
-          ORDER BY score DESC
+          WHERE ${where}
+          ORDER BY ${orderExpr}
           LIMIT ${limit} OFFSET ${offset}`,
     );
 
-    const results: SearchStoreRow[] = (rowsResult as unknown as Array<Record<string, unknown>>).map(
-      (r) => ({
-        id: r['id'] as string,
-        entityType: r['entity_type'] as SearchableEntityType,
-        entityId: r['entity_id'] as string,
-        displayTitle: r['display_title'] as string,
-        displaySubtitle: r['display_subtitle'] as string,
-        score: typeof r['score'] === 'number' ? r['score'] : parseFloat(String(r['score'])),
-        contentVector: r['content_vector'] as string,
-        metadata: r['metadata'] as Record<string, unknown>,
-        indexedAt: new Date(r['indexed_at'] as string),
-      }),
-    );
+    const rows = rowsResult as unknown as Array<Record<string, unknown>>;
+    const firstRow = rows[0];
+    const rawCount = firstRow !== undefined ? firstRow['total_count'] : undefined;
+    const total = parseInt(typeof rawCount === 'string' ? rawCount : '0', 10);
+
+    const results: SearchStoreRow[] = rows.map((r) => ({
+      id: r['id'] as string,
+      entityType: r['entity_type'] as SearchableEntityType,
+      entityId: r['entity_id'] as string,
+      displayTitle: r['display_title'] as string,
+      displaySubtitle: r['display_subtitle'] as string,
+      score: typeof r['score'] === 'number' ? r['score'] : parseFloat(String(r['score'])),
+      contentVector: r['content_vector'] as string,
+      metadata: r['metadata'] as Record<string, unknown>,
+      indexedAt: new Date(r['indexed_at'] as string),
+    }));
 
     return { results, total };
   }
