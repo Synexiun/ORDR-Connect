@@ -15,13 +15,7 @@ import neo4j, {
   type Record as Neo4jRecord,
   type QueryResult,
 } from 'neo4j-driver';
-import {
-  type Result,
-  ok,
-  err,
-  InternalError,
-  ValidationError,
-} from '@ordr/core';
+import { type Result, ok, err, InternalError, ValidationError } from '@ordr/core';
 import { QUERY_TIMEOUT_MS } from './types.js';
 
 // ─── Configuration ───────────────────────────────────────────────
@@ -32,7 +26,20 @@ export interface GraphClientConfig {
   readonly password: string;
   readonly database?: string | undefined;
   readonly maxConnectionPoolSize?: number | undefined;
+  /**
+   * Timeout for acquiring a connection from the pool (ms). Default: 30 000.
+   */
   readonly connectionAcquisitionTimeoutMs?: number | undefined;
+  /**
+   * Timeout for establishing a new TCP connection to the server (ms). Default: 5 000.
+   * Increase to 15 000+ for Neo4j Aura or cloud-hosted instances.
+   */
+  readonly connectionTimeoutMs?: number | undefined;
+  /**
+   * @deprecated TLS is controlled by the URI scheme in neo4j-driver v5+.
+   *   Use `neo4j+s://` (Aura / CA-signed), `neo4j+ssc://` (self-signed),
+   *   or `neo4j://` (plaintext, dev only). This field is ignored.
+   */
   readonly encrypted?: boolean | undefined;
 }
 
@@ -52,26 +59,27 @@ export class GraphClient {
    */
   async connect(): Promise<void> {
     try {
+      // TLS is controlled by the URI scheme (neo4j-driver v5+):
+      //   neo4j+s://   — TLS with CA-signed cert (Neo4j Aura, production)
+      //   neo4j+ssc:// — TLS with self-signed cert
+      //   neo4j://     — plaintext (local dev only)
+      // The deprecated `encrypted` option is intentionally omitted.
       this.driver = neo4j.driver(
         this.config.uri,
         neo4j.auth.basic(this.config.username, this.config.password),
         {
           maxConnectionPoolSize: this.config.maxConnectionPoolSize ?? 50,
-          connectionAcquisitionTimeout:
-            this.config.connectionAcquisitionTimeoutMs ?? 30_000,
-          encrypted: this.config.encrypted ?? false,
+          connectionAcquisitionTimeout: this.config.connectionAcquisitionTimeoutMs ?? 30_000,
+          connectionTimeout: this.config.connectionTimeoutMs ?? 5_000,
         },
       );
 
-      // Health check — verify connectivity
-      const serverInfo = await this.driver.getServerInfo();
-      // Log only non-sensitive connection metadata
-      // SECURITY: Never log credentials or query parameters
-      void serverInfo;
+      // getServerInfo() opens a real connection and throws if the server is
+      // unreachable — preferred over verifyConnectivity() per neo4j-driver v5 docs.
+      await this.driver.getServerInfo();
     } catch (cause: unknown) {
       this.driver = null;
-      const message =
-        cause instanceof Error ? cause.message : 'Unknown connection error';
+      const message = cause instanceof Error ? cause.message : 'Unknown connection error';
       throw new InternalError(`Neo4j connection failed: ${message}`);
     }
   }
@@ -102,7 +110,7 @@ export class GraphClient {
     cypher: string,
     params: Record<string, unknown>,
     tenantId: string,
-  ): Promise<Result<T[], AppError>> {
+  ): Promise<Result<T[]>> {
     if (!this.driver) {
       return err(new InternalError('Neo4j client is not connected'));
     }
@@ -129,15 +137,12 @@ export class GraphClient {
         { timeout: QUERY_TIMEOUT_MS },
       );
 
-      const records: T[] = result.records.map(
-        (record: Neo4jRecord) => record.toObject() as T,
-      );
+      const records: T[] = result.records.map((record: Neo4jRecord) => record.toObject() as T);
 
       return ok(records);
     } catch (cause: unknown) {
       // SECURITY: Log only error type and Cypher template — NEVER parameters
-      const message =
-        cause instanceof Error ? cause.message : 'Query execution failed';
+      const message = cause instanceof Error ? cause.message : 'Query execution failed';
       return err(new InternalError(`Graph query failed: ${message}`));
     } finally {
       if (session) {
@@ -154,7 +159,7 @@ export class GraphClient {
     cypher: string,
     params: Record<string, unknown>,
     tenantId: string,
-  ): Promise<Result<T[], AppError>> {
+  ): Promise<Result<T[]>> {
     if (!this.driver) {
       return err(new InternalError('Neo4j client is not connected'));
     }
@@ -181,15 +186,12 @@ export class GraphClient {
         { timeout: QUERY_TIMEOUT_MS },
       );
 
-      const records: T[] = result.records.map(
-        (record: Neo4jRecord) => record.toObject() as T,
-      );
+      const records: T[] = result.records.map((record: Neo4jRecord) => record.toObject() as T);
 
       return ok(records);
     } catch (cause: unknown) {
       // SECURITY: Log only error type — NEVER parameters
-      const message =
-        cause instanceof Error ? cause.message : 'Write query failed';
+      const message = cause instanceof Error ? cause.message : 'Write query failed';
       return err(new InternalError(`Graph write failed: ${message}`));
     } finally {
       if (session) {
@@ -205,6 +207,3 @@ export class GraphClient {
     return this.driver !== null;
   }
 }
-
-// Re-import for the return type used in runQuery
-import type { AppError } from '@ordr/core';
