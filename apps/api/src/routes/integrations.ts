@@ -222,7 +222,8 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
 
   const provider = c.req.param('provider');
   if (!deps.adapters.has(provider)) {
-    return c.json({ error: 'unknown_provider' }, 404);
+    // Always return 200 to prevent retry storms from webhook providers
+    return c.json({ received: true }, 200);
   }
 
   // 1. Read raw body as text BEFORE any JSON parsing
@@ -332,6 +333,12 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
         details: { provider },
         timestamp: new Date(),
       });
+    } else {
+      // Unknown tenant — webhook_log row IS the immutable record (tenantId=null allowed)
+      // Security alert at application level since we can't scope to a tenant
+      console.error(
+        `[ORDR:API:WEBHOOK] Invalid signature from unknown tenant: provider=${provider} webhookLogId=${webhookLogId}`,
+      );
     }
     return c.json({ received: true }, 200);
   }
