@@ -150,6 +150,11 @@ interface IntegrationDeps {
     tenantId: string;
     provider: string;
   }) => Promise<string | null>;
+  readonly isRecentDuplicateWebhook: (params: {
+    provider: string;
+    payloadHash: string;
+    withinMs: number;
+  }) => Promise<boolean>;
   readonly fieldEncryptor: FieldEncryptor;
   readonly credManagerDeps: CredentialManagerDeps;
   readonly oauthConfigs: Map<string, OAuthConfig>;
@@ -235,6 +240,20 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
     parsedPayload = JSON.parse(rawBody) as Record<string, unknown>;
   } catch {
     return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  // 1b. Salesforce replay prevention — reject duplicate payloads within 10 minutes
+  // HIPAA §164.312(e)(2)(i): integrity control prevents replay attacks.
+  // Checked before tenant lookup to fail fast on known duplicates.
+  if (provider === 'salesforce') {
+    const isDuplicate = await deps.isRecentDuplicateWebhook({
+      provider,
+      payloadHash,
+      withinMs: 10 * 60 * 1000,
+    });
+    if (isDuplicate) {
+      return c.json({ received: true }, 200);
+    }
   }
 
   // 2. Determine tenant from provider-specific identifier in payload
@@ -334,10 +353,13 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
         timestamp: new Date(),
       });
     } else {
-      // Unknown tenant — webhook_log row IS the immutable record (tenantId=null allowed)
-      // Security alert at application level since we can't scope to a tenant
+      // COMPLIANCE NOTE: tenantId is null (unknown sender) — auditLogger requires a valid
+      // tenant UUID FK. The immutable record for this event is the webhook_log DB row
+      // (payloadHash stored, signatureValid=false). Security alert logged to application
+      // observability pipeline for SIEM ingestion.
+      // HIPAA §164.312(e): integrity control record = webhook_log row id: ${webhookLogId}
       console.error(
-        `[ORDR:API:WEBHOOK] Invalid signature from unknown tenant: provider=${provider} webhookLogId=${webhookLogId}`,
+        `[ORDR:SECURITY:WEBHOOK] Invalid signature unknown-tenant: provider=${provider} webhookLogId=${webhookLogId}`,
       );
     }
     return c.json({ received: true }, 200);
@@ -356,7 +378,11 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
   const webhookPayload = adapter.handleWebhook(parsedPayload, '', '');
 
   const envelopeId = randomUUID();
-  const correlationId = c.get('requestId');
+  // SECURITY: webhook route runs before auth middleware; at runtime requestId may be
+  // absent if requestId middleware is not applied globally (Env types it as string, but
+  // this route bypasses auth middleware). Cast to unknown first so the nullish coalesce
+  // is evaluated at runtime — guaranteeing a defined correlationId in the Kafka envelope.
+  const correlationId = (c.get('requestId') as string | undefined) ?? envelopeId;
 
   const envelope = createEventEnvelope(
     EventType.INTEGRATION_WEBHOOK_RECEIVED,

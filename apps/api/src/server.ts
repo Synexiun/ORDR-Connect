@@ -65,7 +65,7 @@ import {
   InMemoryCounterStore,
 } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
-import { and, eq, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
+import { and, eq, gte, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
 import { MetricsRegistry } from '@ordr/observability';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
@@ -1847,6 +1847,21 @@ async function bootstrap(): Promise<void> {
         )
         .limit(1);
       return rows[0]?.webhookSecretEnc ?? null;
+    },
+    isRecentDuplicateWebhook: async ({ provider, payloadHash, withinMs }) => {
+      const cutoff = new Date(Date.now() - withinMs);
+      const rows = await db
+        .select({ id: schema.webhookLogs.id })
+        .from(schema.webhookLogs)
+        .where(
+          and(
+            eq(schema.webhookLogs.provider, provider as never),
+            eq(schema.webhookLogs.payloadHash, payloadHash),
+            gte(schema.webhookLogs.receivedAt, cutoff),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
     },
     fieldEncryptor: crmFieldEncryptor,
     credManagerDeps: {
