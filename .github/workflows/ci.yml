@@ -160,6 +160,9 @@ jobs:
       - name: Check deploy-staging Dockerfile reference
         run: bash tests/compliance/check-deploy-staging-dockerfile.sh
 
+      - name: Check DSR audit event types
+        run: ./tests/compliance/check-dsr-audit-events.sh
+
   ci-gate:
     name: CI Gate
     needs: [lint, typecheck, test, e2e, compliance-checks]
