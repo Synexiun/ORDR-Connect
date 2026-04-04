@@ -3,8 +3,10 @@
  *
  * SOC2 CC6.1 — Access control: auth-enforced, tenant-scoped.
  * ISO 27001 A.12.6.1 — Management of technical vulnerabilities: adapter health checks.
+ * HIPAA §164.312(e) — Transmission security: HMAC-verified inbound webhooks.
  *
  * Public route: GET /providers — returns available provider names only, no auth needed.
+ * Webhook route: POST /:provider/webhook — HMAC-protected, no JWT required.
  * All other routes require auth.
  * OAuth operations (authorize, callback) require tenant_admin role.
  * Contact delete requires tenant_admin role.
@@ -12,18 +14,35 @@
  * NEVER log OAuth codes or tokens.
  */
 
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { INTEGRATION_PROVIDERS } from '@ordr/integrations';
-import type { OAuthCredentials, IntegrationHealth } from '@ordr/integrations';
+import type {
+  OAuthCredentials,
+  IntegrationHealth,
+  WebhookPayload,
+  OAuthConfig,
+  CredentialManagerDeps,
+} from '@ordr/integrations';
+import { ensureFreshCredentials, IntegrationNotConnectedError } from '@ordr/integrations';
+import type { FieldEncryptor } from '@ordr/crypto';
+import type { AuditLogger } from '@ordr/audit';
+import { EventProducer, createEventEnvelope, EventType, TOPICS } from '@ordr/events';
 import { ValidationError, AuthorizationError, NotFoundError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
 import { requireRoleMiddleware } from '../middleware/auth.js';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { withCredentials } from '../middleware/crm-credentials.js';
 
 // ─── CRMAdapter interface ─────────────────────────────────────────
+// NOTE: Extended to include handleWebhook and updated getHealth signature.
+// The full package interface (CRMAdapter from @ordr/integrations) will replace
+// this in a later phase once all call sites pass credentials.
 
 interface OAuthAuthorizationResult {
   authorizationUrl: string;
@@ -59,7 +78,23 @@ export interface CRMAdapter {
     query: string,
     pagination: { limit: number; offset: number },
   ): Promise<PaginatedResult<Record<string, unknown>>>;
-  getHealth(): Promise<IntegrationHealth>;
+  /** Optional credentials — required in Phase 52 Tasks 15-16 */
+  getHealth(credentials?: OAuthCredentials): Promise<IntegrationHealth>;
+  /**
+   * Process an inbound webhook payload.
+   * NOTE: The adapter MUST verify signature internally when credentials are provided.
+   * The route layer pre-verifies the signature before calling this method.
+   */
+  handleWebhook(
+    payload: Readonly<Record<string, unknown>>,
+    signature: string,
+    secret: string,
+  ): WebhookPayload;
+  /** Required for token refresh (used by withCredentials / ensureFreshCredentials) */
+  refreshAccessToken(
+    config: OAuthConfig,
+    refreshToken: string,
+  ): Promise<{ credentials: OAuthCredentials; instanceUrl?: string | undefined }>;
 }
 
 // ─── Input Schemas ────────────────────────────────────────────────
@@ -98,6 +133,28 @@ const listDealsQuerySchema = z.object({
 
 interface IntegrationDeps {
   readonly adapters: Map<string, CRMAdapter>;
+  readonly lookupTenantByProvider: (params: {
+    provider: string;
+    instanceUrl?: string | undefined;
+    portalId?: string | undefined;
+  }) => Promise<string | null>;
+  readonly insertWebhookLog: (params: {
+    tenantId: string | null;
+    provider: string;
+    eventType: string;
+    payloadHash: string;
+    signatureValid: boolean;
+  }) => Promise<string>;
+  readonly updateWebhookLogProcessed: (params: { id: string }) => Promise<void>;
+  readonly getWebhookSecret: (params: {
+    tenantId: string;
+    provider: string;
+  }) => Promise<string | null>;
+  readonly fieldEncryptor: FieldEncryptor;
+  readonly credManagerDeps: CredentialManagerDeps;
+  readonly oauthConfigs: Map<string, OAuthConfig>;
+  readonly eventProducer: EventProducer;
+  readonly auditLogger: Pick<AuditLogger, 'log'>;
 }
 
 let deps: IntegrationDeps | null = null;
@@ -152,6 +209,186 @@ integrationsRouter.get('/providers', (c): Response => {
     success: true as const,
     data: providers,
   });
+});
+
+// ─── POST /:provider/webhook — Inbound webhook (no JWT, HMAC-protected) ─────
+// SECURITY: Registered BEFORE auth middleware so webhooks don't require a JWT.
+// Tenant identity comes from lookupTenantByProvider (DB lookup), NOT from the
+// request body (never trust client-supplied tenant_id).
+// Returns 200 even on signature failure to prevent retry storms.
+
+integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
+  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+
+  const provider = c.req.param('provider');
+  if (!deps.adapters.has(provider)) {
+    return c.json({ error: 'unknown_provider' }, 404);
+  }
+
+  // 1. Read raw body as text BEFORE any JSON parsing
+  const rawBody = await c.req.text();
+  const payloadHash = createHash('sha256').update(rawBody, 'utf8').digest('hex');
+
+  let parsedPayload: Record<string, unknown>;
+  try {
+    parsedPayload = JSON.parse(rawBody) as Record<string, unknown>;
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  // 2. Determine tenant from provider-specific identifier in payload
+  const instanceUrl =
+    typeof parsedPayload['instance_url'] === 'string' ? parsedPayload['instance_url'] : undefined;
+  const portalId =
+    typeof parsedPayload['portalId'] === 'string' ? parsedPayload['portalId'] : undefined;
+
+  const resolvedTenantId = await deps.lookupTenantByProvider({ provider, instanceUrl, portalId });
+
+  // 3. Verify HMAC signature using raw body bytes (timing-safe comparison)
+  let signatureValid = false;
+  if (resolvedTenantId !== null) {
+    const encryptedSecret = await deps.getWebhookSecret({
+      tenantId: resolvedTenantId,
+      provider,
+    });
+    if (encryptedSecret !== null) {
+      const webhookSecret = deps.fieldEncryptor.decryptField('webhook_secret', encryptedSecret);
+      const signatureHeader =
+        provider === 'salesforce'
+          ? (c.req.header('x-salesforce-signature') ?? '')
+          : (c.req.header('x-hubspot-signature-v3') ?? '');
+
+      if (provider === 'hubspot') {
+        // Replay prevention: reject requests older than 5 minutes
+        const tsHeader = c.req.header('x-hubspot-request-timestamp') ?? '';
+        const tsMs = Number(tsHeader);
+        const ageMs = Date.now() - tsMs;
+        if (!isNaN(tsMs) && ageMs <= 5 * 60 * 1000) {
+          const method = c.req.method;
+          const url = c.req.url;
+          const toSign = method + url + rawBody + tsHeader;
+          const computed = createHmac('sha256', webhookSecret).update(toSign, 'utf8').digest('hex');
+          const sigBuf = Buffer.from(signatureHeader, 'hex');
+          const compBuf = Buffer.from(computed, 'hex');
+          if (sigBuf.length > 0 && sigBuf.length === compBuf.length) {
+            signatureValid = timingSafeEqual(sigBuf, compBuf);
+          }
+        }
+      } else {
+        // Salesforce: HMAC-SHA256 of raw body, base64-encoded
+        const computed = createHmac('sha256', webhookSecret)
+          .update(rawBody, 'utf8')
+          .digest('base64');
+        const sigValue = signatureHeader.startsWith('sha256=')
+          ? signatureHeader.slice(7)
+          : signatureHeader;
+        const sigBuf = Buffer.from(sigValue, 'base64');
+        const compBuf = Buffer.from(computed, 'base64');
+        if (sigBuf.length > 0 && sigBuf.length === compBuf.length) {
+          signatureValid = timingSafeEqual(sigBuf, compBuf);
+        }
+      }
+    }
+  }
+
+  // 4. Log webhook receipt regardless of signature validity
+  const eventType =
+    typeof parsedPayload['event_type'] === 'string'
+      ? parsedPayload['event_type']
+      : typeof parsedPayload['subscriptionType'] === 'string'
+        ? parsedPayload['subscriptionType']
+        : 'unknown';
+
+  const webhookLogId = await deps.insertWebhookLog({
+    tenantId: resolvedTenantId,
+    provider,
+    eventType,
+    payloadHash,
+    signatureValid,
+  });
+
+  // 5. If invalid: return 200 to prevent retry storm; emit compliance audit events
+  if (!signatureValid) {
+    if (resolvedTenantId !== null) {
+      await deps.auditLogger.log({
+        tenantId: resolvedTenantId,
+        eventType: 'integration.webhook_invalid_signature',
+        actorType: 'system',
+        actorId: 'api',
+        resource: 'webhook_logs',
+        resourceId: webhookLogId,
+        action: 'signature_invalid',
+        details: { provider, webhook_log_id: webhookLogId },
+        timestamp: new Date(),
+      });
+      await deps.auditLogger.log({
+        tenantId: resolvedTenantId,
+        eventType: 'compliance.violation',
+        actorType: 'system',
+        actorId: 'api',
+        resource: 'webhook_logs',
+        resourceId: webhookLogId,
+        action: 'invalid_webhook_signature',
+        details: { provider },
+        timestamp: new Date(),
+      });
+    }
+    return c.json({ received: true }, 200);
+  }
+
+  // 6. Normalize via adapter + publish to Kafka
+  // resolvedTenantId is guaranteed non-null here: signatureValid===true requires a valid secret
+  // which in turn requires resolvedTenantId !== null (see signature check block above)
+  const verifiedTenantId = resolvedTenantId as string;
+
+  const adapter = deps.adapters.get(provider);
+  if (!adapter) {
+    return c.json({ error: 'unknown_provider' }, 404);
+  }
+  // Pass empty signature/secret: route layer has already verified the signature above
+  const webhookPayload = adapter.handleWebhook(parsedPayload, '', '');
+
+  const envelopeId = randomUUID();
+  const correlationId = c.get('requestId');
+
+  const envelope = createEventEnvelope(
+    EventType.INTEGRATION_WEBHOOK_RECEIVED,
+    verifiedTenantId,
+    {
+      tenantId: verifiedTenantId,
+      provider,
+      entityType: webhookPayload.entityType,
+      externalId: webhookPayload.entityId,
+      eventType: webhookPayload.eventType,
+      webhookLogId,
+    },
+    {
+      correlationId,
+      causationId: envelopeId,
+      source: 'api',
+      version: 1,
+    },
+  );
+
+  await deps.eventProducer.publish(TOPICS.INTEGRATION_EVENTS, envelope);
+
+  // 7. Mark log as processed
+  await deps.updateWebhookLogProcessed({ id: webhookLogId });
+
+  // 8. Emit audit event
+  await deps.auditLogger.log({
+    tenantId: verifiedTenantId,
+    eventType: 'integration.webhook_received',
+    actorType: 'system',
+    actorId: 'api',
+    resource: 'webhook_logs',
+    resourceId: webhookLogId,
+    action: 'received',
+    details: { provider, entity_type: webhookPayload.entityType },
+    timestamp: new Date(),
+  });
+
+  return c.json({ received: true }, 200);
 });
 
 // All subsequent routes require authentication + integrations:read permission
@@ -380,6 +617,45 @@ integrationsRouter.get('/:provider/deals', async (c): Promise<Response> => {
     offset: parsed.data.offset,
     provider,
   });
+});
+
+// ─── POST /:provider/webhook/test — Verify connectivity (JWT-required) ────────
+// Registered after auth middleware so it requires valid JWT + integrations:read.
+
+integrationsRouter.post('/:provider/webhook/test', async (c): Promise<Response> => {
+  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+
+  const ctx = ensureTenantContext(c);
+  const provider = c.req.param('provider');
+  const adapter = resolveAdapter(provider, deps.adapters);
+
+  const oauthConfig = deps.oauthConfigs.get(provider);
+  if (!oauthConfig) {
+    return c.json({ valid: false, error: 'unknown_provider' }, 404);
+  }
+
+  try {
+    const credentials = await ensureFreshCredentials(
+      deps.credManagerDeps,
+      ctx.tenantId,
+      provider,
+      adapter,
+      oauthConfig,
+      deps.fieldEncryptor,
+    );
+    const start = Date.now();
+    const health = await adapter.getHealth(credentials);
+    return c.json({
+      valid: health.status !== 'error' && health.status !== 'disconnected',
+      provider,
+      latencyMs: Date.now() - start,
+    });
+  } catch (err: unknown) {
+    if (err instanceof IntegrationNotConnectedError) {
+      return c.json({ valid: false, error: 'integration_not_connected' }, 403);
+    }
+    return c.json({ valid: false, error: 'connectivity_check_failed' }, 200);
+  }
 });
 
 export { integrationsRouter };

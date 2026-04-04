@@ -1780,7 +1780,181 @@ async function bootstrap(): Promise<void> {
     ['salesforce', new SalesforceAdapter(fetchHttpClient) as unknown as CRMAdapter],
     ['hubspot', new HubSpotAdapter(fetchHttpClient) as unknown as CRMAdapter],
   ]);
-  configureIntegrationRoutes({ adapters: crmAdapters });
+  const crmFieldEncryptor = new FieldEncryptor(fieldEncryptionKey);
+  const integrationEventProducer = new EventProducer(kafkaProducer);
+  configureIntegrationRoutes({
+    adapters: crmAdapters,
+    lookupTenantByProvider: async ({ provider, instanceUrl, portalId }) => {
+      // Look up tenant by instance_url (Salesforce) or portalId (HubSpot)
+      if (provider === 'salesforce' && instanceUrl !== undefined) {
+        const rows = await db
+          .select({ tenantId: schema.integrationConfigs.tenantId })
+          .from(schema.integrationConfigs)
+          .where(
+            and(
+              eq(schema.integrationConfigs.provider, 'salesforce' as never),
+              eq(schema.integrationConfigs.instanceUrl, instanceUrl),
+            ),
+          )
+          .limit(1);
+        return rows[0]?.tenantId ?? null;
+      }
+      if (provider === 'hubspot' && portalId !== undefined) {
+        const rows = await db
+          .select({ tenantId: schema.integrationConfigs.tenantId })
+          .from(schema.integrationConfigs)
+          .where(
+            and(
+              eq(schema.integrationConfigs.provider, 'hubspot' as never),
+              eq(schema.integrationConfigs.instanceUrl, portalId),
+            ),
+          )
+          .limit(1);
+        return rows[0]?.tenantId ?? null;
+      }
+      return null;
+    },
+    insertWebhookLog: async ({ tenantId, provider, eventType, payloadHash, signatureValid }) => {
+      const rows = await db
+        .insert(schema.webhookLogs)
+        .values({
+          tenantId: tenantId ?? null,
+          provider: provider as never,
+          eventType,
+          payloadHash,
+          signatureValid,
+        })
+        .returning({ id: schema.webhookLogs.id });
+      const row = rows[0];
+      if (!row) throw new Error('Failed to insert webhook log');
+      return row.id;
+    },
+    updateWebhookLogProcessed: async ({ id }) => {
+      await db
+        .update(schema.webhookLogs)
+        .set({ processed: true })
+        .where(eq(schema.webhookLogs.id, id));
+    },
+    getWebhookSecret: async ({ tenantId, provider }) => {
+      const rows = await db
+        .select({ webhookSecretEnc: schema.integrationConfigs.webhookSecretEnc })
+        .from(schema.integrationConfigs)
+        .where(
+          and(
+            eq(schema.integrationConfigs.tenantId, tenantId),
+            eq(schema.integrationConfigs.provider, provider as never),
+          ),
+        )
+        .limit(1);
+      return rows[0]?.webhookSecretEnc ?? null;
+    },
+    fieldEncryptor: crmFieldEncryptor,
+    credManagerDeps: {
+      getIntegrationConfig: async ({ tenantId, provider }) => {
+        const rows = await db
+          .select()
+          .from(schema.integrationConfigs)
+          .where(
+            and(
+              eq(schema.integrationConfigs.tenantId, tenantId),
+              eq(schema.integrationConfigs.provider, provider as never),
+            ),
+          )
+          .limit(1);
+        const row = rows[0];
+        if (!row) return null;
+        return {
+          id: row['id'],
+          tenantId: row['tenantId'],
+          provider: row['provider'],
+          status: row['status'],
+          accessTokenEnc: row['accessTokenEnc'],
+          refreshTokenEnc: row['refreshTokenEnc'],
+          webhookSecretEnc: row['webhookSecretEnc'],
+          tokenExpiresAt: row['tokenExpiresAt'],
+          scopes: row['scopes'],
+          instanceUrl: row['instanceUrl'],
+        };
+      },
+      upsertIntegrationConfig: async (params) => {
+        await db
+          .insert(schema.integrationConfigs)
+          .values({
+            tenantId: params.tenantId,
+            provider: params.provider as never,
+            accessTokenEnc: params.accessTokenEnc,
+            refreshTokenEnc: params.refreshTokenEnc,
+            tokenExpiresAt: params.tokenExpiresAt,
+            scopes: params.scopes,
+            instanceUrl: params.instanceUrl ?? null,
+            status: 'connected' as never,
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [schema.integrationConfigs.tenantId, schema.integrationConfigs.provider],
+            set: {
+              accessTokenEnc: params.accessTokenEnc,
+              refreshTokenEnc: params.refreshTokenEnc,
+              tokenExpiresAt: params.tokenExpiresAt,
+              scopes: params.scopes,
+              instanceUrl: params.instanceUrl ?? null,
+              status: 'connected' as never,
+              updatedAt: new Date(),
+            },
+          });
+      },
+      setIntegrationStatus: async ({ tenantId, provider, status, lastError }) => {
+        await db
+          .update(schema.integrationConfigs)
+          .set({ status: status as never, lastError: lastError ?? null, updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.integrationConfigs.tenantId, tenantId),
+              eq(schema.integrationConfigs.provider, provider as never),
+            ),
+          );
+      },
+      nullifyCredentials: async ({ tenantId, provider }) => {
+        await db
+          .update(schema.integrationConfigs)
+          .set({
+            accessTokenEnc: null,
+            refreshTokenEnc: null,
+            status: 'disconnected' as never,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.integrationConfigs.tenantId, tenantId),
+              eq(schema.integrationConfigs.provider, provider as never),
+            ),
+          );
+      },
+      auditLogger,
+    },
+    oauthConfigs: new Map([
+      [
+        'salesforce',
+        {
+          clientId: process.env['SALESFORCE_CLIENT_ID'] ?? '',
+          clientSecret: process.env['SALESFORCE_CLIENT_SECRET'] ?? '',
+          redirectUri: process.env['SALESFORCE_REDIRECT_URI'] ?? '',
+          scopes: ['api', 'refresh_token'],
+        },
+      ],
+      [
+        'hubspot',
+        {
+          clientId: process.env['HUBSPOT_CLIENT_ID'] ?? '',
+          clientSecret: process.env['HUBSPOT_CLIENT_SECRET'] ?? '',
+          redirectUri: process.env['HUBSPOT_REDIRECT_URI'] ?? '',
+          scopes: ['contacts', 'crm.objects.deals.read', 'crm.objects.deals.write'],
+        },
+      ],
+    ]),
+    eventProducer: integrationEventProducer,
+    auditLogger,
+  });
   console.warn('[ORDR:API] Integration routes configured (salesforce, hubspot)');
 
   // ── P6.7. Tenant management routes ──────────────────────────────────────
