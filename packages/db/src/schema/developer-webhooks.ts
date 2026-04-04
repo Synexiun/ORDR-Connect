@@ -45,7 +45,7 @@ export const developerWebhooks = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    index('developer_webhooks_developer_id_idx').on(table.developerId),
-    index('developer_webhooks_active_idx').on(table.active),
+    index('idx_developer_webhooks_developer_id').on(table.developerId),
+    index('idx_developer_webhooks_active').on(table.active),
   ],
 );
