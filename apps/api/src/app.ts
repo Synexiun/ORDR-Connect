@@ -217,7 +217,13 @@ export function createApp(config: AppConfig): Hono<Env> {
   // Branding routes — White-label configuration
   app.route('/api/v1/branding', brandingRouter);
 
-  // Developer portal routes — account management, API keys, sandbox
+  // Developer portal sub-routes — mounted BEFORE /api/v1/developers so specific paths take precedence
+  // NOTE: Hono matches the first registered route; more-specific paths must come first.
+  app.route('/api/v1/developers/usage', devUsageRouter);
+  app.route('/api/v1/developers/webhooks', developerWebhooksRouter);
+  app.route('/api/v1/developers/agents', developerAgentsRouter);
+
+  // Developer portal routes — account management, API keys, sandbox (generic — must be last)
   app.route('/api/v1/developers', developersRouter);
 
   // Marketplace routes — agent marketplace CRUD, installs, reviews
@@ -250,14 +256,6 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Healthcare dashboard — patient queue, appointments, care plans, compliance
   app.route('/api/v1/healthcare', healthcareRouter);
-
-  // Developer usage stats — aggregate, daily breakdown, top endpoints
-  // NOTE: mounted before /api/v1/developers so it takes precedence for /usage
-  app.route('/api/v1/developers/usage', devUsageRouter);
-
-  // Developer portal sub-routes — mounted before /api/v1/developers (Phase 53)
-  app.route('/api/v1/developers/webhooks', developerWebhooksRouter);
-  app.route('/api/v1/developers/agents', developerAgentsRouter);
 
   // SLA routes — breach status and manual trigger
   app.route('/api/v1/sla', slaRouter);
