@@ -14,6 +14,7 @@
  * enabling mock-based testing without real Salesforce API calls.
  */
 
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import type {
   IntegrationProvider,
@@ -121,11 +122,7 @@ export class SalesforceAdapter implements CRMAdapter {
     };
   }
 
-  async exchangeCode(
-    config: OAuthConfig,
-    code: string,
-    _state: string,
-  ): Promise<OAuthTokenResult> {
+  async exchangeCode(config: OAuthConfig, code: string, _state: string): Promise<OAuthTokenResult> {
     const body = {
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -164,10 +161,7 @@ export class SalesforceAdapter implements CRMAdapter {
     };
   }
 
-  async refreshAccessToken(
-    config: OAuthConfig,
-    refreshToken: string,
-  ): Promise<OAuthTokenResult> {
+  async refreshAccessToken(config: OAuthConfig, refreshToken: string): Promise<OAuthTokenResult> {
     const body = {
       grant_type: 'refresh_token',
       client_id: config.clientId,
@@ -206,11 +200,9 @@ export class SalesforceAdapter implements CRMAdapter {
 
   async disconnect(credentials: OAuthCredentials): Promise<void> {
     const params = new URLSearchParams({ token: credentials.accessToken });
-    await this.httpClient.post(
-      `${SF_REVOKE_URL}?${params.toString()}`,
-      null,
-      { 'Content-Type': 'application/x-www-form-urlencoded' },
-    );
+    await this.httpClient.post(`${SF_REVOKE_URL}?${params.toString()}`, null, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
   }
 
   // ── Health ─────────────────────────────────────────────────────
@@ -274,7 +266,9 @@ export class SalesforceAdapter implements CRMAdapter {
     pagination: PaginationParams,
   ): Promise<PaginatedResult<CrmContact>> {
     const baseUrl = credentials.instanceUrl ?? 'https://login.salesforce.com';
-    const soqlParts = ['SELECT Id, FirstName, LastName, Email, Phone, Account.Name, Title, LastModifiedDate FROM Contact'];
+    const soqlParts = [
+      'SELECT Id, FirstName, LastName, Email, Phone, Account.Name, Title, LastModifiedDate FROM Contact',
+    ];
     const whereClauses: string[] = [];
 
     if (query.modifiedAfter !== undefined) {
@@ -324,7 +318,7 @@ export class SalesforceAdapter implements CRMAdapter {
   async pushContact(
     credentials: OAuthCredentials,
     contact: CrmContact,
-    existingExternalId?: string | undefined,
+    existingExternalId?: string,
   ): Promise<string> {
     const baseUrl = credentials.instanceUrl ?? 'https://login.salesforce.com';
     const sfContact = {
@@ -362,7 +356,9 @@ export class SalesforceAdapter implements CRMAdapter {
     pagination: PaginationParams,
   ): Promise<PaginatedResult<CrmDeal>> {
     const baseUrl = credentials.instanceUrl ?? 'https://login.salesforce.com';
-    const soqlParts = ['SELECT Id, Name, Amount, StageName, Probability, CloseDate, ContactId, LastModifiedDate FROM Opportunity'];
+    const soqlParts = [
+      'SELECT Id, Name, Amount, StageName, Probability, CloseDate, ContactId, LastModifiedDate FROM Opportunity',
+    ];
     const whereClauses: string[] = [];
 
     if (query.modifiedAfter !== undefined) {
@@ -408,7 +404,7 @@ export class SalesforceAdapter implements CRMAdapter {
   async pushDeal(
     credentials: OAuthCredentials,
     deal: CrmDeal,
-    existingExternalId?: string | undefined,
+    existingExternalId?: string,
   ): Promise<string> {
     const baseUrl = credentials.instanceUrl ?? 'https://login.salesforce.com';
     const sfOpportunity = {
@@ -422,7 +418,11 @@ export class SalesforceAdapter implements CRMAdapter {
 
     if (existingExternalId !== undefined) {
       const url = `${baseUrl}/services/data/${SF_API_VERSION}/sobjects/Opportunity/${existingExternalId}`;
-      const response = await this.httpClient.patch(url, sfOpportunity, this.authHeaders(credentials));
+      const response = await this.httpClient.patch(
+        url,
+        sfOpportunity,
+        this.authHeaders(credentials),
+      );
       if (response.status !== 200 && response.status !== 204) {
         throw new Error(`Salesforce opportunity update failed: HTTP ${String(response.status)}`);
       }
@@ -447,7 +447,9 @@ export class SalesforceAdapter implements CRMAdapter {
     pagination: PaginationParams,
   ): Promise<PaginatedResult<CrmActivity>> {
     const baseUrl = credentials.instanceUrl ?? 'https://login.salesforce.com';
-    const soqlParts = ['SELECT Id, Type, Subject, Description, WhoId, WhatId, ActivityDate, CompletedDateTime, LastModifiedDate FROM Task'];
+    const soqlParts = [
+      'SELECT Id, Type, Subject, Description, WhoId, WhatId, ActivityDate, CompletedDateTime, LastModifiedDate FROM Task',
+    ];
     const whereClauses: string[] = [];
 
     if (query.modifiedAfter !== undefined) {
@@ -493,7 +495,7 @@ export class SalesforceAdapter implements CRMAdapter {
   async pushActivity(
     credentials: OAuthCredentials,
     activity: CrmActivity,
-    existingExternalId?: string | undefined,
+    existingExternalId?: string,
   ): Promise<string> {
     const baseUrl = credentials.instanceUrl ?? 'https://login.salesforce.com';
     const sfTask = {
@@ -533,7 +535,7 @@ export class SalesforceAdapter implements CRMAdapter {
   ): WebhookPayload {
     // Salesforce Outbound Messages use certificate-based verification.
     // For Platform Events, we verify the signature via HMAC-SHA256.
-    if (!this.verifyWebhookSignature(payload, signature, secret)) {
+    if (!this.verifyWebhookSignature(secret, payload, signature)) {
       throw new Error('Salesforce webhook signature verification failed');
     }
 
@@ -703,54 +705,61 @@ export class SalesforceAdapter implements CRMAdapter {
 
   private mapSfTypeToActivity(sfType: string | null): CrmActivity['type'] {
     switch (sfType?.toLowerCase()) {
-      case 'call': return 'call';
-      case 'email': return 'email';
-      case 'meeting': return 'event';
-      default: return 'task';
+      case 'call':
+        return 'call';
+      case 'email':
+        return 'email';
+      case 'meeting':
+        return 'event';
+      default:
+        return 'task';
     }
   }
 
   private mapActivityTypeToSf(type: CrmActivity['type']): string {
     switch (type) {
-      case 'call': return 'Call';
-      case 'email': return 'Email';
-      case 'event': return 'Meeting';
-      case 'note': return 'Other';
-      case 'task': return 'Other';
+      case 'call':
+        return 'Call';
+      case 'email':
+        return 'Email';
+      case 'event':
+        return 'Meeting';
+      case 'note':
+        return 'Other';
+      case 'task':
+        return 'Other';
     }
   }
 
   private verifyWebhookSignature(
-    payload: Readonly<Record<string, unknown>>,
-    signature: string,
     secret: string,
+    payload: Record<string, unknown>,
+    signature: string,
   ): boolean {
-    // Production implementation would use crypto.createHmac('sha256', secret)
-    // to compute HMAC of the payload and compare with the signature.
-    // For now we validate that signature and secret are non-empty.
-    if (signature.length === 0 || secret.length === 0) {
+    // Salesforce sends HMAC-SHA256 as base64, prefixed with 'sha256='
+    const rawSig = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+    const body = JSON.stringify(payload);
+    const expected = createHmac('sha256', secret).update(body, 'utf8').digest('base64');
+    try {
+      return timingSafeEqual(Buffer.from(rawSig), Buffer.from(expected));
+    } catch {
+      // timingSafeEqual throws if buffers have different length (invalid signature)
       return false;
     }
-    // HMAC-SHA256 verification of payload against the signature
-    const crypto = globalThis.crypto ?? null;
-    if (crypto === null) {
-      // Fallback: require a matching prefix at minimum
-      return signature.startsWith('sha256=');
-    }
-    // In production: compute HMAC and use timing-safe comparison
-    const payloadStr = JSON.stringify(payload);
-    void payloadStr; // Used in real HMAC computation
-    return signature.startsWith('sha256=');
   }
 
   private inferEntityType(payload: Readonly<Record<string, unknown>>): EntityType {
     const objectType = (payload['object_type'] as string | undefined) ?? '';
     switch (objectType.toLowerCase()) {
-      case 'contact': return 'contact';
-      case 'opportunity': return 'deal';
+      case 'contact':
+        return 'contact';
+      case 'opportunity':
+        return 'deal';
       case 'task':
-      case 'event': return 'activity';
-      default: return 'contact';
+      case 'event':
+        return 'activity';
+      default:
+        return 'contact';
     }
   }
 }
