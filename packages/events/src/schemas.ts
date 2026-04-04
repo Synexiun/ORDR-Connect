@@ -131,6 +131,43 @@ export const dsrApprovedPayloadSchema = z.object({
   type: z.enum(['access', 'erasure', 'portability']),
 });
 
+// ─── Integration Schemas ──────────────────────────────────────────
+
+export const integrationWebhookReceivedPayloadSchema = z.object({
+  tenantId: z.string().min(1),
+  provider: z.string().min(1),
+  entityType: z.enum(['contact', 'deal', 'activity']),
+  externalId: z.string().min(1),
+  eventType: z.string().min(1),
+  webhookLogId: z.string().uuid(),
+});
+
+export const integrationSyncCompletedPayloadSchema = z.object({
+  tenantId: z.string().min(1),
+  provider: z.string().min(1),
+  syncJobId: z.string().uuid(),
+  recordsSynced: z.number().int().nonnegative(),
+});
+
+export const integrationSyncFailedPayloadSchema = z.object({
+  tenantId: z.string().min(1),
+  provider: z.string().min(1),
+  syncJobId: z.string().uuid(),
+  reason: z.string().min(1),
+});
+
+export const integrationConnectedPayloadSchema = z.object({
+  tenantId: z.string().min(1),
+  provider: z.string().min(1),
+  credentialId: z.string().uuid(),
+});
+
+export const integrationDisconnectedPayloadSchema = z.object({
+  tenantId: z.string().min(1),
+  provider: z.string().min(1),
+  credentialId: z.string().uuid(),
+});
+
 // ─── Schema Registry ──────────────────────────────────────────────
 
 /**
@@ -148,6 +185,17 @@ export const eventSchemaRegistry = new Map<string, ZodSchema>([
   [EventType.AUTH_FAILED, createEnvelopeSchema(authEventPayloadSchema)],
   [EventType.AUTH_MFA_VERIFIED, createEnvelopeSchema(authEventPayloadSchema)],
   [EventType.DSR_APPROVED, createEnvelopeSchema(dsrApprovedPayloadSchema)],
+  [
+    EventType.INTEGRATION_WEBHOOK_RECEIVED,
+    createEnvelopeSchema(integrationWebhookReceivedPayloadSchema),
+  ],
+  [
+    EventType.INTEGRATION_SYNC_COMPLETED,
+    createEnvelopeSchema(integrationSyncCompletedPayloadSchema),
+  ],
+  [EventType.INTEGRATION_SYNC_FAILED, createEnvelopeSchema(integrationSyncFailedPayloadSchema)],
+  [EventType.INTEGRATION_CONNECTED, createEnvelopeSchema(integrationConnectedPayloadSchema)],
+  [EventType.INTEGRATION_DISCONNECTED, createEnvelopeSchema(integrationDisconnectedPayloadSchema)],
 ]);
 
 // ─── Validation Helper ────────────────────────────────────────────

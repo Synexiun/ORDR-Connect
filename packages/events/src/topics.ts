@@ -32,6 +32,9 @@ export const TOPICS = {
 
   /** GDPR Data Subject Request lifecycle events */
   DSR_EVENTS: 'ordr.dsr.events',
+
+  /** CRM integration sync events — webhooks received, outbound syncs, conflicts */
+  INTEGRATION_EVENTS: 'ordr.integration.events',
 } as const;
 
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];
@@ -119,6 +122,14 @@ export const DEFAULT_TOPIC_CONFIGS: Record<TopicName, TopicConfig> = {
     partitions: 6,
     replicationFactor: 3,
     retentionMs: 365 * 24 * 60 * 60 * 1000, // 1 year — GDPR/SOC2 audit retention
+    cleanupPolicy: 'delete',
+    minInsyncReplicas: 2,
+  },
+  [TOPICS.INTEGRATION_EVENTS]: {
+    name: TOPICS.INTEGRATION_EVENTS,
+    partitions: 6,
+    replicationFactor: 3,
+    retentionMs: 14 * 24 * 60 * 60 * 1000, // 14 days
     cleanupPolicy: 'delete',
     minInsyncReplicas: 2,
   },

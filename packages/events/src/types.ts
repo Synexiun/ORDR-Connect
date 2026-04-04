@@ -116,6 +116,24 @@ export const EventType = {
 
   // DSR
   DSR_APPROVED: 'dsr.approved',
+
+  // Integration
+  INTEGRATION_WEBHOOK_RECEIVED: 'integration.webhook_received',
+  INTEGRATION_SYNC_COMPLETED: 'integration.sync_completed',
+  INTEGRATION_SYNC_FAILED: 'integration.sync_failed',
+  INTEGRATION_CONNECTED: 'integration.connected',
+  INTEGRATION_DISCONNECTED: 'integration.disconnected',
 } as const;
 
 export type EventTypeValue = (typeof EventType)[keyof typeof EventType];
+
+// ─── Integration Payloads ─────────────────────────────────────────
+
+export interface IntegrationWebhookReceivedPayload {
+  readonly tenantId: string;
+  readonly provider: string;
+  readonly entityType: 'contact' | 'deal' | 'activity';
+  readonly externalId: string;
+  readonly eventType: string; // raw CRM event type string
+  readonly webhookLogId: string; // FK to webhook_logs for tracing
+}
