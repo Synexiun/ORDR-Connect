@@ -1989,27 +1989,29 @@ async function bootstrap(): Promise<void> {
       }));
     },
     replaceFieldMappings: async ({ tenantId, provider, mappings }) => {
-      await db
-        .delete(schema.integrationFieldMappings)
-        .where(
-          and(
-            eq(schema.integrationFieldMappings.tenantId, tenantId),
-            eq(schema.integrationFieldMappings.provider, provider as never),
-          ),
-        );
-      if (mappings.length > 0) {
-        await db.insert(schema.integrationFieldMappings).values(
-          mappings.map((m) => ({
-            tenantId,
-            provider: provider as never,
-            entityType: m.entityType as never,
-            direction: m.direction as never,
-            sourceField: m.sourceField,
-            targetField: m.targetField,
-            transform: m.transform ?? null,
-          })),
-        );
-      }
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(schema.integrationFieldMappings)
+          .where(
+            and(
+              eq(schema.integrationFieldMappings.tenantId, tenantId),
+              eq(schema.integrationFieldMappings.provider, provider as never),
+            ),
+          );
+        if (mappings.length > 0) {
+          await tx.insert(schema.integrationFieldMappings).values(
+            mappings.map((m) => ({
+              tenantId,
+              provider: provider as never,
+              entityType: m.entityType as never,
+              direction: m.direction as never,
+              sourceField: m.sourceField,
+              targetField: m.targetField,
+              transform: m.transform ?? null,
+            })),
+          );
+        }
+      });
     },
     getAdapterDefaultMappings: (_provider) => {
       // Default mappings are defined per-adapter; return empty array as baseline.

@@ -38,7 +38,6 @@ import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
 import { requireRoleMiddleware } from '../middleware/auth.js';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { withCredentials } from '../middleware/crm-credentials.js';
 
 // ─── CRMAdapter interface ─────────────────────────────────────────
@@ -229,9 +228,16 @@ interface IntegrationDeps {
 }
 
 let deps: IntegrationDeps | null = null;
+let credentialsMiddleware: ReturnType<typeof withCredentials> | null = null;
 
 export function configureIntegrationRoutes(dependencies: IntegrationDeps): void {
   deps = dependencies;
+  credentialsMiddleware = withCredentials({
+    credManagerDeps: dependencies.credManagerDeps,
+    fieldEncryptor: dependencies.fieldEncryptor,
+    oauthConfigs: dependencies.oauthConfigs,
+    adapters: dependencies.adapters,
+  });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -757,6 +763,17 @@ integrationsRouter.post('/:provider/webhook/test', async (c): Promise<Response> 
   }
 });
 
+// ─── Credential middleware for activity routes ────────────────────
+// Must be registered before the activity route handlers so that
+// c.get('crmCredentials') is populated when handlers execute.
+
+integrationsRouter.use('/:provider/activities', async (c, next) => {
+  if (!credentialsMiddleware) {
+    return c.json({ error: 'routes_not_configured' }, 500 as never);
+  }
+  return credentialsMiddleware(c as unknown as Parameters<typeof credentialsMiddleware>[0], next);
+});
+
 // ─── GET /:provider/activities — List activities ──────────────────
 
 integrationsRouter.get('/:provider/activities', async (c): Promise<Response> => {
@@ -834,7 +851,7 @@ integrationsRouter.post('/:provider/activities', async (c): Promise<Response> =>
     resource: 'crm_activity',
     resourceId: externalId,
     action: 'created',
-    details: { provider, subject },
+    details: { provider, activityExternalId: externalId },
     timestamp: new Date(),
   });
 
