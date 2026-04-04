@@ -25,6 +25,12 @@ terraform {
     }
   }
 
+  # IMPORTANT: bucket and dynamodb_table are suffixed with the AWS account ID
+  # by the bootstrap module (infrastructure/terraform/bootstrap/).
+  # Do NOT use these literal values — pass the actual names at init time:
+  #   terraform init \
+  #     -backend-config="bucket=ordr-connect-tfstate-<ACCOUNT_ID>" \
+  #     -backend-config="dynamodb_table=ordr-connect-terraform-locks-<ACCOUNT_ID>"
   backend "s3" {
     bucket         = "ordr-connect-terraform-state"
     key            = "infrastructure/terraform.tfstate"

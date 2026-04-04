@@ -146,9 +146,23 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
+  compliance-checks:
+    name: Compliance Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Check staging namespace consistency
+        run: bash tests/compliance/check-staging-namespace.sh
+
+      - name: Check deploy-staging Dockerfile reference
+        run: bash tests/compliance/check-deploy-staging-dockerfile.sh
+
   ci-gate:
     name: CI Gate
-    needs: [lint, typecheck, test, e2e]
+    needs: [lint, typecheck, test, e2e, compliance-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
@@ -158,12 +172,14 @@ jobs:
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.e2e.result }}" != "success" ]; then
+             [ "${{ needs.e2e.result }}" != "success" ] || \
+             [ "${{ needs.compliance-checks.result }}" != "success" ]; then
             echo "::error::CI compliance gates failed. All gates must pass before merge."
             echo "Lint: ${{ needs.lint.result }}"
             echo "Typecheck: ${{ needs.typecheck.result }}"
             echo "Test: ${{ needs.test.result }}"
             echo "E2E: ${{ needs.e2e.result }}"
+            echo "Compliance: ${{ needs.compliance-checks.result }}"
             exit 1
           fi
           echo "All CI compliance gates passed."

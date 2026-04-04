@@ -81,7 +81,7 @@ jobs:
       - name: Configure kubectl
         uses: azure/setup-kubectl@3e0aec4d80787158d308d7b364cb1b702e7feb7f # v4.0.0
         with:
-          version: 'latest'
+          version: 'v1.29.0'
 
       - name: Set kubeconfig
         run: |
@@ -102,7 +102,7 @@ jobs:
         run: |
           STAGING_URL="${{ secrets.STAGING_URL }}"
           for i in 1 2 3 4 5; do
-            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$STAGING_URL/health" || echo "000")
+            STATUS=$(curl -sf --max-time 10 -o /dev/null -w "%{http_code}" "$STAGING_URL/health" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Smoke test passed: health endpoint returned 200"
               exit 0
@@ -112,6 +112,12 @@ jobs:
           done
           echo "::error::Smoke test failed after 5 attempts"
           exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/ordr-connect-api \
+            --namespace=ordr-staging
 
   notify:
     name: Notify
