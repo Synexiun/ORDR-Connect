@@ -71,9 +71,9 @@ const mockAdapter = {
   getHealth: vi.fn().mockResolvedValue({ status: 'healthy', latencyMs: 10 }),
 };
 
-function buildApp(): Hono<Env> {
+function buildApp(adapters?: Map<string, never>): Hono<Env> {
   configureIntegrationRoutes({
-    adapters: new Map([['salesforce', mockAdapter as never]]),
+    adapters: adapters ?? new Map([['salesforce', mockAdapter as never]]),
     lookupTenantByProvider: mockLookupTenant,
     insertWebhookLog: mockInsertWebhookLog,
     updateWebhookLogProcessed: mockUpdateWebhookLogProcessed,
@@ -129,6 +129,8 @@ describe('POST /integrations/:provider/webhook', () => {
     });
 
     expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json['received']).toBe(true);
     expect(mockPublish).not.toHaveBeenCalled();
 
     const auditCalls = mockAuditLog.mock.calls as Array<[{ eventType: string }]>;
@@ -137,33 +139,14 @@ describe('POST /integrations/:provider/webhook', () => {
 
   it('HubSpot: stale timestamp → signature treated as invalid, no Kafka', async () => {
     const mockHsAdapter = {
-      handleWebhook: vi
-        .fn()
-        .mockReturnValue({
-          entityType: 'contact',
-          entityId: 'hs-1',
-          eventType: 'contact.creation',
-          data: {},
-        }),
+      handleWebhook: vi.fn().mockReturnValue({
+        entityType: 'contact',
+        entityId: 'hs-1',
+        eventType: 'contact.creation',
+        data: {},
+      }),
     };
-    configureIntegrationRoutes({
-      adapters: new Map([['hubspot', mockHsAdapter as never]]),
-      lookupTenantByProvider: mockLookupTenant,
-      insertWebhookLog: mockInsertWebhookLog,
-      updateWebhookLogProcessed: mockUpdateWebhookLogProcessed,
-      getWebhookSecret: mockGetWebhookSecret,
-      isRecentDuplicateWebhook: mockIsRecentDuplicate,
-      fieldEncryptor: mockFieldEncryptor as never,
-      credManagerDeps: {} as never,
-      oauthConfigs: new Map(),
-      eventProducer: { publish: mockPublish } as never,
-      auditLogger: { log: mockAuditLog },
-    });
-    const app = new Hono<Env>();
-    app.use('*', requestId);
-    app.onError(globalErrorHandler);
-    app.route('/integrations', integrationsRouter);
-
+    const app = buildApp(new Map([['hubspot', mockHsAdapter as never]]));
     const staleTs = String(Date.now() - 10 * 60 * 1000); // 10 minutes ago
 
     const res = await app.request('/integrations/hubspot/webhook', {
