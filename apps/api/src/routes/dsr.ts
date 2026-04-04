@@ -307,11 +307,24 @@ dsrRouter.get('/:id', requirePermissionMiddleware('dsr', 'read'), async (c) => {
         410,
       );
     }
+    if (exp.downloadUrl === undefined || exp.downloadUrl === '') {
+      console.error(
+        `[ORDR:API:DSR] downloadUrl not generated for DSR ${dsrId} (correlationId=${c.get('requestId')})`,
+      );
+      return c.json(
+        {
+          error: 'internal_error',
+          message: 'Could not generate download URL.',
+          correlationId: c.get('requestId'),
+        },
+        500 as never,
+      );
+    }
     return c.json(
       {
         ...dsr,
         export: {
-          download_url: exp.downloadUrl ?? '',
+          download_url: exp.downloadUrl,
           expires_at: exp.expiresAt,
           file_size_bytes: exp.fileSizeBytes,
           checksum_sha256: exp.checksumSha256,
@@ -336,7 +349,16 @@ dsrRouter.post('/:id/approve', requirePermissionMiddleware('dsr', 'write'), asyn
     updated = await d.approveDsr({ tenantId: ctx.tenantId, dsrId });
   } catch (err) {
     const code = (err as { code?: string }).code ?? '';
-    return c.json({ error: 'state_error', message: (err as Error).message }, dsrErrorStatus(code));
+    const safeMessage =
+      code === 'DSR_STATE_ERROR'
+        ? 'DSR is not in a valid state for this operation.'
+        : code === 'DSR_NOT_FOUND'
+          ? 'DSR not found.'
+          : 'An unexpected error occurred.';
+    return c.json(
+      { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
+      dsrErrorStatus(code),
+    );
   }
 
   // Publish Kafka — idempotency key = dsrId
@@ -385,7 +407,16 @@ dsrRouter.post('/:id/reject', requirePermissionMiddleware('dsr', 'write'), async
     });
   } catch (err) {
     const code = (err as { code?: string }).code ?? '';
-    return c.json({ error: 'state_error', message: (err as Error).message }, dsrErrorStatus(code));
+    const safeMessage =
+      code === 'DSR_STATE_ERROR'
+        ? 'DSR is not in a valid state for this operation.'
+        : code === 'DSR_NOT_FOUND'
+          ? 'DSR not found.'
+          : 'An unexpected error occurred.';
+    return c.json(
+      { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
+      dsrErrorStatus(code),
+    );
   }
 
   await d.auditLogger.log({
@@ -415,7 +446,16 @@ dsrRouter.delete('/:id', requirePermissionMiddleware('dsr', 'write'), async (c) 
     updated = await d.cancelDsr({ tenantId: ctx.tenantId, dsrId });
   } catch (err) {
     const code = (err as { code?: string }).code ?? '';
-    return c.json({ error: 'state_error', message: (err as Error).message }, dsrErrorStatus(code));
+    const safeMessage =
+      code === 'DSR_STATE_ERROR'
+        ? 'DSR is not in a valid state for this operation.'
+        : code === 'DSR_NOT_FOUND'
+          ? 'DSR not found.'
+          : 'An unexpected error occurred.';
+    return c.json(
+      { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
+      dsrErrorStatus(code),
+    );
   }
 
   await d.auditLogger.log({

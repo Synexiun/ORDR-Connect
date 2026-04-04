@@ -246,7 +246,7 @@ export function createDsrExportHandler(
           resource: 'data_subject_request',
           resourceId: dsrId,
           action: 'failed',
-          details: { error: (err as Error).message },
+          details: { error: 'export_failed', step: 'see_server_logs' },
           timestamp: new Date(),
         })
         .catch(() => {

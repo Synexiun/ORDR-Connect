@@ -7,6 +7,7 @@
  */
 
 import { pgTable, pgEnum, uuid, text, bigint, timestamp, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { tenants } from './tenants.js';
 import { customers } from './customers.js';
 
@@ -63,7 +64,10 @@ export const dataSubjectRequests = pgTable(
   (t) => [
     index('idx_dsr_tenant_status').on(t.tenantId, t.status),
     index('idx_dsr_customer').on(t.customerId),
-    index('idx_dsr_deadline').on(t.deadlineAt),
+    // Partial index — excludes terminal statuses, matching the SQL migration exactly
+    index('idx_dsr_deadline')
+      .on(t.deadlineAt)
+      .where(sql`status NOT IN ('completed','rejected','cancelled')`),
   ],
 );
 
