@@ -144,6 +144,9 @@ describe('createIntegrationSyncHandler', () => {
   });
 
   describe('integration.webhook_received', () => {
+    const REF_TS = '2026-04-04T12:00:00.000Z';
+    const REF_MS = new Date(REF_TS).getTime();
+
     const basePayload = {
       tenantId: TENANT_ID,
       provider: PROVIDER,
@@ -168,20 +171,15 @@ describe('createIntegrationSyncHandler', () => {
     it('applies delta and inserts success sync_event when CRM event is newer than customer', async () => {
       mockFindEntityMapping.mockResolvedValue({ ordrId: CUSTOMER_ID });
       const deps = buildDeps();
-      // Customer updated 10 minutes ago → CRM event timestamp (now) is newer
-      (deps.getCustomer as ReturnType<typeof vi.fn>).mockResolvedValue(
-        makeCustomer(10 * 60 * 1000),
-      );
+      // Customer updated 10 minutes before REF_TS → CRM event (REF_TS) is definitively newer
+      (deps.getCustomer as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...makeCustomer(0),
+        updatedAt: new Date(REF_MS - 10 * 60 * 1000),
+      });
 
       const handler = createIntegrationSyncHandler(deps);
-      // Event timestamp = now → newer than customer.updatedAt (10 min ago)
-      await handler(
-        makeEnvelope(
-          'integration.webhook_received',
-          basePayload,
-          new Date().toISOString(),
-        ) as never,
-      );
+      // Event timestamp = REF_TS → newer than customer.updatedAt (REF - 10 min)
+      await handler(makeEnvelope('integration.webhook_received', basePayload, REF_TS) as never);
 
       expect(mockApplyCustomerDelta).toHaveBeenCalled();
       expect(mockInsertSyncEvent).toHaveBeenCalledWith(
@@ -192,21 +190,14 @@ describe('createIntegrationSyncHandler', () => {
     it('detects conflict (within 5-min window): applies delta, inserts conflict event, notifies admin', async () => {
       mockFindEntityMapping.mockResolvedValue({ ordrId: CUSTOMER_ID });
       const deps = buildDeps();
-      // Customer updated 2 min in the future → ORDR is newer, delta < 5 min → conflict
-      const futureCustomer = {
+      // Customer updated REF + 2 min → ORDR is newer by 2 min, within 5-min conflict window
+      (deps.getCustomer as ReturnType<typeof vi.fn>).mockResolvedValue({
         ...makeCustomer(0),
-        updatedAt: new Date(Date.now() + 2 * 60 * 1000),
-      };
-      (deps.getCustomer as ReturnType<typeof vi.fn>).mockResolvedValue(futureCustomer);
+        updatedAt: new Date(REF_MS + 2 * 60 * 1000),
+      });
 
       const handler = createIntegrationSyncHandler(deps);
-      await handler(
-        makeEnvelope(
-          'integration.webhook_received',
-          basePayload,
-          new Date().toISOString(),
-        ) as never,
-      );
+      await handler(makeEnvelope('integration.webhook_received', basePayload, REF_TS) as never);
 
       expect(mockApplyCustomerDelta).toHaveBeenCalled();
       expect(mockInsertSyncEvent).toHaveBeenCalledWith(
@@ -218,20 +209,14 @@ describe('createIntegrationSyncHandler', () => {
     it('skips when ORDR is newer by more than 5 minutes', async () => {
       mockFindEntityMapping.mockResolvedValue({ ordrId: CUSTOMER_ID });
       const deps = buildDeps();
-      // Customer updated 10 min in the future → ORDR is newer by 10 min → skip
+      // Customer updated REF + 10 min → ORDR is newer by 10 min, outside conflict window → skip
       (deps.getCustomer as ReturnType<typeof vi.fn>).mockResolvedValue({
         ...makeCustomer(0),
-        updatedAt: new Date(Date.now() + 10 * 60 * 1000),
+        updatedAt: new Date(REF_MS + 10 * 60 * 1000),
       });
 
       const handler = createIntegrationSyncHandler(deps);
-      await handler(
-        makeEnvelope(
-          'integration.webhook_received',
-          basePayload,
-          new Date().toISOString(),
-        ) as never,
-      );
+      await handler(makeEnvelope('integration.webhook_received', basePayload, REF_TS) as never);
 
       expect(mockApplyCustomerDelta).not.toHaveBeenCalled();
       expect(mockInsertSyncEvent).toHaveBeenCalledWith(
