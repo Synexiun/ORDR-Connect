@@ -28,7 +28,8 @@ CREATE TABLE integration_configs (
 
 ALTER TABLE integration_configs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY integration_configs_tenant_isolation ON integration_configs
-  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+  USING (tenant_id = current_setting('app.current_tenant')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.current_tenant')::uuid);
 CREATE INDEX idx_integration_configs_tenant ON integration_configs (tenant_id);
 CREATE INDEX idx_integration_configs_status ON integration_configs (tenant_id, status);
 
@@ -51,7 +52,8 @@ CREATE TABLE sync_events (
 
 ALTER TABLE sync_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY sync_events_tenant_isolation ON sync_events
-  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+  USING (tenant_id = current_setting('app.current_tenant')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.current_tenant')::uuid);
 CREATE INDEX idx_sync_events_tenant_provider ON sync_events (tenant_id, provider);
 CREATE INDEX idx_sync_events_entity ON sync_events (entity_id);
 CREATE INDEX idx_sync_events_synced_at ON sync_events (synced_at DESC);
@@ -65,6 +67,9 @@ $$;
 CREATE TRIGGER sync_events_no_update
   BEFORE UPDATE OR DELETE ON sync_events
   FOR EACH ROW EXECUTE FUNCTION prevent_sync_events_mutation();
+CREATE TRIGGER sync_events_no_truncate
+  BEFORE TRUNCATE ON sync_events
+  FOR EACH STATEMENT EXECUTE FUNCTION prevent_sync_events_mutation();
 
 -- ── webhook_logs (mutable processing-state table) ────────────────
 
@@ -81,7 +86,8 @@ CREATE TABLE webhook_logs (
 
 ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY webhook_logs_tenant_isolation ON webhook_logs
-  USING (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant')::uuid);
+  USING (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant')::uuid)
+  WITH CHECK (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant')::uuid);
 CREATE INDEX idx_webhook_logs_tenant ON webhook_logs (tenant_id, received_at DESC);
 CREATE INDEX idx_webhook_logs_unprocessed ON webhook_logs (processed, received_at)
   WHERE processed = false;
@@ -103,7 +109,8 @@ CREATE TABLE integration_field_mappings (
 
 ALTER TABLE integration_field_mappings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY integration_field_mappings_tenant_isolation ON integration_field_mappings
-  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+  USING (tenant_id = current_setting('app.current_tenant')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.current_tenant')::uuid);
 CREATE INDEX idx_field_mappings_tenant_provider
   ON integration_field_mappings (tenant_id, provider, entity_type);
 
@@ -123,7 +130,8 @@ CREATE TABLE integration_entity_mappings (
 
 ALTER TABLE integration_entity_mappings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY integration_entity_mappings_tenant_isolation ON integration_entity_mappings
-  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+  USING (tenant_id = current_setting('app.current_tenant')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.current_tenant')::uuid);
 CREATE INDEX idx_entity_mappings_lookup
   ON integration_entity_mappings (tenant_id, provider, entity_type, external_id);
 CREATE INDEX idx_entity_mappings_ordr_id ON integration_entity_mappings (ordr_id);
