@@ -20,9 +20,9 @@ import { generateKeyPair } from '@ordr/crypto';
 
 // ─── Mock @ordr/sdk ──────────────────────────────────────────────────
 
-const mockValidateManifest = vi.fn();
+const mockCheckManifest = vi.fn();
 vi.mock('@ordr/sdk', () => ({
-  validateManifest: (...args: unknown[]) => mockValidateManifest(...args) as unknown,
+  checkManifest: (...args: unknown[]) => mockCheckManifest(...args) as unknown,
 }));
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ beforeEach(async () => {
   });
 
   // Default: manifest is valid
-  mockValidateManifest.mockReturnValue({ valid: true, errors: [], warnings: [] });
+  mockCheckManifest.mockReturnValue({ valid: true, errors: [], warnings: [] });
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ describe('POST /api/v1/developers/agents/submit', () => {
   });
 
   it('invalid manifest → 422 with errors, no DB write', async () => {
-    mockValidateManifest.mockReturnValue({
+    mockCheckManifest.mockReturnValue({
       valid: false,
       errors: ['name is required', 'license must be OSI-approved'],
       warnings: [],

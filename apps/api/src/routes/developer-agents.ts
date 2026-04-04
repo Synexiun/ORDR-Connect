@@ -4,7 +4,7 @@
  *
  * SOC2 CC6.1 — Publisher-scoped: developers only see their own agents.
  * Rule 4 — Manifest validated via @ordr/sdk before any DB write.
- * Rule 9 — validateManifest() is a hard gate: no listing on failure.
+ * Rule 9 — checkManifest() is a hard gate: no listing on failure.
  *
  * Endpoints:
  * GET  /v1/developers/agents        — list caller's submitted agents
@@ -13,8 +13,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { validateManifest } from '@ordr/sdk';
-import type { ValidationResult } from '@ordr/sdk';
+import { checkManifest } from '@ordr/sdk';
 import type { AuditLogger } from '@ordr/audit';
 import { ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
@@ -112,8 +111,8 @@ developerAgentsRouter.post('/submit', requireAuth(), async (c) => {
   const { manifest, packageHash, description } = parsed.data;
 
   // Hard gate: validate manifest via @ordr/sdk (Rule 9)
-  // Cast to ValidationResult — tests mock this; production SDK returns compatible shape.
-  const validation = validateManifest(manifest) as unknown as ValidationResult;
+  // checkManifest returns { valid, errors, warnings } — the shape we consume here.
+  const validation = checkManifest(manifest);
   if (!validation.valid) {
     return c.json(
       {
