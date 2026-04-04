@@ -5,29 +5,21 @@
  * Injected as WebhookDeps into configureWebhookRoutes().
  *
  * All queries are tenant-scoped via developer_id (Rule 2).
- * Note: deleteWebhook takes only webhookId — ownership pre-verified by caller via findWebhook.
+ * deleteWebhook and toggleWebhook enforce ownership at the DB layer
+ * via AND(id, developerId) — no separate pre-verification required.
  *
  * SOC2 CC6.1 — developer-scoped, never cross-tenant.
  * All mutations are audited at the route layer.
  */
 
 import { eq, and, count } from 'drizzle-orm';
+import type { InferSelectModel } from 'drizzle-orm';
 import type { OrdrDatabase } from '../connection.js';
 import { developerWebhooks } from '../schema/developer-webhooks.js';
 
 // ─── Types ────────────────────────────────────────────────────────
 
-export interface WebhookRecord {
-  readonly id: string;
-  readonly developerId: string;
-  readonly url: string;
-  readonly events: string[];
-  readonly hmacSecretEncrypted: string;
-  readonly active: boolean;
-  readonly lastTriggeredAt: Date | null;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
-}
+export type WebhookRecord = InferSelectModel<typeof developerWebhooks>;
 
 // ─── Query functions ──────────────────────────────────────────────
 
@@ -59,7 +51,7 @@ export function makeWebhookQueries(db: OrdrDatabase) {
         .returning();
       const row = rows[0];
       if (!row) throw new Error('Insert returned no rows');
-      return row as WebhookRecord;
+      return row;
     },
 
     /**
@@ -72,7 +64,7 @@ export function makeWebhookQueries(db: OrdrDatabase) {
         .from(developerWebhooks)
         .where(eq(developerWebhooks.developerId, developerId))
         .orderBy(developerWebhooks.createdAt);
-      return rows as WebhookRecord[];
+      return rows;
     },
 
     /**
@@ -103,15 +95,20 @@ export function makeWebhookQueries(db: OrdrDatabase) {
           and(eq(developerWebhooks.id, webhookId), eq(developerWebhooks.developerId, developerId)),
         )
         .limit(1);
-      return (rows[0] as WebhookRecord | undefined) ?? null;
+      return rows[0] ?? null;
     },
 
     /**
-     * Delete a webhook by ID (ownership pre-verified by caller).
+     * Delete a webhook by ID, scoped to the owning developer.
+     * Ownership is enforced at the DB layer — no separate pre-verification required.
      * Called by DELETE /api/dev/webhooks/:id after access control.
      */
-    async deleteWebhook(webhookId: string): Promise<void> {
-      await db.delete(developerWebhooks).where(eq(developerWebhooks.id, webhookId));
+    async deleteWebhook(developerId: string, webhookId: string): Promise<void> {
+      await db
+        .delete(developerWebhooks)
+        .where(
+          and(eq(developerWebhooks.id, webhookId), eq(developerWebhooks.developerId, developerId)),
+        );
     },
 
     /**
@@ -120,15 +117,21 @@ export function makeWebhookQueries(db: OrdrDatabase) {
      *
      * @throws if webhook not found
      */
-    async toggleWebhook(webhookId: string, active: boolean): Promise<WebhookRecord> {
+    async toggleWebhook(
+      developerId: string,
+      webhookId: string,
+      active: boolean,
+    ): Promise<WebhookRecord> {
       const rows = await db
         .update(developerWebhooks)
         .set({ active, updatedAt: new Date() })
-        .where(eq(developerWebhooks.id, webhookId))
+        .where(
+          and(eq(developerWebhooks.id, webhookId), eq(developerWebhooks.developerId, developerId)),
+        )
         .returning();
       const row = rows[0];
       if (!row) throw new Error('Webhook not found');
-      return row as WebhookRecord;
+      return row;
     },
   };
 }
