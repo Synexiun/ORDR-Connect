@@ -162,6 +162,10 @@ const putFieldMappingsBodySchema = z.object({
   mappings: z.array(fieldMappingSchema).max(200),
 });
 
+const listFieldMappingsQuerySchema = z.object({
+  direction: z.enum(['inbound', 'outbound', 'both']).optional(),
+});
+
 // ─── Dependencies (injected at startup) ───────────────────────────
 
 interface IntegrationDeps {
@@ -863,8 +867,15 @@ integrationsRouter.post('/:provider/activities', async (c): Promise<Response> =>
 integrationsRouter.get('/:provider/field-mappings', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
   const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
   const provider = c.req.param('provider');
-  const direction = c.req.query('direction');
+  const parsed = listFieldMappingsQuerySchema.safeParse({
+    direction: c.req.query('direction'),
+  });
+  if (!parsed.success) {
+    throw new ValidationError('Invalid query parameters', parseZodErrors(parsed.error), requestId);
+  }
+  const { direction } = parsed.data;
 
   const stored = await deps.listFieldMappings({
     tenantId: ctx.tenantId,
