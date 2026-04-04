@@ -6,6 +6,7 @@
  */
 
 import type { TenantContext } from '@ordr/core';
+import type { OAuthCredentials } from '@ordr/integrations';
 
 /**
  * Hono `Env` type parameter. Defines the shape of context variables
@@ -17,5 +18,7 @@ export interface Env {
     requestId: string;
     /** Authenticated tenant context — set by auth middleware */
     tenantContext: TenantContext | undefined;
+    /** Set by withCredentials middleware — fresh decrypted OAuth credentials for the current provider */
+    crmCredentials: OAuthCredentials | undefined;
   };
 }

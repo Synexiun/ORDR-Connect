@@ -55,7 +55,15 @@ export type AuditEventType =
   | 'dsr.failed'
   | 'dsr.erasure_scheduled'
   | 'dsr.erasure_executed'
-  | 'dsr.erasure_verified';
+  | 'dsr.erasure_verified'
+  // Integration (Phase 52)
+  | 'integration.connected'
+  | 'integration.disconnected'
+  | 'integration.sync_completed'
+  | 'integration.sync_failed'
+  | 'integration.conflict_detected'
+  | 'integration.webhook_received'
+  | 'integration.webhook_invalid_signature';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';
