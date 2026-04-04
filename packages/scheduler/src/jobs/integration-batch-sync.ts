@@ -277,6 +277,7 @@ export function createIntegrationBatchSyncHandler(deps: IntegrationBatchSyncDeps
         const customers = await deps.getCustomers({ tenantId, customerIds });
 
         if (customers.length === 0) {
+          await deps.updateLastSyncAt({ integrationId, syncedAt: new Date() });
           continue;
         }
 
@@ -321,7 +322,9 @@ export function createIntegrationBatchSyncHandler(deps: IntegrationBatchSyncDeps
                 externalId,
                 status: externalId !== null ? 'success' : 'failed',
                 direction: 'outbound',
-                errorMessage: null,
+                ...(externalId === null
+                  ? { errorMessage: 'bulk_push_missing_external_id' }
+                  : { errorMessage: null }),
                 syncedAt,
               });
               if (externalId !== null) {
