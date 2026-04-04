@@ -530,6 +530,7 @@ describe('GET /api/v1/integrations/:provider/activities', () => {
     expect(body.success).toBe(true);
     expect(body.items).toHaveLength(1);
     expect(body.hasMore).toBe(false);
+    expect(mockFetchActivities).toHaveBeenCalledOnce();
   });
 });
 
