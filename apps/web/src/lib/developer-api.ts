@@ -135,3 +135,77 @@ export function getDeveloperUsage(days = 7): Promise<{
     `/v1/developers/usage?days=${String(days)}`,
   );
 }
+
+// ── Developer Webhooks ─────────────────────────────────────────────────────
+
+export interface WebhookItem {
+  readonly id: string;
+  readonly url: string;
+  readonly events: string[];
+  readonly active: boolean;
+  readonly lastTriggeredAt: string | null;
+  readonly createdAt: string;
+}
+
+/** Only returned at creation — hmacSecret is shown once and never again. */
+export interface WebhookCreated extends WebhookItem {
+  readonly hmacSecret: string;
+}
+
+export function listWebhooks(): Promise<{ readonly success: true; readonly data: WebhookItem[] }> {
+  return apiClient.get<{ readonly success: true; readonly data: WebhookItem[] }>(
+    '/v1/developers/webhooks',
+  );
+}
+
+export function createWebhook(body: {
+  readonly url: string;
+  readonly events: string[];
+}): Promise<{ readonly success: true; readonly data: WebhookCreated }> {
+  return apiClient.post<{ readonly success: true; readonly data: WebhookCreated }>(
+    '/v1/developers/webhooks',
+    body,
+  );
+}
+
+export async function deleteWebhook(webhookId: string): Promise<void> {
+  await apiClient.delete(`/v1/developers/webhooks/${webhookId}`);
+}
+
+export function toggleWebhook(
+  webhookId: string,
+  active: boolean,
+): Promise<{ readonly success: true; readonly data: WebhookItem }> {
+  return apiClient.patch<{ readonly success: true; readonly data: WebhookItem }>(
+    `/v1/developers/webhooks/${webhookId}/toggle`,
+    { active },
+  );
+}
+
+// ── My Agents ──────────────────────────────────────────────────────────────
+
+export interface MyAgent {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly status: 'draft' | 'review' | 'published' | 'suspended' | 'rejected';
+  readonly installCount: number;
+  readonly createdAt: string;
+}
+
+export function listMyAgents(): Promise<{ readonly success: true; readonly data: MyAgent[] }> {
+  return apiClient.get<{ readonly success: true; readonly data: MyAgent[] }>(
+    '/v1/developers/agents',
+  );
+}
+
+export function submitAgent(body: {
+  readonly manifest: Record<string, unknown>;
+  readonly packageHash: string;
+  readonly description: string;
+}): Promise<{ readonly success: true; readonly data: MyAgent }> {
+  return apiClient.post<{ readonly success: true; readonly data: MyAgent }>(
+    '/v1/developers/agents/submit',
+    body,
+  );
+}
