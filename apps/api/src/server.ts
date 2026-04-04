@@ -1967,6 +1967,71 @@ async function bootstrap(): Promise<void> {
         },
       ],
     ]),
+    listFieldMappings: async ({ tenantId, provider, direction }) => {
+      const conditions = [
+        eq(schema.integrationFieldMappings.tenantId, tenantId),
+        eq(schema.integrationFieldMappings.provider, provider as never),
+      ];
+      if (direction !== undefined) {
+        conditions.push(eq(schema.integrationFieldMappings.direction, direction as never));
+      }
+      const rows = await db
+        .select()
+        .from(schema.integrationFieldMappings)
+        .where(and(...conditions));
+      return rows.map((r) => ({
+        id: r.id,
+        entityType: r.entityType,
+        direction: r.direction,
+        sourceField: r.sourceField,
+        targetField: r.targetField,
+        transform: r.transform,
+      }));
+    },
+    replaceFieldMappings: async ({ tenantId, provider, mappings }) => {
+      await db
+        .delete(schema.integrationFieldMappings)
+        .where(
+          and(
+            eq(schema.integrationFieldMappings.tenantId, tenantId),
+            eq(schema.integrationFieldMappings.provider, provider as never),
+          ),
+        );
+      if (mappings.length > 0) {
+        await db.insert(schema.integrationFieldMappings).values(
+          mappings.map((m) => ({
+            tenantId,
+            provider: provider as never,
+            entityType: m.entityType as never,
+            direction: m.direction as never,
+            sourceField: m.sourceField,
+            targetField: m.targetField,
+            transform: m.transform ?? null,
+          })),
+        );
+      }
+    },
+    getAdapterDefaultMappings: (_provider) => {
+      // Default mappings are defined per-adapter; return empty array as baseline.
+      // Adapter-specific defaults will be wired in Task 16 when adapters expose defaultMappings().
+      return [];
+    },
+    disconnectIntegration: async ({ tenantId, provider }) => {
+      await db
+        .update(schema.integrationConfigs)
+        .set({
+          accessTokenEnc: null,
+          refreshTokenEnc: null,
+          status: 'disconnected' as never,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.integrationConfigs.tenantId, tenantId),
+            eq(schema.integrationConfigs.provider, provider as never),
+          ),
+        );
+    },
     eventProducer: integrationEventProducer,
     auditLogger,
   });

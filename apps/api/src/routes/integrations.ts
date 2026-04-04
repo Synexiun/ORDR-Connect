@@ -25,6 +25,8 @@ import type {
   WebhookPayload,
   OAuthConfig,
   CredentialManagerDeps,
+  CrmActivity,
+  PaginatedResult as IntegrationsPaginatedResult,
 } from '@ordr/integrations';
 import { ensureFreshCredentials, IntegrationNotConnectedError } from '@ordr/integrations';
 import type { FieldEncryptor } from '@ordr/crypto';
@@ -78,6 +80,12 @@ export interface CRMAdapter {
     query: string,
     pagination: { limit: number; offset: number },
   ): Promise<PaginatedResult<Record<string, unknown>>>;
+  fetchActivities(
+    credentials: OAuthCredentials,
+    query: { externalIds?: readonly string[] | undefined },
+    pagination: { limit: number; offset: number },
+  ): Promise<IntegrationsPaginatedResult<CrmActivity>>;
+  pushActivity(credentials: OAuthCredentials, activity: CrmActivity): Promise<string>;
   /** Optional credentials — required in Phase 52 Tasks 15-16 */
   getHealth(credentials?: OAuthCredentials): Promise<IntegrationHealth>;
   /**
@@ -129,6 +137,32 @@ const listDealsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+const listActivitiesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  customerId: z.string().uuid().optional(),
+});
+
+const pushActivityBodySchema = z.object({
+  customerId: z.string().uuid(),
+  type: z.enum(['task', 'event', 'call', 'email', 'note']),
+  subject: z.string().min(1).max(500),
+  description: z.string().max(2000).optional(),
+  date: z.string().datetime().optional(),
+});
+
+const fieldMappingSchema = z.object({
+  entityType: z.enum(['contact', 'deal', 'activity']),
+  direction: z.enum(['inbound', 'outbound', 'both']),
+  sourceField: z.string().min(1).max(100),
+  targetField: z.string().min(1).max(100),
+  transform: z.record(z.string(), z.unknown()).optional(),
+});
+
+const putFieldMappingsBodySchema = z.object({
+  mappings: z.array(fieldMappingSchema).max(200),
+});
+
 // ─── Dependencies (injected at startup) ───────────────────────────
 
 interface IntegrationDeps {
@@ -160,6 +194,38 @@ interface IntegrationDeps {
   readonly oauthConfigs: Map<string, OAuthConfig>;
   readonly eventProducer: EventProducer;
   readonly auditLogger: Pick<AuditLogger, 'log'>;
+  readonly listFieldMappings: (params: {
+    tenantId: string;
+    provider: string;
+    direction?: string | undefined;
+  }) => Promise<
+    Array<{
+      id: string;
+      entityType: string;
+      direction: string;
+      sourceField: string;
+      targetField: string;
+      transform: unknown;
+    }>
+  >;
+  readonly replaceFieldMappings: (params: {
+    tenantId: string;
+    provider: string;
+    mappings: Array<{
+      entityType: string;
+      direction: string;
+      sourceField: string;
+      targetField: string;
+      transform?: unknown;
+    }>;
+  }) => Promise<void>;
+  readonly getAdapterDefaultMappings: (provider: string) => Array<{
+    entityType: string;
+    direction: string;
+    sourceField: string;
+    targetField: string;
+  }>;
+  readonly disconnectIntegration: (params: { tenantId: string; provider: string }) => Promise<void>;
 }
 
 let deps: IntegrationDeps | null = null;
@@ -690,5 +756,174 @@ integrationsRouter.post('/:provider/webhook/test', async (c): Promise<Response> 
     return c.json({ valid: false, error: 'connectivity_check_failed' }, 200);
   }
 });
+
+// ─── GET /:provider/activities — List activities ──────────────────
+
+integrationsRouter.get('/:provider/activities', async (c): Promise<Response> => {
+  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
+  const provider = c.req.param('provider');
+  const adapter = resolveAdapter(provider, deps.adapters);
+  const creds = c.get('crmCredentials');
+  if (!creds) return c.json({ error: 'credentials_missing' }, 500 as never);
+
+  const parsed = listActivitiesQuerySchema.safeParse({
+    limit: c.req.query('limit'),
+    offset: c.req.query('offset'),
+    customerId: c.req.query('customerId'),
+  });
+  if (!parsed.success) {
+    throw new ValidationError('Invalid query parameters', parseZodErrors(parsed.error), requestId);
+  }
+
+  const result = await adapter.fetchActivities(
+    creds,
+    parsed.data.customerId !== undefined ? { externalIds: [parsed.data.customerId] } : {},
+    { limit: parsed.data.limit, offset: parsed.data.offset },
+  );
+
+  // ctx required for future tenant-scoped activity filtering
+  void ctx;
+
+  return c.json({
+    success: true as const,
+    items: result.data,
+    total: result.total,
+    hasMore: result.hasMore,
+    provider,
+  });
+});
+
+// ─── POST /:provider/activities — Push an activity ────────────────
+
+integrationsRouter.post('/:provider/activities', async (c): Promise<Response> => {
+  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
+  const provider = c.req.param('provider');
+  const adapter = resolveAdapter(provider, deps.adapters);
+  const creds = c.get('crmCredentials');
+  if (!creds) return c.json({ error: 'credentials_missing' }, 500 as never);
+
+  const body: unknown = await c.req.json();
+  const parsed = pushActivityBodySchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError('Invalid activity data', parseZodErrors(parsed.error), requestId);
+  }
+
+  const { subject, type, description, date } = parsed.data;
+  const externalId = await adapter.pushActivity(creds, {
+    externalId: '',
+    type,
+    subject,
+    description: description ?? null,
+    contactExternalId: parsed.data.customerId,
+    dealExternalId: null,
+    dueDate: date !== undefined ? new Date(date) : null,
+    completedAt: null,
+    lastModified: new Date(),
+    metadata: {},
+  });
+
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'data.created',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'crm_activity',
+    resourceId: externalId,
+    action: 'created',
+    details: { provider, subject },
+    timestamp: new Date(),
+  });
+
+  return c.json({ success: true as const, externalId, provider }, 201);
+});
+
+// ─── GET /:provider/field-mappings ────────────────────────────────
+
+integrationsRouter.get('/:provider/field-mappings', async (c): Promise<Response> => {
+  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+  const ctx = ensureTenantContext(c);
+  const provider = c.req.param('provider');
+  const direction = c.req.query('direction');
+
+  const stored = await deps.listFieldMappings({
+    tenantId: ctx.tenantId,
+    provider,
+    direction,
+  });
+
+  const mappings = stored.length > 0 ? stored : deps.getAdapterDefaultMappings(provider);
+  return c.json({ success: true as const, data: mappings, provider });
+});
+
+// ─── PUT /:provider/field-mappings ────────────────────────────────
+
+integrationsRouter.put(
+  '/:provider/field-mappings',
+  requireRoleMiddleware('tenant_admin'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const provider = c.req.param('provider');
+
+    const body: unknown = await c.req.json();
+    const parsed = putFieldMappingsBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid field mappings', parseZodErrors(parsed.error), requestId);
+    }
+
+    await deps.replaceFieldMappings({
+      tenantId: ctx.tenantId,
+      provider,
+      mappings: parsed.data.mappings,
+    });
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'config.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'integration_field_mappings',
+      resourceId: `${ctx.tenantId}:${provider}`,
+      action: 'replaced',
+      details: { provider, count: parsed.data.mappings.length },
+      timestamp: new Date(),
+    });
+
+    return c.json({ success: true as const, provider });
+  },
+);
+
+// ─── DELETE /:provider — Disconnect integration ───────────────────
+
+integrationsRouter.delete(
+  '/:provider',
+  requireRoleMiddleware('tenant_admin'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+    const ctx = ensureTenantContext(c);
+    const provider = c.req.param('provider');
+
+    await deps.disconnectIntegration({ tenantId: ctx.tenantId, provider });
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'integration.disconnected',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'integration_configs',
+      resourceId: `${ctx.tenantId}:${provider}`,
+      action: 'disconnected',
+      details: { provider },
+      timestamp: new Date(),
+    });
+
+    return new Response(null, { status: 204 });
+  },
+);
 
 export { integrationsRouter };
