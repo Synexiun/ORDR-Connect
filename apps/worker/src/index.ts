@@ -24,3 +24,6 @@ export type { OutboundMessagesDeps } from './handlers/outbound-messages.js';
 
 export { createDsrExportHandler } from './handlers/dsr-export.js';
 export type { DsrExportDeps } from './handlers/dsr-export.js';
+
+export { createIntegrationSyncHandler } from './handlers/integration-sync.js';
+export type { IntegrationSyncDeps } from './handlers/integration-sync.js';

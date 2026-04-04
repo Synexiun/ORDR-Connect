@@ -41,6 +41,8 @@ import { createAgentEventsHandler } from './handlers/agent-events.js';
 import { createOutboundMessagesHandler } from './handlers/outbound-messages.js';
 import { createDsrExportHandler } from './handlers/dsr-export.js';
 import type { DsrExportDeps } from './handlers/dsr-export.js';
+import { createIntegrationSyncHandler } from './handlers/integration-sync.js';
+import type { IntegrationSyncDeps } from './handlers/integration-sync.js';
 
 export type { NotificationWriter, NotificationInsert } from './types.js';
 
@@ -74,6 +76,8 @@ export interface WorkerDependencies {
     channel: string,
   ) => Promise<{ readonly contact: string; readonly contentBody: string } | null>;
   readonly updateMessageStatus: (messageId: string, status: string) => Promise<void>;
+  /** Integration sync deps — wired at server bootstrap with real DB/Redis/adapter deps. */
+  readonly integrationSyncDeps?: IntegrationSyncDeps | undefined;
 }
 
 // ─── Worker Startup ──────────────────────────────────────────────
@@ -162,6 +166,43 @@ export async function startWorker(
     createDsrExportHandler(dsrExportDeps) as unknown as import('@ordr/events').EventHandler,
   );
 
+  // Integration sync handler — outbound (customer events) + inbound (webhook received)
+  const notConfiguredSync = (name: string) => (): Promise<never> =>
+    Promise.reject(new Error(`[ORDR:WORKER:INTEGRATION] ${name} not configured`));
+
+  const integrationSyncDeps: IntegrationSyncDeps = deps.integrationSyncDeps ?? {
+    listConnectedProviders: notConfiguredSync('listConnectedProviders'),
+    getCustomer: notConfiguredSync('getCustomer'),
+    enqueueOutbound: notConfiguredSync('enqueueOutbound'),
+    insertSyncEvent: notConfiguredSync('insertSyncEvent'),
+    findEntityMapping: notConfiguredSync('findEntityMapping'),
+    insertEntityMapping: notConfiguredSync('insertEntityMapping'),
+    createCustomerFromCrm: notConfiguredSync('createCustomerFromCrm'),
+    applyCustomerDelta: notConfiguredSync('applyCustomerDelta'),
+    getIntegrationId: notConfiguredSync('getIntegrationId'),
+    notifyTenantAdmin: notConfiguredSync('notifyTenantAdmin'),
+    adapters: new Map(),
+    credManagerDeps: { getIntegrationConfig: notConfiguredSync('getIntegrationConfig') } as never,
+    oauthConfigs: new Map(),
+    fieldEncryptor: {} as never,
+    auditLogger: deps.auditLogger,
+  };
+
+  const integrationSyncHandler = createIntegrationSyncHandler(
+    integrationSyncDeps,
+  ) as unknown as import('@ordr/events').EventHandler;
+
+  // Register integration webhook received handler
+  handlers.set('integration.webhook_received', integrationSyncHandler);
+
+  // Fan-out customer events to both customerHandler and integrationSyncHandler
+  handlers.set('customer.created', (event) =>
+    Promise.all([customerHandler(event), integrationSyncHandler(event)]).then(() => undefined),
+  );
+  handlers.set('customer.updated', (event) =>
+    Promise.all([customerHandler(event), integrationSyncHandler(event)]).then(() => undefined),
+  );
+
   // Subscribe to topics
   await consumer.subscribe([
     TOPICS.CUSTOMER_EVENTS,
@@ -169,6 +210,7 @@ export async function startWorker(
     TOPICS.AGENT_EVENTS,
     TOPICS.OUTBOUND_MESSAGES,
     TOPICS.DSR_EVENTS,
+    TOPICS.INTEGRATION_EVENTS,
   ]);
 
   // Start consuming
@@ -192,6 +234,7 @@ export async function startWorker(
         TOPICS.AGENT_EVENTS,
         TOPICS.OUTBOUND_MESSAGES,
         TOPICS.DSR_EVENTS,
+        TOPICS.INTEGRATION_EVENTS,
       ],
     },
     timestamp: new Date(),

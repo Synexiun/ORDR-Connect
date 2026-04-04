@@ -63,3 +63,12 @@ export {
 } from './jobs/dsr-deadline-check.js';
 
 export type { DsrDeadlineCheckDeps } from './jobs/dsr-deadline-check.js';
+
+export {
+  createIntegrationBatchSyncDefinition,
+  createIntegrationBatchSyncHandler,
+  INTEGRATION_BATCH_SYNC_JOB_ID,
+  INTEGRATION_BATCH_SYNC_CRON,
+} from './jobs/integration-batch-sync.js';
+
+export type { IntegrationBatchSyncDeps } from './jobs/integration-batch-sync.js';
