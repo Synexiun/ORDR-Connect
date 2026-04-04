@@ -172,3 +172,18 @@ export { searchIndex, searchEntityTypeEnum } from './search-index.js';
 
 // DSR — GDPR Data Subject Requests
 export { dataSubjectRequests, dsrExports, dsrTypeEnum, dsrStatusEnum } from './dsr.js';
+
+// Integrations (Phase 52)
+export {
+  integrationConfigs,
+  syncEvents,
+  webhookLogs,
+  integrationFieldMappings,
+  integrationEntityMappings,
+  integrationProviderEnum,
+  integrationConfigStatusEnum,
+  syncEventDirectionEnum,
+  syncEventStatusEnum,
+  integrationEntityTypeEnum,
+  fieldMappingDirectionEnum,
+} from './integrations.js';
