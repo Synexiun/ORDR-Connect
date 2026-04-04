@@ -53,3 +53,13 @@ export type { SchedulerStore, SchedulerAuditLogger, SchedulerAlertCallback } fro
 
 // ─── Drizzle Store ────────────────────────────────────────────────
 export { DrizzleSchedulerStore } from './drizzle-store.js';
+
+// ─── Job Definitions ──────────────────────────────────────────────
+export {
+  createDsrDeadlineCheckDefinition,
+  createDsrDeadlineCheckHandler,
+  DSR_DEADLINE_CHECK_JOB_ID,
+  DSR_DEADLINE_CHECK_CRON,
+} from './jobs/dsr-deadline-check.js';
+
+export type { DsrDeadlineCheckDeps } from './jobs/dsr-deadline-check.js';
