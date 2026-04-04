@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@ordr/core": "workspace:*",
+    "@ordr/crypto": "workspace:*",
     "@ordr/events": "workspace:*",
+    "@ordr/integrations": "workspace:*",
     "@ordr/agent-runtime": "workspace:*",
     "@ordr/graph": "workspace:*",
     "@ordr/compliance": "workspace:*",

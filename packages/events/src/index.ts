@@ -17,6 +17,7 @@ export type {
   AuthEventPayload,
   DsrApprovedPayload,
   EventTypeValue,
+  IntegrationWebhookReceivedPayload,
 } from './types.js';
 
 export { EventType } from './types.js';
