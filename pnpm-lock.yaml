@@ -150,6 +150,9 @@ importers:
       '@ordr/scheduler':
         specifier: workspace:*
         version: link:../../packages/scheduler
+      '@ordr/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@ordr/search':
         specifier: workspace:*
         version: link:../../packages/search
