@@ -288,7 +288,7 @@ tenantsRouter.patch('/:id', requireRoleMiddleware('super_admin'), async (c): Pro
     return c.json({ success: true as const, message: 'No changes', requestId });
   }
 
-  const updated = await updateTenant(tenantId, parsed.data);
+  const updated = await updateTenant(tenantId, parsed.data as { name?: string; slug?: string });
   if (updated === undefined) throw new NotFoundError('Tenant not found');
 
   await auditLogger.log({

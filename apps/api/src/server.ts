@@ -1490,7 +1490,10 @@ async function bootstrap(): Promise<void> {
         eventType: 'agent.action',
       }),
   };
-  const workflowDb = createDrizzle(dbConnection, schema);
+  const workflowDb = createDrizzle(
+    dbConnection,
+    schema,
+  ) as unknown as import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof schema>;
   const isProduction = config.nodeEnv === 'production';
   const workflowInstanceStore = isProduction
     ? new DrizzleInstanceStore(workflowDb)
@@ -1511,7 +1514,10 @@ async function bootstrap(): Promise<void> {
   );
 
   // ── P6.4. Search engine routes ────────────────────────────────────────
-  const searchDb = createDrizzle(dbConnection, schema);
+  const searchDb = createDrizzle(
+    dbConnection,
+    schema,
+  ) as unknown as import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof schema>;
   const searchStore = isProduction ? new DrizzleSearchStore(searchDb) : new InMemorySearchStore();
   configureSearchRoutes({
     engine: new SearchEngine(searchStore),
@@ -1552,7 +1558,10 @@ async function bootstrap(): Promise<void> {
     // In production: page on-call via PagerDuty for p1, alert for p2/p3
     console.error('[ORDR:Scheduler] Dead-letter alert:', _alert);
   };
-  const schedulerDb = createDrizzle(dbConnection, schema);
+  const schedulerDb = createDrizzle(
+    dbConnection,
+    schema,
+  ) as unknown as import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof schema>;
   const schedulerStore = isProduction
     ? new DrizzleSchedulerStore(schedulerDb)
     : new InMemorySchedulerStore();

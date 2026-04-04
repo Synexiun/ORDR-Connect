@@ -196,7 +196,7 @@ messagingRouter.post('/channels', requireAuth(), async (c) => {
     tenantId: ctx.tenantId,
     createdBy: ctx.userId,
     ...parsed.data,
-  });
+  } as import('@ordr/messaging').CreateChannelInput);
   publishEvent({
     type: 'channel.created',
     tenantId: ctx.tenantId,
@@ -355,7 +355,7 @@ messagingRouter.post('/channels/:id/messages', requireAuth(), async (c) => {
     senderId: ctx.userId,
     senderName: ctx.userId,
     ...parsed.data,
-  });
+  } as import('@ordr/messaging').SendMessageInput);
   publishEvent({
     type: 'message.new',
     tenantId: ctx.tenantId,
