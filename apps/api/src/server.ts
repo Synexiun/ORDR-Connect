@@ -80,6 +80,9 @@ import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureAuditLogsRoute } from './routes/audit-logs.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
+import { configureWebhookRoutes } from './routes/developer-webhooks.js';
+// NOTE: renamed to avoid collision with the existing `configureAgentRoutes` import at line ~95
+import { configureAgentRoutes as configureDeveloperAgentRoutes } from './routes/developer-agents.js';
 import { configurePartnerStatsRoute } from './routes/partner-stats.js';
 import { configurePartnerRoutes } from './routes/partners.js';
 import { configureDeveloperRoutes } from './routes/developers.js';
@@ -1184,6 +1187,134 @@ async function bootstrap(): Promise<void> {
     },
   });
   console.warn('[ORDR:API] Developer portal routes configured');
+
+  // ── 7.2. Developer webhook routes (Phase 53) ──────────────────────────────
+  const fieldEncryptor = new FieldEncryptor(fieldEncryptionKey);
+  configureWebhookRoutes({
+    auditLogger,
+    fieldEncryptor,
+    createWebhook: (data) =>
+      db
+        .insert(schema.developerWebhooks)
+        .values({
+          developerId: data.developerId,
+          url: data.url,
+          events: data.events,
+          hmacSecretEncrypted: data.hmacSecretEncrypted,
+          active: true,
+        })
+        .returning()
+        .then((rows) => {
+          const row = rows[0];
+          if (!row) throw new Error('Insert returned no rows');
+          return row;
+        }),
+    listWebhooks: (developerId) =>
+      db
+        .select()
+        .from(schema.developerWebhooks)
+        .where(eq(schema.developerWebhooks.developerId, developerId))
+        .orderBy(asc(schema.developerWebhooks.createdAt)),
+    countActiveWebhooks: async (developerId) => {
+      const rows = await db
+        .select({ total: count() })
+        .from(schema.developerWebhooks)
+        .where(
+          and(
+            eq(schema.developerWebhooks.developerId, developerId),
+            eq(schema.developerWebhooks.active, true),
+          ),
+        );
+      return rows[0]?.total ?? 0;
+    },
+    findWebhook: async (developerId, webhookId) => {
+      const rows = await db
+        .select()
+        .from(schema.developerWebhooks)
+        .where(
+          and(
+            eq(schema.developerWebhooks.id, webhookId),
+            eq(schema.developerWebhooks.developerId, developerId),
+          ),
+        )
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    deleteWebhook: async (developerId, webhookId) => {
+      await db
+        .delete(schema.developerWebhooks)
+        .where(
+          and(
+            eq(schema.developerWebhooks.id, webhookId),
+            eq(schema.developerWebhooks.developerId, developerId),
+          ),
+        );
+    },
+    toggleWebhook: async (developerId, webhookId, active) => {
+      const rows = await db
+        .update(schema.developerWebhooks)
+        .set({ active, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.developerWebhooks.id, webhookId),
+            eq(schema.developerWebhooks.developerId, developerId),
+          ),
+        )
+        .returning();
+      const row = rows[0];
+      if (!row) throw new Error('Webhook not found');
+      return row;
+    },
+  });
+  console.warn('[ORDR:API] Developer webhook routes configured');
+
+  // ── 7.3. Developer agent submission routes (Phase 53) ─────────────────────
+  configureDeveloperAgentRoutes({
+    auditLogger,
+    listAgentsByPublisher: async (publisherId) => {
+      const rows = await db
+        .select({
+          id: schema.marketplaceAgents.id,
+          name: schema.marketplaceAgents.name,
+          version: schema.marketplaceAgents.version,
+          status: schema.marketplaceAgents.status,
+          installCount: schema.marketplaceAgents.downloads,
+          createdAt: schema.marketplaceAgents.createdAt,
+        })
+        .from(schema.marketplaceAgents)
+        .where(eq(schema.marketplaceAgents.publisherId, publisherId))
+        .orderBy(desc(schema.marketplaceAgents.createdAt));
+      return rows;
+    },
+    createMarketplaceListing: async (data) => {
+      const rows = await db
+        .insert(schema.marketplaceAgents)
+        .values({
+          name: data.name,
+          version: data.version,
+          description: data.description,
+          author: data.author,
+          license: data.license,
+          manifest: data.manifest,
+          packageHash: data.packageHash,
+          publisherId: data.publisherId,
+          status: 'review',
+          downloads: 0,
+        })
+        .returning({
+          id: schema.marketplaceAgents.id,
+          name: schema.marketplaceAgents.name,
+          version: schema.marketplaceAgents.version,
+          status: schema.marketplaceAgents.status,
+          installCount: schema.marketplaceAgents.downloads,
+          createdAt: schema.marketplaceAgents.createdAt,
+        });
+      const row = rows[0];
+      if (!row) throw new Error('Insert returned no rows');
+      return row;
+    },
+  });
+  console.warn('[ORDR:API] Developer agent routes configured');
 
   configureHealthChecks({
     checkDb: async () => {

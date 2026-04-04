@@ -64,6 +64,8 @@ import { eventsRouter } from './routes/events.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { healthcareRouter } from './routes/healthcare.js';
 import { devUsageRouter } from './routes/developer-usage.js';
+import { developerWebhooksRouter } from './routes/developer-webhooks.js';
+import { developerAgentsRouter } from './routes/developer-agents.js';
 import { partnerStatsRouter } from './routes/partner-stats.js';
 import { slaRouter } from './routes/sla.js';
 import { teamRouter } from './routes/team.js';
@@ -252,6 +254,10 @@ export function createApp(config: AppConfig): Hono<Env> {
   // Developer usage stats — aggregate, daily breakdown, top endpoints
   // NOTE: mounted before /api/v1/developers so it takes precedence for /usage
   app.route('/api/v1/developers/usage', devUsageRouter);
+
+  // Developer portal sub-routes — mounted before /api/v1/developers (Phase 53)
+  app.route('/api/v1/developers/webhooks', developerWebhooksRouter);
+  app.route('/api/v1/developers/agents', developerAgentsRouter);
 
   // SLA routes — breach status and manual trigger
   app.route('/api/v1/sla', slaRouter);
