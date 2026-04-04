@@ -46,12 +46,14 @@ CREATE TABLE integration_configs (
   status          TEXT NOT NULL DEFAULT 'disconnected'
                     CHECK (status IN ('connected','disconnected','error','rate_limited')),
   -- AES-256-GCM ciphertext — plaintext never stored (FieldEncryptor)
-  access_token_enc  TEXT,
-  refresh_token_enc TEXT,
-  token_expires_at  TIMESTAMPTZ,
-  scopes          TEXT[],
-  instance_url    TEXT,                    -- Salesforce instance URL
-  settings        JSONB NOT NULL DEFAULT '{}',  -- per-tenant overrides
+  access_token_enc    TEXT,
+  refresh_token_enc   TEXT,
+  -- Webhook secret encrypted independently — RESTRICTED credential, never stored plaintext
+  webhook_secret_enc  TEXT,
+  token_expires_at    TIMESTAMPTZ,
+  scopes              TEXT[],
+  instance_url        TEXT,                    -- Salesforce instance URL
+  settings            JSONB NOT NULL DEFAULT '{}',  -- non-sensitive per-tenant overrides only
   last_sync_at    TIMESTAMPTZ,
   last_error      TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -70,7 +72,7 @@ CREATE INDEX idx_integration_configs_status ON integration_configs (tenant_id, s
 
 ### Table: `sync_events`
 
-Append-only audit log of every sync operation. No UPDATE/DELETE (WORM by convention).
+Append-only audit log of every sync operation. WORM enforced by PostgreSQL trigger — UPDATE and DELETE raise an exception at the database level.
 
 ```sql
 CREATE TABLE sync_events (
@@ -83,7 +85,8 @@ CREATE TABLE sync_events (
   entity_id           UUID,                -- ORDR internal ID
   external_id         TEXT,                -- CRM record ID
   status              TEXT NOT NULL CHECK (status IN ('success','failed','conflict','skipped')),
-  conflict_resolution TEXT CHECK (conflict_resolution IN ('ordr_wins','crm_wins')),
+  -- 'crm_wins' = last-write-wins applied CRM value; NULL for non-conflict outcomes
+  conflict_resolution TEXT CHECK (conflict_resolution IN ('crm_wins')),
   -- Sanitised error only — no PHI, no stack traces
   error_summary       TEXT,
   synced_at           TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -97,11 +100,23 @@ CREATE POLICY sync_events_tenant_isolation ON sync_events
 CREATE INDEX idx_sync_events_tenant_provider ON sync_events (tenant_id, provider);
 CREATE INDEX idx_sync_events_entity ON sync_events (entity_id);
 CREATE INDEX idx_sync_events_synced_at ON sync_events (synced_at DESC);
+
+-- WORM enforcement: block any UPDATE or DELETE on sync_events rows
+CREATE OR REPLACE FUNCTION prevent_sync_events_mutation()
+  RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'sync_events is append-only (WORM)';
+END;
+$$;
+
+CREATE TRIGGER sync_events_no_update
+  BEFORE UPDATE OR DELETE ON sync_events
+  FOR EACH ROW EXECUTE FUNCTION prevent_sync_events_mutation();
 ```
 
 ### Table: `webhook_logs`
 
-Raw webhook receipt log. Payload hash only — PHI is never stored.
+Webhook processing-state table (not a WORM audit log). Records receipt, signature validity, and processing status for idempotency and retry tracking. The immutable compliance audit record is emitted to the `@ordr/audit` WORM store as `integration.webhook_received` / `integration.webhook_invalid_signature` — `webhook_logs` is a mutable operational table that may be pruned after retention window. `processed` is intentionally mutable (updated to `true` after Kafka publish). PHI is never stored — only `SHA-256(rawBody)`.
 
 ```sql
 CREATE TABLE webhook_logs (
@@ -115,7 +130,15 @@ CREATE TABLE webhook_logs (
   received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- No RLS — service account writes; queries always filter by tenant_id explicitly
+ALTER TABLE webhook_logs ENABLE ROW LEVEL SECURITY;
+
+-- Allows rows where tenant_id is NULL (not yet resolved at write time) OR matches the current tenant.
+-- The inbound webhook endpoint uses the service-role DB connection for the initial INSERT
+-- (before tenant resolution), bypassing RLS. Post-resolution queries use the app connection
+-- and are filtered to the resolved tenant.
+CREATE POLICY webhook_logs_tenant_isolation ON webhook_logs
+  USING (tenant_id IS NULL OR tenant_id = current_setting('app.current_tenant')::uuid);
+
 CREATE INDEX idx_webhook_logs_tenant ON webhook_logs (tenant_id, received_at DESC);
 CREATE INDEX idx_webhook_logs_unprocessed ON webhook_logs (processed, received_at)
   WHERE processed = false;
@@ -147,10 +170,37 @@ CREATE POLICY integration_field_mappings_tenant_isolation ON integration_field_m
 CREATE INDEX idx_field_mappings_tenant_provider ON integration_field_mappings (tenant_id, provider, entity_type);
 ```
 
+### Table: `integration_entity_mappings`
+
+Identity-mapping table: authoritative registry of ORDR entity ID ↔ CRM external ID pairs. Distinct from `sync_events` (audit log of what happened) — this table answers "do we already know this CRM record?" for inbound sync deduplication.
+
+```sql
+CREATE TABLE integration_entity_mappings (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  provider     TEXT NOT NULL CHECK (provider IN ('salesforce', 'hubspot')),
+  entity_type  TEXT NOT NULL CHECK (entity_type IN ('contact', 'deal', 'activity')),
+  ordr_id      UUID NOT NULL,       -- ORDR internal ID (customer / deal / activity)
+  external_id  TEXT NOT NULL,       -- CRM record ID
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, provider, entity_type, external_id)
+);
+
+ALTER TABLE integration_entity_mappings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY integration_entity_mappings_tenant_isolation ON integration_entity_mappings
+  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+
+CREATE INDEX idx_entity_mappings_lookup ON integration_entity_mappings
+  (tenant_id, provider, entity_type, external_id);
+CREATE INDEX idx_entity_mappings_ordr_id ON integration_entity_mappings (ordr_id);
+```
+
 ### Drizzle Schema Files
 
-- Create: `packages/db/src/schema/integrations.ts` — Drizzle definitions for all four tables
-- Modify: `packages/db/src/schema/index.ts` — export all four tables + enums
+- Create: `packages/db/src/schema/integrations.ts` — Drizzle definitions for all five tables
+- Modify: `packages/db/src/schema/index.ts` — export all five tables + enums
 
 ---
 
@@ -189,8 +239,8 @@ No JWT auth — CRM platforms push without tokens. Protected by HMAC-SHA256 sign
 
 **Signature verification (replaces stubs in both adapters):**
 
-- **Salesforce:** Reads `X-Salesforce-Signature` header. Computes `HMAC-SHA256(webhookSecret, rawBody)`, base64-encodes. Compares with `crypto.timingSafeEqual`. Webhook secret stored in `integration_configs.settings.webhookSecret` (encrypted field).
-- **HubSpot:** Reads `X-HubSpot-Signature-v3` and `X-HubSpot-Request-Timestamp` headers. Verifies timestamp is within 5 minutes (replay attack prevention). Computes `HMAC-SHA256(webhookSecret, method + url + rawBody + timestamp)`. Compares with `crypto.timingSafeEqual`.
+- **Salesforce:** Reads `X-Salesforce-Signature` header. Computes `HMAC-SHA256(webhookSecret, rawBody)`, base64-encodes. Compares with `crypto.timingSafeEqual`. Webhook secret decrypted at request time from `integration_configs.webhook_secret_enc` via `FieldEncryptor` (RESTRICTED credential — never in `settings` JSONB).
+- **HubSpot:** Reads `X-HubSpot-Signature-v3` and `X-HubSpot-Request-Timestamp` headers. Verifies timestamp is within 5 minutes (replay attack prevention). Computes `HMAC-SHA256(webhookSecret, method + url + rawBody + timestamp)`. Compares with `crypto.timingSafeEqual`. Webhook secret decrypted from `integration_configs.webhook_secret_enc` via `FieldEncryptor`.
 
 **Processing flow:**
 1. Read raw body as bytes before JSON parsing
@@ -278,8 +328,8 @@ Consumes `TOPICS.CUSTOMER_EVENTS`. Runs alongside the existing `createCustomerEv
 
 Consumes `TOPICS.INTEGRATION_EVENTS` (event type `integration.webhook_received`).
 
-1. Look up ORDR `customers.id` by `sync_events.external_id = payload.externalId AND provider = payload.provider AND tenant_id = tenantId`
-2. If no match: create new customer record (CRM has a contact we don't have yet)
+1. Look up ORDR `customers.id` via `integration_entity_mappings WHERE external_id = payload.externalId AND provider = payload.provider AND entity_type = 'contact' AND tenant_id = tenantId`
+2. If no match: create new customer record (CRM has a contact we don't have yet); insert a new `integration_entity_mappings` row linking the new `customers.id` to `payload.externalId`
 3. If match found: compare CRM `lastModified` with ORDR `customers.updated_at`
    - CRM newer (or delta > 5 min): apply field delta to `customers` row via Drizzle UPDATE
    - Both updated within 5 min: apply CRM update (last write wins), write `sync_events` with `status = 'conflict'` + `conflict_resolution = 'crm_wins'`, emit `integration.conflict_detected` audit event, send in-app notification to tenant admin
@@ -328,8 +378,11 @@ Export `createIntegrationBatchSyncDefinition` and `createIntegrationBatchSyncHan
 - `POST /api/v1/integrations/:provider/activities` — `withCredentials` middleware, Zod-validated body (`{ customerId, type, subject, description?, date? }`), calls `adapter.pushActivity(credentials, activity)`. Returns created activity. Audit-logged.
 
 **Field mapping endpoints:**
-- `GET /api/v1/integrations/:provider/field-mappings` — Returns active mappings for `tenant + provider`. If no custom rows in `integration_field_mappings`, returns adapter defaults (seeded from `SalesforceAdapter` / `HubSpotAdapter` built-in mappings).
+- `GET /api/v1/integrations/:provider/field-mappings` — Returns active mappings for `tenant + provider`. Rows with `direction = 'both'` appear in results regardless of direction query; rows with `direction = 'inbound'` or `'outbound'` are filtered when the optional `?direction=` query param is supplied. If no custom rows exist, returns adapter defaults (seeded from `SalesforceAdapter` / `HubSpotAdapter` built-in mappings).
 - `PUT /api/v1/integrations/:provider/field-mappings` — Replaces full mapping set atomically (DELETE + INSERT in transaction). Body: `{ mappings: FieldMapping[] }`. Validated: max 200 mappings, source/target field names ≤100 chars. Audit-logged on every write.
+
+**Disconnect endpoint:**
+- `DELETE /api/v1/integrations/:provider` — JWT-authenticated. Sets `integration_configs.status = 'disconnected'`, nulls `access_token_enc`, `refresh_token_enc`, and `webhook_secret_enc`. Emits `integration.disconnected` audit event. Returns `204 No Content`. Does not delete the `integration_configs` row (preserves sync history).
 
 **Wire `withCredentials` onto all existing credential-requiring routes** (contacts, deals, activities, field mappings). Remove the placeholder credential-passing pattern from `configureIntegrationRoutes`.
 
@@ -363,7 +416,7 @@ Export `createIntegrationBatchSyncDefinition` and `createIntegrationBatchSyncHan
 | Field mapping endpoints | same file | GET defaults, PUT replace, max mapping limit |
 | Compliance test | `tests/compliance/check-integration-audit-events.sh` | Verifies all 7 integration AuditEventType values present |
 
-**Coverage target:** 100% on credential encryption/decryption and webhook signature verification paths (CLAUDE.md Rule 5).
+**Coverage target:** 100% on credential encryption/decryption and webhook signature verification paths (CLAUDE.md Compliance Gates #5 and #7).
 
 ---
 
@@ -376,22 +429,23 @@ Export `createIntegrationBatchSyncDefinition` and `createIntegrationBatchSyncHan
 - `apps/api/src/middleware/crm-credentials.ts`
 - `apps/worker/src/handlers/integration-sync.ts`
 - `packages/scheduler/src/jobs/integration-batch-sync.ts`
+- `packages/scheduler/src/__tests__/integration-batch-sync.test.ts`
 - `tests/compliance/check-integration-audit-events.sh`
 - `apps/api/src/__tests__/integration-webhooks.test.ts`
 - `apps/worker/src/__tests__/integration-sync.test.ts`
 - `packages/integrations/src/__tests__/credential-manager.test.ts`
 
 ### Modified
-- `packages/db/src/schema/index.ts` — export 4 new tables + enums
+- `packages/db/src/schema/index.ts` — export 5 new tables + enums
 - `packages/events/src/topics.ts` — add `INTEGRATION_EVENTS`
 - `packages/events/src/types.ts` — add 5 `EventType` constants + `IntegrationWebhookReceivedPayload`
 - `packages/events/src/schemas.ts` — add webhook payload schema + registry entry
 - `packages/audit/src/types.ts` — add 7 integration audit event types
 - `packages/integrations/src/salesforce/adapter.ts` — replace webhook signature stub with real HMAC-SHA256
 - `packages/integrations/src/hubspot/adapter.ts` — replace webhook signature stub + disconnect stub with real implementations
-- `apps/api/src/routes/integrations.ts` — add activity endpoints, field mapping endpoints, webhook endpoints, wire `withCredentials`
+- `apps/api/src/routes/integrations.ts` — add activity, field-mapping, webhook, and disconnect endpoints; wire `withCredentials`
+- `apps/api/src/__tests__/integrations.test.ts` — extend with activity + field-mapping endpoint tests
 - `apps/api/src/server.ts` — wire credential manager deps into `configureIntegrationRoutes`
-- `apps/api/src/app.ts` — no route mounting changes needed (integrations already mounted)
 - `apps/worker/src/server.ts` — register integration sync handlers, add `INTEGRATION_EVENTS` to subscribe
 - `apps/worker/src/index.ts` — export new handler + deps type
 - `packages/scheduler/src/index.ts` — export batch sync job
