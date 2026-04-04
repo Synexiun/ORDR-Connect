@@ -72,3 +72,7 @@ export { EventConsumer } from './consumer.js';
 export type { DlqEvent, ProcessDlqHandle } from './dlq.js';
 
 export { DeadLetterHandler } from './dlq.js';
+
+// ─── Deliverable Events ───────────────────────────────────────────
+export { DELIVERABLE_EVENTS } from './deliverable-events.js';
+export type { DeliverableEvent } from './deliverable-events.js';
