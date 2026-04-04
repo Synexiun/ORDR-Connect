@@ -95,6 +95,9 @@ export {
   seedDataProfileEnum,
 } from './developer.js';
 
+// Developer Webhooks (Phase 53)
+export { developerWebhooks } from './developer-webhooks.js';
+
 // Marketplace
 export {
   marketplaceAgents,
