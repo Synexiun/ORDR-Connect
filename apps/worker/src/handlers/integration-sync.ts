@@ -145,6 +145,7 @@ function toCrmContact(customer: CustomerRecord): CrmContact {
 async function handleCustomerCreated(
   tenantId: string,
   customerId: string,
+  correlationId: string,
   deps: IntegrationSyncDeps,
 ): Promise<void> {
   const customer = await deps.getCustomer({ tenantId, customerId });
@@ -195,7 +196,7 @@ async function handleCustomerCreated(
         resource: 'customers',
         resourceId: customerId,
         action: 'synced_to_crm',
-        details: { provider, direction: 'outbound' },
+        details: { provider, direction: 'outbound', correlation_id: correlationId },
         timestamp: new Date(),
       });
     } catch (err) {
@@ -222,7 +223,7 @@ async function handleCustomerCreated(
         resource: 'customers',
         resourceId: customerId,
         action: 'sync_failed',
-        details: { provider, error: summary },
+        details: { provider, error: summary, correlation_id: correlationId },
         timestamp: new Date(),
       });
     }
@@ -253,6 +254,8 @@ const CONFLICT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
 async function handleWebhookReceived(
   payload: IntegrationWebhookReceivedPayload,
+  correlationId: string,
+  eventTimestamp: string,
   deps: IntegrationSyncDeps,
 ): Promise<void> {
   const { tenantId, provider, externalId } = payload;
@@ -302,7 +305,10 @@ async function handleWebhookReceived(
   const customer = await deps.getCustomer({ tenantId, customerId: mapping.ordrId });
   if (customer === null) return;
 
-  const crmEventTs = new Date();
+  // Use the Kafka event's publish timestamp as the CRM event time proxy.
+  // This is more accurate than processing time under Kafka lag.
+  // Phase 53 will use the CRM record's lastModified from an adapter fetch.
+  const crmEventTs = new Date(eventTimestamp);
   const ordrTs = customer.updatedAt;
   const delta = Math.abs(crmEventTs.getTime() - ordrTs.getTime());
   const crmIsNewer = crmEventTs.getTime() > ordrTs.getTime();
@@ -322,7 +328,9 @@ async function handleWebhookReceived(
     return;
   }
 
-  // Apply CRM delta (either CRM newer, or within 5-min conflict window)
+  // Apply CRM delta (Phase 52: no-op field update — name/email undefined).
+  // Full field delta sync via adapter.fetchContacts is planned for Phase 53.
+  // The sync_event and entity_mapping are recorded correctly here.
   await deps.applyCustomerDelta({ tenantId, customerId: mapping.ordrId });
 
   const isConflict = !crmIsNewer && delta <= CONFLICT_WINDOW_MS;
@@ -346,9 +354,10 @@ async function handleWebhookReceived(
       resource: 'customers',
       resourceId: mapping.ordrId,
       action: 'conflict_resolved_crm_wins',
-      details: { provider, external_id: externalId },
+      details: { provider, external_id: externalId, correlation_id: correlationId },
       timestamp: new Date(),
     });
+    // mapping.ordrId is a non-PHI UUID — safe to include in tenant notification.
     await deps.notifyTenantAdmin({
       tenantId,
       message: `Sync conflict detected for customer ${mapping.ordrId} (provider: ${provider}). CRM version applied.`,
@@ -372,7 +381,7 @@ async function handleWebhookReceived(
       resource: 'customers',
       resourceId: mapping.ordrId,
       action: 'synced_from_crm',
-      details: { provider, direction: 'inbound' },
+      details: { provider, direction: 'inbound', correlation_id: correlationId },
       timestamp: new Date(),
     });
   }
@@ -389,17 +398,22 @@ export function createIntegrationSyncHandler(
   deps: IntegrationSyncDeps,
 ): (event: EventEnvelope<unknown>) => Promise<void> {
   return async (event: EventEnvelope<unknown>): Promise<void> => {
+    const correlationId = event.metadata.correlationId;
     const type = event.type as IntegrationEventType;
 
     if (type === 'customer.created') {
       const payload = event.payload as { customerId: string };
-      await handleCustomerCreated(event.tenantId, payload.customerId, deps);
+      await handleCustomerCreated(event.tenantId, payload.customerId, correlationId, deps);
     } else if (type === 'customer.updated') {
       const payload = event.payload as { customerId: string };
       await handleCustomerUpdated(event.tenantId, payload.customerId, deps);
     } else {
-      // type === 'integration.webhook_received'
-      await handleWebhookReceived(event.payload as IntegrationWebhookReceivedPayload, deps);
+      await handleWebhookReceived(
+        event.payload as IntegrationWebhookReceivedPayload,
+        correlationId,
+        event.timestamp,
+        deps,
+      );
     }
   };
 }
