@@ -72,7 +72,7 @@ function buildDeps(overrides: Partial<IntegrationBatchSyncDeps> = {}): Integrati
 describe('createIntegrationBatchSyncDefinition', () => {
   it('uses */15 * * * * cron schedule', () => {
     const def = createIntegrationBatchSyncDefinition();
-    expect(def.cronExpression).toBe(INTEGRATION_BATCH_SYNC_CRON);
+    expect(def.cronExpression).toBe('*/15 * * * *');
   });
 });
 
@@ -149,5 +149,19 @@ describe('createIntegrationBatchSyncHandler', () => {
     expect(mockInsertSyncEvent).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'success', direction: 'outbound' }),
     );
+  });
+
+  it('writes failed sync_event when pushContact throws', async () => {
+    mockDrainOutboundQueue.mockResolvedValue([{ customerId: 'cust-1', score: Date.now() }]);
+    mockGetCustomers.mockResolvedValue([
+      { id: 'cust-1', tenantId: 'tenant-1', name: 'Alice', email: null, updatedAt: new Date() },
+    ]);
+    mockPushContact.mockRejectedValueOnce(new Error('CRM API error'));
+
+    const handler = createIntegrationBatchSyncHandler(buildDeps());
+    const result = await handler({});
+
+    expect(mockInsertSyncEvent).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+    expect(result.success).toBe(true); // job-level success even with individual push failure
   });
 });

@@ -213,182 +213,193 @@ export function createIntegrationBatchSyncHandler(deps: IntegrationBatchSyncDeps
     let totalProcessed = 0;
     let totalFailed = 0;
 
-    const integrations = await deps.listConnectedIntegrations();
+    try {
+      const integrations = await deps.listConnectedIntegrations();
 
-    for (const integration of integrations) {
-      const { tenantId, provider, integrationId } = integration;
+      for (const integration of integrations) {
+        const { tenantId, provider, integrationId } = integration;
 
-      const adapter = deps.adapters.get(provider);
-      const oauthConfig = deps.oauthConfigs.get(provider);
+        const adapter = deps.adapters.get(provider);
+        const oauthConfig = deps.oauthConfigs.get(provider);
 
-      if (adapter === undefined || oauthConfig === undefined) {
-        // Provider not configured in this runtime — skip silently.
-        continue;
-      }
-
-      // ── 1. Ensure fresh credentials ───────────────────────────
-
-      let credentials: OAuthCredentials;
-      try {
-        credentials = await ensureFreshCredentials(
-          deps.credManagerDeps,
-          tenantId,
-          provider,
-          adapter,
-          oauthConfig,
-          deps.fieldEncryptor,
-        );
-      } catch (err) {
-        if (err instanceof IntegrationTokenExpiredError) {
-          // Token refresh failed — credential manager already updated status.
-          // Log and skip this tenant.
-          await deps.auditLogger.log({
-            tenantId,
-            eventType: 'integration.token_expired',
-            actorType: 'system',
-            actorId: 'scheduler',
-            resource: 'integration_configs',
-            resourceId: integrationId,
-            action: 'skip_on_token_expired',
-            details: { provider },
-            timestamp: new Date(),
-          });
+        if (adapter === undefined || oauthConfig === undefined) {
+          // Provider not configured in this runtime — skip silently.
           continue;
         }
-        throw err;
-      }
 
-      // ── 2. Drain outbound queue ───────────────────────────────
+        // ── 1. Ensure fresh credentials ───────────────────────────
 
-      const rawEntries = await deps.drainOutboundQueue({ tenantId, provider });
-
-      if (rawEntries.length === 0) {
-        continue;
-      }
-
-      // ── 3. Deduplicate by customerId ──────────────────────────
-
-      const deduped = deduplicateByCustomerId(rawEntries);
-      const customerIds = Array.from(deduped.keys());
-
-      // ── 4. Fetch customer records ─────────────────────────────
-
-      const customers = await deps.getCustomers({ tenantId, customerIds });
-
-      if (customers.length === 0) {
-        continue;
-      }
-
-      // ── 5. Push records (bulk or individual) ──────────────────
-
-      const bulkThreshold = BULK_THRESHOLD[provider] ?? DEFAULT_BULK_THRESHOLD;
-      const syncedAt = new Date();
-
-      if (customers.length > bulkThreshold && typeof adapter.bulkPushContacts === 'function') {
-        // ── Bulk path ─────────────────────────────────────────────
-        const contacts = customers.map(toContact);
-
-        let externalIdMap: ReadonlyMap<string, string>;
+        let credentials: OAuthCredentials;
         try {
-          externalIdMap = await adapter.bulkPushContacts(credentials, contacts);
-        } catch (bulkErr) {
-          // If bulk fails, record all as failed.
-          for (const customer of customers) {
-            await deps.insertSyncEvent({
-              integrationId,
-              tenantId,
-              provider,
-              customerId: customer.id,
-              externalId: null,
-              status: 'failed',
-              direction: 'outbound',
-              errorMessage: bulkErr instanceof Error ? bulkErr.message : 'Bulk push failed',
-              syncedAt,
-            });
-            totalFailed++;
-          }
-          continue;
-        }
-
-        for (const customer of customers) {
-          const externalId = externalIdMap.get(customer.id) ?? null;
-          await deps.insertSyncEvent({
-            integrationId,
+          credentials = await ensureFreshCredentials(
+            deps.credManagerDeps,
             tenantId,
             provider,
-            customerId: customer.id,
-            externalId,
-            status: externalId !== null ? 'success' : 'failed',
-            direction: 'outbound',
-            errorMessage: null,
-            syncedAt,
-          });
-          if (externalId !== null) {
-            totalProcessed++;
-          } else {
-            totalFailed++;
+            adapter,
+            oauthConfig,
+            deps.fieldEncryptor,
+          );
+        } catch (err) {
+          if (err instanceof IntegrationTokenExpiredError) {
+            // Token refresh failed — credential manager already updated status.
+            // Log and skip this tenant.
+            await deps.auditLogger.log({
+              tenantId,
+              eventType: 'integration.token_expired',
+              actorType: 'system',
+              actorId: 'scheduler',
+              resource: 'integration_configs',
+              resourceId: integrationId,
+              action: 'skip_on_token_expired',
+              details: { provider },
+              timestamp: new Date(),
+            });
+            continue;
           }
+          throw err;
         }
-      } else {
-        // ── Individual path ───────────────────────────────────────
-        for (const customer of customers) {
-          const contact = toContact(customer);
 
+        // ── 2. Drain outbound queue ───────────────────────────────
+
+        const rawEntries = await deps.drainOutboundQueue({ tenantId, provider });
+
+        if (rawEntries.length === 0) {
+          continue;
+        }
+
+        // ── 3. Deduplicate by customerId ──────────────────────────
+
+        const deduped = deduplicateByCustomerId(rawEntries);
+        const customerIds = Array.from(deduped.keys());
+
+        // ── 4. Fetch customer records ─────────────────────────────
+
+        const customers = await deps.getCustomers({ tenantId, customerIds });
+
+        if (customers.length === 0) {
+          continue;
+        }
+
+        // ── 5. Push records (bulk or individual) ──────────────────
+
+        const bulkThreshold = BULK_THRESHOLD[provider] ?? DEFAULT_BULK_THRESHOLD;
+        const syncedAt = new Date();
+
+        if (customers.length > bulkThreshold && typeof adapter.bulkPushContacts === 'function') {
+          // ── Bulk path ─────────────────────────────────────────────
+          const contacts = customers.map(toContact);
+
+          let externalIdMap: ReadonlyMap<string, string> | null = null;
           try {
-            const externalId = await adapter.pushContact(credentials, contact);
-            await deps.insertSyncEvent({
-              integrationId,
-              tenantId,
-              provider,
-              customerId: customer.id,
-              externalId,
-              status: 'success',
-              direction: 'outbound',
-              errorMessage: null,
-              syncedAt,
-            });
-            totalProcessed++;
-          } catch (pushErr) {
-            await deps.insertSyncEvent({
-              integrationId,
-              tenantId,
-              provider,
-              customerId: customer.id,
-              externalId: null,
-              status: 'failed',
-              direction: 'outbound',
-              errorMessage: pushErr instanceof Error ? pushErr.message : 'Push failed',
-              syncedAt,
-            });
-            totalFailed++;
+            externalIdMap = await adapter.bulkPushContacts(credentials, contacts);
+          } catch {
+            // If bulk fails, record all as failed.
+            for (const customer of customers) {
+              await deps.insertSyncEvent({
+                integrationId,
+                tenantId,
+                provider,
+                customerId: customer.id,
+                externalId: null,
+                status: 'failed',
+                direction: 'outbound',
+                errorMessage: 'bulk_push_failed',
+                syncedAt,
+              });
+              totalFailed++;
+            }
+          }
+
+          if (externalIdMap !== null) {
+            for (const customer of customers) {
+              const externalId = externalIdMap.get(customer.id) ?? null;
+              await deps.insertSyncEvent({
+                integrationId,
+                tenantId,
+                provider,
+                customerId: customer.id,
+                externalId,
+                status: externalId !== null ? 'success' : 'failed',
+                direction: 'outbound',
+                errorMessage: null,
+                syncedAt,
+              });
+              if (externalId !== null) {
+                totalProcessed++;
+              } else {
+                totalFailed++;
+              }
+            }
+          }
+        } else {
+          // ── Individual path ───────────────────────────────────────
+          for (const customer of customers) {
+            const contact = toContact(customer);
+
+            try {
+              const externalId = await adapter.pushContact(credentials, contact);
+              await deps.insertSyncEvent({
+                integrationId,
+                tenantId,
+                provider,
+                customerId: customer.id,
+                externalId,
+                status: 'success',
+                direction: 'outbound',
+                errorMessage: null,
+                syncedAt,
+              });
+              totalProcessed++;
+            } catch {
+              await deps.insertSyncEvent({
+                integrationId,
+                tenantId,
+                provider,
+                customerId: customer.id,
+                externalId: null,
+                status: 'failed',
+                direction: 'outbound',
+                errorMessage: 'push_contact_failed',
+                syncedAt,
+              });
+              totalFailed++;
+            }
           }
         }
+
+        // ── 6. Update last_sync_at ────────────────────────────────
+
+        await deps.updateLastSyncAt({ integrationId, syncedAt });
+
+        await deps.auditLogger.log({
+          tenantId,
+          eventType: 'integration.batch_sync_completed',
+          actorType: 'system',
+          actorId: 'scheduler',
+          resource: 'integration_configs',
+          resourceId: integrationId,
+          action: 'batch_sync',
+          details: {
+            provider,
+            recordsProcessed: customers.length,
+          },
+          timestamp: syncedAt,
+        });
       }
 
-      // ── 6. Update last_sync_at ────────────────────────────────
-
-      await deps.updateLastSyncAt({ integrationId, syncedAt });
-
-      await deps.auditLogger.log({
-        tenantId,
-        eventType: 'integration.batch_sync_completed',
-        actorType: 'system',
-        actorId: 'scheduler',
-        resource: 'integration_configs',
-        resourceId: integrationId,
-        action: 'batch_sync',
-        details: {
-          provider,
-          recordsProcessed: customers.length,
-        },
-        timestamp: syncedAt,
-      });
+      return {
+        success: true,
+        data: { processed: totalProcessed, failed: totalFailed },
+        durationMs: Date.now() - startMs,
+      };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Unknown batch sync error';
+      return {
+        success: false,
+        error,
+        data: { processed: totalProcessed, failed: totalFailed },
+        durationMs: Date.now() - startMs,
+      };
     }
-
-    return {
-      success: true,
-      data: { processed: totalProcessed, failed: totalFailed },
-      durationMs: Date.now() - startMs,
-    };
   };
 }
