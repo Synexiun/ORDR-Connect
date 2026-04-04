@@ -57,6 +57,13 @@ vi.mock('@ordr/integrations', async () => {
     },
     SYNC_DIRECTIONS: ['inbound', 'outbound', 'bidirectional'],
     ENTITY_TYPES: ['contact', 'deal', 'activity'],
+    ensureFreshCredentials: vi.fn().mockResolvedValue({
+      accessToken: 'test-at',
+      refreshToken: 'test-rt',
+      tokenType: 'Bearer',
+      expiresAt: new Date(Date.now() + 3_600_000),
+      scope: 'read write',
+    }),
   };
 });
 
@@ -413,5 +420,258 @@ describe('Integrations Routes', () => {
 
       expect(authenticateRequest).toHaveBeenCalled();
     });
+  });
+});
+
+// ─── Extended deps helpers ────────────────────────────────────────
+// Mocks for Phase 52 activity/field-mapping/disconnect endpoints
+
+const mockFetchActivities = vi.fn().mockResolvedValue({
+  data: [
+    {
+      externalId: 'act-1',
+      type: 'call',
+      subject: 'Demo call',
+      description: null,
+      contactExternalId: null,
+      dealExternalId: null,
+      dueDate: null,
+      completedAt: null,
+      lastModified: new Date(),
+      metadata: {},
+    },
+  ],
+  total: 1,
+  hasMore: false,
+  nextCursor: null,
+});
+const mockPushActivity = vi.fn().mockResolvedValue('sf-act-1');
+const mockListFieldMappings = vi.fn().mockResolvedValue([]);
+const mockReplaceFieldMappings = vi.fn().mockResolvedValue(undefined);
+const mockGetAdapterDefaultMappings = vi
+  .fn()
+  .mockReturnValue([
+    { entityType: 'contact', direction: 'both', sourceField: 'email', targetField: 'Email' },
+  ]);
+const mockDisconnectIntegration = vi.fn().mockResolvedValue(undefined);
+const mockAuditLogExt = vi.fn().mockResolvedValue(undefined);
+
+/**
+ * Creates a test app wired with Phase 52 extended deps.
+ * Provides oauthConfigs + mocked ensureFreshCredentials so withCredentials
+ * middleware succeeds for /:provider/activities routes.
+ */
+function createAppWithExtendedDeps(): Hono<Env> {
+  const extAdapter = {
+    ...createMockAdapter(),
+    fetchActivities: mockFetchActivities,
+    pushActivity: mockPushActivity,
+    refreshAccessToken: vi.fn().mockResolvedValue({
+      credentials: {
+        accessToken: 'test-at',
+        refreshToken: 'test-rt',
+        tokenType: 'Bearer',
+        expiresAt: new Date(Date.now() + 3_600_000),
+        scope: 'read write',
+      },
+    }),
+  } as unknown as CRMAdapter;
+  const extAdapters = new Map([['salesforce', extAdapter]]);
+
+  configureIntegrationRoutes({
+    adapters: extAdapters,
+    listFieldMappings: mockListFieldMappings,
+    replaceFieldMappings: mockReplaceFieldMappings,
+    getAdapterDefaultMappings: mockGetAdapterDefaultMappings,
+    disconnectIntegration: mockDisconnectIntegration,
+    auditLogger: { log: mockAuditLogExt },
+    // Required so withCredentials doesn't crash at oauthConfigs.get():
+    oauthConfigs: new Map([['salesforce', {} as never]]),
+    credManagerDeps: {} as never,
+    fieldEncryptor: {} as never,
+    // Webhook deps stubs (not exercised in these tests):
+    lookupTenantByProvider: vi.fn().mockResolvedValue(null),
+    insertWebhookLog: vi.fn().mockResolvedValue('log-1'),
+    updateWebhookLogProcessed: vi.fn().mockResolvedValue(undefined),
+    getWebhookSecret: vi.fn().mockResolvedValue(null),
+    isRecentDuplicateWebhook: vi.fn().mockResolvedValue(false),
+    eventProducer: { emit: vi.fn() } as never,
+  } as never);
+
+  const app = new Hono<Env>();
+  app.onError(globalErrorHandler);
+  app.use('*', requestId);
+  app.use('*', async (c, next) => {
+    c.set('tenantContext', {
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      roles: ['tenant_admin'],
+      permissions: [{ resource: 'integrations', action: 'read' }],
+    });
+    await next();
+  });
+  app.route('/api/v1/integrations', integrationsRouter);
+  return app;
+}
+
+// ─── Activity endpoint tests ──────────────────────────────────────
+
+describe('GET /api/v1/integrations/:provider/activities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns activities list with total and hasMore', async () => {
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/activities');
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; items: unknown[]; hasMore: boolean };
+    expect(body.success).toBe(true);
+    expect(body.items).toHaveLength(1);
+    expect(body.hasMore).toBe(false);
+  });
+});
+
+describe('POST /api/v1/integrations/:provider/activities', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('pushes activity and returns 201 with externalId', async () => {
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/activities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: '00000000-0000-0000-0000-000000000001',
+        type: 'call',
+        subject: 'Demo call',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { success: boolean; externalId: string };
+    expect(body.success).toBe(true);
+    expect(body.externalId).toBe('sf-act-1');
+  });
+
+  it('returns 400 for invalid body (missing type)', async () => {
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/activities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: '00000000-0000-0000-0000-000000000001',
+        subject: 'Demo call',
+        // type missing — required field
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── Field mapping endpoint tests ────────────────────────────────
+
+describe('GET /api/v1/integrations/:provider/field-mappings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns stored mappings when custom rows exist', async () => {
+    mockListFieldMappings.mockResolvedValueOnce([
+      {
+        id: 'm-1',
+        entityType: 'contact',
+        direction: 'both',
+        sourceField: 'email',
+        targetField: 'Email',
+        transform: null,
+      },
+    ]);
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/field-mappings');
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; data: unknown[] };
+    expect(body.success).toBe(true);
+    expect(body.data).toHaveLength(1);
+  });
+
+  it('returns adapter defaults when no custom rows exist', async () => {
+    mockListFieldMappings.mockResolvedValueOnce([]);
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/field-mappings');
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success: boolean; data: unknown[] };
+    expect(body.success).toBe(true);
+    // Default from mockGetAdapterDefaultMappings (1 entry)
+    expect(body.data).toHaveLength(1);
+    expect(mockGetAdapterDefaultMappings).toHaveBeenCalledWith('salesforce');
+  });
+});
+
+describe('PUT /api/v1/integrations/:provider/field-mappings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('replaces mappings and returns 200', async () => {
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/field-mappings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mappings: [
+          { entityType: 'contact', direction: 'both', sourceField: 'email', targetField: 'Email' },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockReplaceFieldMappings).toHaveBeenCalledOnce();
+    expect(mockReplaceFieldMappings).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', provider: 'salesforce' }),
+    );
+  });
+
+  it('returns 400 when mappings array exceeds 200', async () => {
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce/field-mappings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mappings: Array.from({ length: 201 }, () => ({
+          entityType: 'contact',
+          direction: 'both',
+          sourceField: 'email',
+          targetField: 'Email',
+        })),
+      }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── Disconnect endpoint test ─────────────────────────────────────
+
+describe('DELETE /api/v1/integrations/:provider (disconnect)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('disconnects integration and returns 204', async () => {
+    const app = createAppWithExtendedDeps();
+    const res = await app.request('/api/v1/integrations/salesforce', {
+      method: 'DELETE',
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockDisconnectIntegration).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-1', provider: 'salesforce' }),
+    );
   });
 });
