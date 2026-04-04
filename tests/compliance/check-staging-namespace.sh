@@ -1,8 +1,17 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -eo pipefail
 
 KUSTOMIZE_NS=$(grep '^namespace:' infrastructure/kubernetes/overlays/staging/kustomization.yaml | awk '{print $2}')
-CI_NS=$(grep 'namespace=ordr-' .github/workflows/deploy-staging.yml | head -1 | sed 's/.*--namespace=\(ordr-[a-z]*\).*/\1/')
+CI_NS=$(grep -- '--namespace=ordr-' .github/workflows/deploy-staging.yml | head -1 | sed 's/.*--namespace=\(ordr-[a-z]*\).*/\1/')
+
+if [ -z "$KUSTOMIZE_NS" ]; then
+  echo "ERROR: could not extract namespace from kustomization.yaml"
+  exit 1
+fi
+if [ -z "$CI_NS" ]; then
+  echo "ERROR: could not extract namespace from deploy-staging.yml"
+  exit 1
+fi
 
 echo "Kustomize namespace: $KUSTOMIZE_NS"
 echo "CI workflow namespace: $CI_NS"
