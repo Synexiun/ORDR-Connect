@@ -11,6 +11,7 @@
  *  - Type constants:    All exported const arrays verified
  */
 
+import { createHmac } from 'node:crypto';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { MockedFunction } from 'vitest';
 
@@ -33,6 +34,22 @@ import type {
 import type { OAuthConfig, HttpClient, HttpResponse } from '../adapter.js';
 import { SalesforceAdapter } from '../salesforce/adapter.js';
 import { HubSpotAdapter } from '../hubspot/adapter.js';
+
+// ─── HMAC Signature Helpers ──────────────────────────────────────────────────
+// Compute valid HMAC signatures matching each adapter's verifyWebhookSignature
+
+/** Salesforce: sha256=<base64-HMAC> */
+function sfSig(payload: Record<string, unknown>, secret: string): string {
+  return (
+    'sha256=' +
+    createHmac('sha256', secret).update(JSON.stringify(payload), 'utf8').digest('base64')
+  );
+}
+
+/** HubSpot: raw hex HMAC (no prefix) */
+function hsSig(payload: Record<string, unknown>, secret: string): string {
+  return createHmac('sha256', secret).update(JSON.stringify(payload), 'utf8').digest('hex');
+}
 
 // ─── Test Data Factories ─────────────────────────────────────────────────────
 
@@ -208,7 +225,9 @@ describe('SalesforceAdapter', () => {
   it('getAuthorizationUrl returns URL pointing to Salesforce auth endpoint', () => {
     const result = adapter.getAuthorizationUrl(oauthConfig);
 
-    expect(result.authorizationUrl).toContain('https://login.salesforce.com/services/oauth2/authorize');
+    expect(result.authorizationUrl).toContain(
+      'https://login.salesforce.com/services/oauth2/authorize',
+    );
   });
 
   it('getAuthorizationUrl includes client_id in URL', () => {
@@ -220,7 +239,9 @@ describe('SalesforceAdapter', () => {
   it('getAuthorizationUrl includes redirect_uri in URL', () => {
     const result = adapter.getAuthorizationUrl(oauthConfig);
 
-    expect(result.authorizationUrl).toContain(encodeURIComponent('https://app.ordr.io/oauth/callback'));
+    expect(result.authorizationUrl).toContain(
+      encodeURIComponent('https://app.ordr.io/oauth/callback'),
+    );
   });
 
   it('getAuthorizationUrl returns a non-empty state string', () => {
@@ -247,17 +268,19 @@ describe('SalesforceAdapter', () => {
   // ── exchangeCode ───────────────────────────────────────────────
 
   it('exchangeCode sends POST to Salesforce token URL', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'sf-access',
-        refresh_token: 'sf-refresh',
-        token_type: 'Bearer',
-        instance_url: 'https://myorg.salesforce.com',
-        scope: 'api',
-        issued_at: String(Date.now()),
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'sf-access',
+          refresh_token: 'sf-refresh',
+          token_type: 'Bearer',
+          instance_url: 'https://myorg.salesforce.com',
+          scope: 'api',
+          issued_at: String(Date.now()),
+        },
+      }),
+    );
 
     await adapter.exchangeCode(oauthConfig, 'auth-code-123', 'state-abc');
 
@@ -267,17 +290,19 @@ describe('SalesforceAdapter', () => {
   });
 
   it('exchangeCode returns OAuthCredentials with access and refresh tokens', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'sf-access-token',
-        refresh_token: 'sf-refresh-token',
-        token_type: 'Bearer',
-        instance_url: 'https://myorg.salesforce.com',
-        scope: 'api refresh_token',
-        issued_at: String(Date.now()),
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'sf-access-token',
+          refresh_token: 'sf-refresh-token',
+          token_type: 'Bearer',
+          instance_url: 'https://myorg.salesforce.com',
+          scope: 'api refresh_token',
+          issued_at: String(Date.now()),
+        },
+      }),
+    );
 
     const result = await adapter.exchangeCode(oauthConfig, 'code-xyz', 'state-xyz');
 
@@ -288,7 +313,9 @@ describe('SalesforceAdapter', () => {
   });
 
   it('exchangeCode throws on non-200 status', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({ status: 400, body: { error: 'invalid_grant' } }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({ status: 400, body: { error: 'invalid_grant' } }),
+    );
 
     await expect(adapter.exchangeCode(oauthConfig, 'bad-code', 'state')).rejects.toThrow(
       'Salesforce OAuth token exchange failed: HTTP 400',
@@ -298,35 +325,43 @@ describe('SalesforceAdapter', () => {
   // ── refreshAccessToken ─────────────────────────────────────────
 
   it('refreshAccessToken sends refresh_token grant to token URL', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'new-access-token',
-        token_type: 'Bearer',
-        instance_url: 'https://myorg.salesforce.com',
-        scope: 'api',
-        issued_at: String(Date.now()),
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'new-access-token',
+          token_type: 'Bearer',
+          instance_url: 'https://myorg.salesforce.com',
+          scope: 'api',
+          issued_at: String(Date.now()),
+        },
+      }),
+    );
 
     await adapter.refreshAccessToken(oauthConfig, 'old-refresh-token');
 
-    const [url, body] = mock.post.mock.calls[0] as [string, Record<string, string>, Record<string, string>];
+    const [url, body] = mock.post.mock.calls[0] as [
+      string,
+      Record<string, string>,
+      Record<string, string>,
+    ];
     expect(url).toContain('https://login.salesforce.com/services/oauth2/token');
     expect(body).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'old-refresh-token' });
   });
 
   it('refreshAccessToken returns new credentials preserving the refresh token', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'new-access-token',
-        token_type: 'Bearer',
-        instance_url: 'https://myorg.salesforce.com',
-        scope: 'api',
-        issued_at: String(Date.now()),
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'new-access-token',
+          token_type: 'Bearer',
+          instance_url: 'https://myorg.salesforce.com',
+          scope: 'api',
+          issued_at: String(Date.now()),
+        },
+      }),
+    );
 
     const result = await adapter.refreshAccessToken(oauthConfig, 'my-refresh-token');
 
@@ -335,7 +370,9 @@ describe('SalesforceAdapter', () => {
   });
 
   it('refreshAccessToken throws on non-200 status', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({ status: 401, body: { error: 'invalid_token' } }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({ status: 401, body: { error: 'invalid_token' } }),
+    );
 
     await expect(adapter.refreshAccessToken(oauthConfig, 'bad-token')).rejects.toThrow(
       'Salesforce token refresh failed: HTTP 401',
@@ -366,12 +403,14 @@ describe('SalesforceAdapter', () => {
   // ── getHealth ──────────────────────────────────────────────────
 
   it('getHealth returns healthy when limits endpoint succeeds', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        DailyApiRequests: { Remaining: 14000, Max: 15000 },
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          DailyApiRequests: { Remaining: 14000, Max: 15000 },
+        },
+      }),
+    );
 
     const health = await adapter.getHealth(credentials);
 
@@ -381,12 +420,14 @@ describe('SalesforceAdapter', () => {
   });
 
   it('getHealth returns degraded when fewer than 100 daily requests remain', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        DailyApiRequests: { Remaining: 50, Max: 15000 },
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          DailyApiRequests: { Remaining: 50, Max: 15000 },
+        },
+      }),
+    );
 
     const health = await adapter.getHealth(credentials);
 
@@ -412,10 +453,12 @@ describe('SalesforceAdapter', () => {
   });
 
   it('getHealth uses instanceUrl from credentials when building request URL', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { DailyApiRequests: { Remaining: 5000, Max: 15000 } },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { DailyApiRequests: { Remaining: 5000, Max: 15000 } },
+      }),
+    );
 
     const creds = makeCredentials({ instanceUrl: 'https://custom.my.salesforce.com' });
     await adapter.getHealth(creds);
@@ -427,24 +470,28 @@ describe('SalesforceAdapter', () => {
   // ── fetchContacts ──────────────────────────────────────────────
 
   it('fetchContacts maps Salesforce Contact records to CrmContact', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        totalSize: 1,
-        done: true,
-        nextRecordsUrl: null,
-        records: [{
-          Id: 'sf-contact-001',
-          FirstName: 'Alice',
-          LastName: 'Smith',
-          Email: 'alice@example.com',
-          Phone: '+1-555-9999',
-          Account: { Name: 'Umbrella Corp' },
-          Title: 'Director',
-          LastModifiedDate: '2025-01-10T08:00:00Z',
-        }],
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          totalSize: 1,
+          done: true,
+          nextRecordsUrl: null,
+          records: [
+            {
+              Id: 'sf-contact-001',
+              FirstName: 'Alice',
+              LastName: 'Smith',
+              Email: 'alice@example.com',
+              Phone: '+1-555-9999',
+              Account: { Name: 'Umbrella Corp' },
+              Title: 'Director',
+              LastModifiedDate: '2025-01-10T08:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const query: SyncQuery = {};
     const pagination: PaginationParams = { limit: 50 };
@@ -462,10 +509,12 @@ describe('SalesforceAdapter', () => {
   });
 
   it('fetchContacts includes modifiedAfter filter in SOQL query', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { totalSize: 0, done: true, nextRecordsUrl: null, records: [] },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { totalSize: 0, done: true, nextRecordsUrl: null, records: [] },
+      }),
+    );
 
     const modifiedAfter = new Date('2025-01-01T00:00:00Z');
     await adapter.fetchContacts(credentials, { modifiedAfter }, { limit: 25 });
@@ -476,24 +525,26 @@ describe('SalesforceAdapter', () => {
   });
 
   it('fetchContacts sets hasMore and nextCursor when Salesforce returns done=false', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        totalSize: 100,
-        done: false,
-        nextRecordsUrl: '/services/data/v59.0/query/next',
-        records: Array.from({ length: 25 }, (_, i) => ({
-          Id: `sf-contact-${String(i)}`,
-          FirstName: 'First',
-          LastName: 'Last',
-          Email: null,
-          Phone: null,
-          Account: null,
-          Title: null,
-          LastModifiedDate: '2025-01-10T08:00:00Z',
-        })),
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          totalSize: 100,
+          done: false,
+          nextRecordsUrl: '/services/data/v59.0/query/next',
+          records: Array.from({ length: 25 }, (_, i) => ({
+            Id: `sf-contact-${String(i)}`,
+            FirstName: 'First',
+            LastName: 'Last',
+            Email: null,
+            Phone: null,
+            Account: null,
+            Title: null,
+            LastModifiedDate: '2025-01-10T08:00:00Z',
+          })),
+        },
+      }),
+    );
 
     const result = await adapter.fetchContacts(credentials, {}, { limit: 25 });
 
@@ -553,25 +604,29 @@ describe('SalesforceAdapter', () => {
   // ── fetchDeals ─────────────────────────────────────────────────
 
   it('fetchDeals maps Salesforce Opportunity records to CrmDeal', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        totalSize: 1,
-        done: true,
-        nextRecordsUrl: null,
-        records: [{
-          Id: 'sf-opp-001',
-          Name: 'Big Enterprise Deal',
-          Amount: 250000,
-          CurrencyIsoCode: 'USD',
-          StageName: 'Proposal/Price Quote',
-          Probability: 60,
-          CloseDate: '2025-06-30',
-          ContactId: 'sf-contact-001',
-          LastModifiedDate: '2025-01-12T09:00:00Z',
-        }],
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          totalSize: 1,
+          done: true,
+          nextRecordsUrl: null,
+          records: [
+            {
+              Id: 'sf-opp-001',
+              Name: 'Big Enterprise Deal',
+              Amount: 250000,
+              CurrencyIsoCode: 'USD',
+              StageName: 'Proposal/Price Quote',
+              Probability: 60,
+              CloseDate: '2025-06-30',
+              ContactId: 'sf-contact-001',
+              LastModifiedDate: '2025-01-12T09:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchDeals(credentials, {}, { limit: 25 });
 
@@ -588,10 +643,12 @@ describe('SalesforceAdapter', () => {
   });
 
   it('fetchDeals includes modifiedAfter filter in the SOQL query', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { totalSize: 0, done: true, nextRecordsUrl: null, records: [] },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { totalSize: 0, done: true, nextRecordsUrl: null, records: [] },
+      }),
+    );
 
     const modifiedAfter = new Date('2025-02-01T00:00:00Z');
     await adapter.fetchDeals(credentials, { modifiedAfter }, { limit: 10 });
@@ -644,25 +701,29 @@ describe('SalesforceAdapter', () => {
   // ── fetchActivities ────────────────────────────────────────────
 
   it('fetchActivities maps Salesforce Task records to CrmActivity', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        totalSize: 1,
-        done: true,
-        nextRecordsUrl: null,
-        records: [{
-          Id: 'sf-task-001',
-          Type: 'Call',
-          Subject: 'Follow-up call',
-          Description: 'Discuss pricing options',
-          WhoId: 'sf-contact-001',
-          WhatId: 'sf-opp-001',
-          ActivityDate: '2025-01-20',
-          CompletedDateTime: null,
-          LastModifiedDate: '2025-01-15T10:00:00Z',
-        }],
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          totalSize: 1,
+          done: true,
+          nextRecordsUrl: null,
+          records: [
+            {
+              Id: 'sf-task-001',
+              Type: 'Call',
+              Subject: 'Follow-up call',
+              Description: 'Discuss pricing options',
+              WhoId: 'sf-contact-001',
+              WhatId: 'sf-opp-001',
+              ActivityDate: '2025-01-20',
+              CompletedDateTime: null,
+              LastModifiedDate: '2025-01-15T10:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 25 });
 
@@ -677,25 +738,29 @@ describe('SalesforceAdapter', () => {
   });
 
   it('fetchActivities maps Email task type correctly', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        totalSize: 1,
-        done: true,
-        nextRecordsUrl: null,
-        records: [{
-          Id: 'sf-task-002',
-          Type: 'Email',
-          Subject: 'Proposal sent',
-          Description: null,
-          WhoId: null,
-          WhatId: null,
-          ActivityDate: null,
-          CompletedDateTime: '2025-01-14T16:00:00Z',
-          LastModifiedDate: '2025-01-14T16:00:00Z',
-        }],
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          totalSize: 1,
+          done: true,
+          nextRecordsUrl: null,
+          records: [
+            {
+              Id: 'sf-task-002',
+              Type: 'Email',
+              Subject: 'Proposal sent',
+              Description: null,
+              WhoId: null,
+              WhatId: null,
+              ActivityDate: null,
+              CompletedDateTime: '2025-01-14T16:00:00Z',
+              LastModifiedDate: '2025-01-14T16:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -704,25 +769,29 @@ describe('SalesforceAdapter', () => {
   });
 
   it('fetchActivities maps Meeting task type to event', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        totalSize: 1,
-        done: true,
-        nextRecordsUrl: null,
-        records: [{
-          Id: 'sf-task-003',
-          Type: 'Meeting',
-          Subject: 'Quarterly Review',
-          Description: null,
-          WhoId: null,
-          WhatId: null,
-          ActivityDate: '2025-02-01',
-          CompletedDateTime: null,
-          LastModifiedDate: '2025-01-15T10:00:00Z',
-        }],
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          totalSize: 1,
+          done: true,
+          nextRecordsUrl: null,
+          records: [
+            {
+              Id: 'sf-task-003',
+              Type: 'Meeting',
+              Subject: 'Quarterly Review',
+              Description: null,
+              WhoId: null,
+              WhatId: null,
+              ActivityDate: '2025-02-01',
+              CompletedDateTime: null,
+              LastModifiedDate: '2025-01-15T10:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -765,7 +834,11 @@ describe('SalesforceAdapter', () => {
 
     await adapter.pushActivity(credentials, makeActivity({ type: 'call' }));
 
-    const [, body] = mock.post.mock.calls[0] as [string, Record<string, unknown>, Record<string, string>];
+    const [, body] = mock.post.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+      Record<string, string>,
+    ];
     expect(body).toMatchObject({ Type: 'Call' });
   });
 
@@ -774,7 +847,11 @@ describe('SalesforceAdapter', () => {
 
     await adapter.pushActivity(credentials, makeActivity({ type: 'email' }));
 
-    const [, body] = mock.post.mock.calls[0] as [string, Record<string, unknown>, Record<string, string>];
+    const [, body] = mock.post.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+      Record<string, string>,
+    ];
     expect(body).toMatchObject({ Type: 'Email' });
   });
 
@@ -795,7 +872,11 @@ describe('SalesforceAdapter', () => {
       event_type: 'created',
     };
 
-    const result = adapter.handleWebhook(payload, 'sha256=valid-hmac', 'webhook-secret');
+    const result = adapter.handleWebhook(
+      payload,
+      sfSig(payload, 'webhook-secret'),
+      'webhook-secret',
+    );
 
     expect(result.provider).toBe('salesforce');
     expect(result.entityId).toBe('sf-contact-001');
@@ -818,7 +899,7 @@ describe('SalesforceAdapter', () => {
   it('handleWebhook infers deal entity type for Opportunity object_type', () => {
     const payload = { Id: 'sf-opp-001', object_type: 'Opportunity', event_type: 'updated' };
 
-    const result = adapter.handleWebhook(payload, 'sha256=valid', 'secret');
+    const result = adapter.handleWebhook(payload, sfSig(payload, 'secret'), 'secret');
 
     expect(result.entityType).toBe('deal');
   });
@@ -826,7 +907,7 @@ describe('SalesforceAdapter', () => {
   it('handleWebhook infers activity entity type for Task object_type', () => {
     const payload = { Id: 'sf-task-001', object_type: 'Task', event_type: 'created' };
 
-    const result = adapter.handleWebhook(payload, 'sha256=valid', 'secret');
+    const result = adapter.handleWebhook(payload, sfSig(payload, 'secret'), 'secret');
 
     expect(result.entityType).toBe('activity');
   });
@@ -834,15 +915,20 @@ describe('SalesforceAdapter', () => {
   it('handleWebhook defaults entityType to contact when object_type is unrecognised', () => {
     const payload = { Id: 'sf-unknown-001', object_type: 'UnknownObject', event_type: 'unknown' };
 
-    const result = adapter.handleWebhook(payload, 'sha256=valid', 'secret');
+    const result = adapter.handleWebhook(payload, sfSig(payload, 'secret'), 'secret');
 
     expect(result.entityType).toBe('contact');
   });
 
   it('handleWebhook includes the full payload in the returned data field', () => {
-    const payload = { Id: 'sf-contact-002', object_type: 'Contact', event_type: 'deleted', extra: 'value' };
+    const payload = {
+      Id: 'sf-contact-002',
+      object_type: 'Contact',
+      event_type: 'deleted',
+      extra: 'value',
+    };
 
-    const result = adapter.handleWebhook(payload, 'sha256=valid', 'secret');
+    const result = adapter.handleWebhook(payload, sfSig(payload, 'secret'), 'secret');
 
     expect(result.data).toMatchObject({ extra: 'value' });
   });
@@ -850,12 +936,14 @@ describe('SalesforceAdapter', () => {
   // ── getRateLimitInfo ───────────────────────────────────────────
 
   it('getRateLimitInfo parses DailyApiRequests from Salesforce limits response', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        DailyApiRequests: { Remaining: 12500, Max: 15000 },
-      },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          DailyApiRequests: { Remaining: 12500, Max: 15000 },
+        },
+      }),
+    );
 
     const info = await adapter.getRateLimitInfo(credentials);
 
@@ -935,7 +1023,9 @@ describe('HubSpotAdapter', () => {
   it('getAuthorizationUrl includes redirect_uri in the URL', () => {
     const result = adapter.getAuthorizationUrl(oauthConfig);
 
-    expect(result.authorizationUrl).toContain(encodeURIComponent('https://app.ordr.io/oauth/callback'));
+    expect(result.authorizationUrl).toContain(
+      encodeURIComponent('https://app.ordr.io/oauth/callback'),
+    );
   });
 
   it('getAuthorizationUrl returns a unique state on each invocation', () => {
@@ -948,15 +1038,17 @@ describe('HubSpotAdapter', () => {
   // ── exchangeCode ───────────────────────────────────────────────
 
   it('exchangeCode sends POST to HubSpot token URL', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'hs-access',
-        refresh_token: 'hs-refresh',
-        token_type: 'Bearer',
-        expires_in: 1800,
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'hs-access',
+          refresh_token: 'hs-refresh',
+          token_type: 'Bearer',
+          expires_in: 1800,
+        },
+      }),
+    );
 
     await adapter.exchangeCode(oauthConfig, 'hs-code', 'hs-state');
 
@@ -965,15 +1057,17 @@ describe('HubSpotAdapter', () => {
   });
 
   it('exchangeCode returns credentials with access and refresh tokens', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'hs-access-token',
-        refresh_token: 'hs-refresh-token',
-        token_type: 'Bearer',
-        expires_in: 1800,
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'hs-access-token',
+          refresh_token: 'hs-refresh-token',
+          token_type: 'Bearer',
+          expires_in: 1800,
+        },
+      }),
+    );
 
     const result = await adapter.exchangeCode(oauthConfig, 'code', 'state');
 
@@ -992,33 +1086,41 @@ describe('HubSpotAdapter', () => {
   // ── refreshAccessToken ─────────────────────────────────────────
 
   it('refreshAccessToken sends refresh_token grant to HubSpot token URL', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'hs-new-access',
-        refresh_token: 'hs-new-refresh',
-        token_type: 'Bearer',
-        expires_in: 1800,
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'hs-new-access',
+          refresh_token: 'hs-new-refresh',
+          token_type: 'Bearer',
+          expires_in: 1800,
+        },
+      }),
+    );
 
     await adapter.refreshAccessToken(oauthConfig, 'hs-old-refresh');
 
-    const [url, body] = mock.post.mock.calls[0] as [string, Record<string, string>, Record<string, string>];
+    const [url, body] = mock.post.mock.calls[0] as [
+      string,
+      Record<string, string>,
+      Record<string, string>,
+    ];
     expect(url).toBe('https://api.hubapi.com/oauth/v1/token');
     expect(body).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'hs-old-refresh' });
   });
 
   it('refreshAccessToken returns new credentials with updated access token', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        access_token: 'hs-refreshed-access',
-        refresh_token: 'hs-refreshed-refresh',
-        token_type: 'Bearer',
-        expires_in: 1800,
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          access_token: 'hs-refreshed-access',
+          refresh_token: 'hs-refreshed-refresh',
+          token_type: 'Bearer',
+          expires_in: 1800,
+        },
+      }),
+    );
 
     const result = await adapter.refreshAccessToken(oauthConfig, 'hs-old-refresh');
 
@@ -1036,11 +1138,13 @@ describe('HubSpotAdapter', () => {
   // ── getHealth ──────────────────────────────────────────────────
 
   it('getHealth returns healthy when contacts endpoint responds 200', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      headers: { 'x-hubspot-ratelimit-remaining': '98' },
-      body: { total: 0, results: [] },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        headers: { 'x-hubspot-ratelimit-remaining': '98' },
+        body: { total: 0, results: [] },
+      }),
+    );
 
     const health = await adapter.getHealth(credentials);
 
@@ -1050,11 +1154,13 @@ describe('HubSpotAdapter', () => {
   });
 
   it('getHealth returns degraded when fewer than 10 requests remain', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      headers: { 'x-hubspot-ratelimit-remaining': '5' },
-      body: { total: 0, results: [] },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        headers: { 'x-hubspot-ratelimit-remaining': '5' },
+        body: { total: 0, results: [] },
+      }),
+    );
 
     const health = await adapter.getHealth(credentials);
 
@@ -1081,10 +1187,12 @@ describe('HubSpotAdapter', () => {
   // ── fetchContacts ──────────────────────────────────────────────
 
   it('fetchContacts POSTs to HubSpot search endpoint', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { total: 0, results: [] },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { total: 0, results: [] },
+      }),
+    );
 
     await adapter.fetchContacts(credentials, {}, { limit: 10 });
 
@@ -1093,25 +1201,29 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchContacts maps HubSpot contact properties to CrmContact', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 1,
-        results: [{
-          id: 'hs-contact-001',
-          properties: {
-            firstname: 'Bob',
-            lastname: 'Builder',
-            email: 'bob@example.com',
-            phone: '+44-20-9999',
-            company: 'BuildCo',
-            jobtitle: 'Foreman',
-            hs_object_id: 'hs-contact-001',
-          },
-          updatedAt: '2025-01-12T10:00:00Z',
-        }],
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 1,
+          results: [
+            {
+              id: 'hs-contact-001',
+              properties: {
+                firstname: 'Bob',
+                lastname: 'Builder',
+                email: 'bob@example.com',
+                phone: '+44-20-9999',
+                company: 'BuildCo',
+                jobtitle: 'Foreman',
+                hs_object_id: 'hs-contact-001',
+              },
+              updatedAt: '2025-01-12T10:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchContacts(credentials, {}, { limit: 10 });
 
@@ -1127,27 +1239,35 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchContacts includes modifiedAfter filter in search body', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { total: 0, results: [] },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { total: 0, results: [] },
+      }),
+    );
 
     const modifiedAfter = new Date('2025-01-01T00:00:00Z');
     await adapter.fetchContacts(credentials, { modifiedAfter }, { limit: 10 });
 
-    const [, body] = mock.post.mock.calls[0] as [string, Record<string, unknown>, Record<string, string>];
+    const [, body] = mock.post.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+      Record<string, string>,
+    ];
     expect(body).toHaveProperty('filterGroups');
   });
 
   it('fetchContacts populates nextCursor from HubSpot paging.next.after', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 200,
-        results: [],
-        paging: { next: { after: 'cursor-token-abc' } },
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 200,
+          results: [],
+          paging: { next: { after: 'cursor-token-abc' } },
+        },
+      }),
+    );
 
     const result = await adapter.fetchContacts(credentials, {}, { limit: 50 });
 
@@ -1177,7 +1297,9 @@ describe('HubSpotAdapter', () => {
   });
 
   it('pushContact PATCHes existing HubSpot contact', async () => {
-    mock.patch.mockResolvedValue(makeHttpResponse({ status: 200, body: { id: 'hs-existing-001' } }));
+    mock.patch.mockResolvedValue(
+      makeHttpResponse({ status: 200, body: { id: 'hs-existing-001' } }),
+    );
 
     const id = await adapter.pushContact(credentials, makeContact(), 'hs-existing-001');
 
@@ -1206,10 +1328,12 @@ describe('HubSpotAdapter', () => {
   // ── fetchDeals ─────────────────────────────────────────────────
 
   it('fetchDeals POSTs to HubSpot deals search endpoint', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { total: 0, results: [] },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { total: 0, results: [] },
+      }),
+    );
 
     await adapter.fetchDeals(credentials, {}, { limit: 10 });
 
@@ -1218,24 +1342,28 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchDeals maps HubSpot deal properties to CrmDeal', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 1,
-        results: [{
-          id: 'hs-deal-001',
-          properties: {
-            dealname: 'Winter Campaign',
-            amount: '85000',
-            dealstage: 'presentationscheduled',
-            hs_deal_stage_probability: '0.5',
-            closedate: '2025-04-15T00:00:00Z',
-            hs_object_id: 'hs-deal-001',
-          },
-          updatedAt: '2025-01-13T11:00:00Z',
-        }],
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 1,
+          results: [
+            {
+              id: 'hs-deal-001',
+              properties: {
+                dealname: 'Winter Campaign',
+                amount: '85000',
+                dealstage: 'presentationscheduled',
+                hs_deal_stage_probability: '0.5',
+                closedate: '2025-04-15T00:00:00Z',
+                hs_object_id: 'hs-deal-001',
+              },
+              updatedAt: '2025-01-13T11:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchDeals(credentials, {}, { limit: 10 });
 
@@ -1270,7 +1398,9 @@ describe('HubSpotAdapter', () => {
   });
 
   it('pushDeal PATCHes existing HubSpot deal', async () => {
-    mock.patch.mockResolvedValue(makeHttpResponse({ status: 200, body: { id: 'hs-deal-existing' } }));
+    mock.patch.mockResolvedValue(
+      makeHttpResponse({ status: 200, body: { id: 'hs-deal-existing' } }),
+    );
 
     const id = await adapter.pushDeal(credentials, makeDeal(), 'hs-deal-existing');
 
@@ -1290,10 +1420,12 @@ describe('HubSpotAdapter', () => {
   // ── fetchActivities ────────────────────────────────────────────
 
   it('fetchActivities POSTs to HubSpot tasks search endpoint', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: { total: 0, results: [] },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: { total: 0, results: [] },
+      }),
+    );
 
     await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -1302,23 +1434,27 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchActivities maps HubSpot engagement to CrmActivity', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 1,
-        results: [{
-          id: 'hs-task-001',
-          properties: {
-            hs_engagement_type: 'CALL',
-            hs_activity_type: null,
-            hs_timestamp: '2025-01-20T14:00:00Z',
-            hs_body_preview: 'Called to discuss renewal',
-            hs_object_id: 'hs-task-001',
-          },
-          updatedAt: '2025-01-20T14:30:00Z',
-        }],
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 1,
+          results: [
+            {
+              id: 'hs-task-001',
+              properties: {
+                hs_engagement_type: 'CALL',
+                hs_activity_type: null,
+                hs_timestamp: '2025-01-20T14:00:00Z',
+                hs_body_preview: 'Called to discuss renewal',
+                hs_object_id: 'hs-task-001',
+              },
+              updatedAt: '2025-01-20T14:30:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -1331,23 +1467,27 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchActivities maps EMAIL engagement type correctly', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 1,
-        results: [{
-          id: 'hs-task-002',
-          properties: {
-            hs_engagement_type: 'EMAIL',
-            hs_activity_type: null,
-            hs_timestamp: '2025-01-18T09:00:00Z',
-            hs_body_preview: 'Sent follow-up email',
-            hs_object_id: 'hs-task-002',
-          },
-          updatedAt: '2025-01-18T09:05:00Z',
-        }],
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 1,
+          results: [
+            {
+              id: 'hs-task-002',
+              properties: {
+                hs_engagement_type: 'EMAIL',
+                hs_activity_type: null,
+                hs_timestamp: '2025-01-18T09:00:00Z',
+                hs_body_preview: 'Sent follow-up email',
+                hs_object_id: 'hs-task-002',
+              },
+              updatedAt: '2025-01-18T09:05:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -1355,23 +1495,27 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchActivities maps MEETING engagement type to event', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 1,
-        results: [{
-          id: 'hs-task-003',
-          properties: {
-            hs_engagement_type: 'MEETING',
-            hs_activity_type: null,
-            hs_timestamp: '2025-02-01T10:00:00Z',
-            hs_body_preview: 'Kickoff meeting',
-            hs_object_id: 'hs-task-003',
-          },
-          updatedAt: '2025-02-01T11:00:00Z',
-        }],
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 1,
+          results: [
+            {
+              id: 'hs-task-003',
+              properties: {
+                hs_engagement_type: 'MEETING',
+                hs_activity_type: null,
+                hs_timestamp: '2025-02-01T10:00:00Z',
+                hs_body_preview: 'Kickoff meeting',
+                hs_object_id: 'hs-task-003',
+              },
+              updatedAt: '2025-02-01T11:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -1379,23 +1523,27 @@ describe('HubSpotAdapter', () => {
   });
 
   it('fetchActivities maps NOTE engagement type correctly', async () => {
-    mock.post.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      body: {
-        total: 1,
-        results: [{
-          id: 'hs-task-004',
-          properties: {
-            hs_engagement_type: 'NOTE',
-            hs_activity_type: null,
-            hs_timestamp: '2025-01-22T15:00:00Z',
-            hs_body_preview: 'Customer prefers morning calls',
-            hs_object_id: 'hs-task-004',
-          },
-          updatedAt: '2025-01-22T15:00:00Z',
-        }],
-      },
-    }));
+    mock.post.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        body: {
+          total: 1,
+          results: [
+            {
+              id: 'hs-task-004',
+              properties: {
+                hs_engagement_type: 'NOTE',
+                hs_activity_type: null,
+                hs_timestamp: '2025-01-22T15:00:00Z',
+                hs_body_preview: 'Customer prefers morning calls',
+                hs_object_id: 'hs-task-004',
+              },
+              updatedAt: '2025-01-22T15:00:00Z',
+            },
+          ],
+        },
+      }),
+    );
 
     const result = await adapter.fetchActivities(credentials, {}, { limit: 10 });
 
@@ -1423,7 +1571,9 @@ describe('HubSpotAdapter', () => {
   });
 
   it('pushActivity PATCHes existing HubSpot task', async () => {
-    mock.patch.mockResolvedValue(makeHttpResponse({ status: 200, body: { id: 'hs-task-existing' } }));
+    mock.patch.mockResolvedValue(
+      makeHttpResponse({ status: 200, body: { id: 'hs-task-existing' } }),
+    );
 
     const id = await adapter.pushActivity(credentials, makeActivity(), 'hs-task-existing');
 
@@ -1437,7 +1587,11 @@ describe('HubSpotAdapter', () => {
 
     await adapter.pushActivity(credentials, makeActivity({ type: 'call' }));
 
-    const [, body] = mock.post.mock.calls[0] as [string, { properties: Record<string, string> }, Record<string, string>];
+    const [, body] = mock.post.mock.calls[0] as [
+      string,
+      { properties: Record<string, string> },
+      Record<string, string>,
+    ];
     expect(body.properties).toMatchObject({ hs_task_type: 'CALL' });
   });
 
@@ -1446,7 +1600,11 @@ describe('HubSpotAdapter', () => {
 
     await adapter.pushActivity(credentials, makeActivity({ type: 'note' }));
 
-    const [, body] = mock.post.mock.calls[0] as [string, { properties: Record<string, string> }, Record<string, string>];
+    const [, body] = mock.post.mock.calls[0] as [
+      string,
+      { properties: Record<string, string> },
+      Record<string, string>,
+    ];
     expect(body.properties).toMatchObject({ hs_task_type: 'NOTE' });
   });
 
@@ -1455,7 +1613,11 @@ describe('HubSpotAdapter', () => {
 
     await adapter.pushActivity(credentials, makeActivity({ type: 'task' }));
 
-    const [, body] = mock.post.mock.calls[0] as [string, { properties: Record<string, string> }, Record<string, string>];
+    const [, body] = mock.post.mock.calls[0] as [
+      string,
+      { properties: Record<string, string> },
+      Record<string, string>,
+    ];
     expect(body.properties).toMatchObject({ hs_task_type: 'TODO' });
   });
 
@@ -1476,7 +1638,7 @@ describe('HubSpotAdapter', () => {
       subscriptionType: 'contact.creation',
     };
 
-    const result = adapter.handleWebhook(payload, 'sha256=valid-sig', 'hs-secret');
+    const result = adapter.handleWebhook(payload, hsSig(payload, 'hs-secret'), 'hs-secret');
 
     expect(result.provider).toBe('hubspot');
     expect(result.entityId).toBe('hs-contact-001');
@@ -1497,25 +1659,37 @@ describe('HubSpotAdapter', () => {
   });
 
   it('handleWebhook infers deal entity type for deal objectType', () => {
-    const payload = { objectId: 'hs-deal-001', objectType: 'deal', subscriptionType: 'deal.creation' };
+    const payload = {
+      objectId: 'hs-deal-001',
+      objectType: 'deal',
+      subscriptionType: 'deal.creation',
+    };
 
-    const result = adapter.handleWebhook(payload, 'sha256=sig', 'secret');
+    const result = adapter.handleWebhook(payload, hsSig(payload, 'secret'), 'secret');
 
     expect(result.entityType).toBe('deal');
   });
 
   it('handleWebhook infers activity entity type for engagement objectType', () => {
-    const payload = { objectId: 'hs-eng-001', objectType: 'engagement', subscriptionType: 'engagement.creation' };
+    const payload = {
+      objectId: 'hs-eng-001',
+      objectType: 'engagement',
+      subscriptionType: 'engagement.creation',
+    };
 
-    const result = adapter.handleWebhook(payload, 'sha256=sig', 'secret');
+    const result = adapter.handleWebhook(payload, hsSig(payload, 'secret'), 'secret');
 
     expect(result.entityType).toBe('activity');
   });
 
   it('handleWebhook defaults entityType to contact for unrecognised objectType', () => {
-    const payload = { objectId: 'hs-xyz', objectType: 'unknown', subscriptionType: 'unknown.event' };
+    const payload = {
+      objectId: 'hs-xyz',
+      objectType: 'unknown',
+      subscriptionType: 'unknown.event',
+    };
 
-    const result = adapter.handleWebhook(payload, 'sha256=sig', 'secret');
+    const result = adapter.handleWebhook(payload, hsSig(payload, 'secret'), 'secret');
 
     expect(result.entityType).toBe('contact');
   });
@@ -1523,15 +1697,17 @@ describe('HubSpotAdapter', () => {
   // ── getRateLimitInfo ───────────────────────────────────────────
 
   it('getRateLimitInfo reads rate limit headers from HubSpot response', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      headers: {
-        'x-hubspot-ratelimit-remaining': '75',
-        'x-hubspot-ratelimit-max': '100',
-        'x-hubspot-ratelimit-interval-milliseconds': '10000',
-      },
-      body: { total: 0, results: [] },
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        headers: {
+          'x-hubspot-ratelimit-remaining': '75',
+          'x-hubspot-ratelimit-max': '100',
+          'x-hubspot-ratelimit-interval-milliseconds': '10000',
+        },
+        body: { total: 0, results: [] },
+      }),
+    );
 
     const info = await adapter.getRateLimitInfo(credentials);
 
@@ -1541,11 +1717,13 @@ describe('HubSpotAdapter', () => {
   });
 
   it('getRateLimitInfo defaults remaining to 0 when rate limit header is absent', async () => {
-    mock.get.mockResolvedValue(makeHttpResponse({
-      status: 200,
-      headers: {},
-      body: {},
-    }));
+    mock.get.mockResolvedValue(
+      makeHttpResponse({
+        status: 200,
+        headers: {},
+        body: {},
+      }),
+    );
 
     const info = await adapter.getRateLimitInfo(credentials);
 
