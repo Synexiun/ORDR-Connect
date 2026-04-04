@@ -14,7 +14,7 @@
  * enabling mock-based testing without real HubSpot API calls.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type {
   IntegrationProvider,
   OAuthCredentials,
@@ -123,11 +123,7 @@ export class HubSpotAdapter implements CRMAdapter {
     };
   }
 
-  async exchangeCode(
-    config: OAuthConfig,
-    code: string,
-    _state: string,
-  ): Promise<OAuthTokenResult> {
+  async exchangeCode(config: OAuthConfig, code: string, _state: string): Promise<OAuthTokenResult> {
     const body = {
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -162,10 +158,7 @@ export class HubSpotAdapter implements CRMAdapter {
     };
   }
 
-  async refreshAccessToken(
-    config: OAuthConfig,
-    refreshToken: string,
-  ): Promise<OAuthTokenResult> {
+  async refreshAccessToken(config: OAuthConfig, refreshToken: string): Promise<OAuthTokenResult> {
     const body = {
       grant_type: 'refresh_token',
       client_id: config.clientId,
@@ -199,9 +192,23 @@ export class HubSpotAdapter implements CRMAdapter {
     };
   }
 
-  async disconnect(_credentials: OAuthCredentials): Promise<void> {
-    // HubSpot tokens can be revoked via the tokens API
-    // In production, call DELETE /oauth/v1/refresh-tokens/:token
+  async disconnect(credentials: OAuthCredentials): Promise<void> {
+    // Revoke the refresh token via HubSpot OAuth token revocation endpoint
+    // This is best-effort — we always clear local credentials regardless of API response
+    try {
+      await fetch(`https://api.hubapi.com/oauth/v1/refresh-tokens/${credentials.refreshToken}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${credentials.accessToken}`,
+        },
+      });
+    } catch (err) {
+      // Best-effort: log warning but do not throw — local cleanup proceeds
+      console.warn(
+        '[ORDR:INTEGRATIONS:HUBSPOT] Token revocation request failed (best-effort):',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   // ── Health ─────────────────────────────────────────────────────
@@ -273,20 +280,24 @@ export class HubSpotAdapter implements CRMAdapter {
     const filterGroups: Record<string, unknown>[] = [];
     if (query.modifiedAfter !== undefined) {
       filterGroups.push({
-        filters: [{
-          propertyName: 'lastmodifieddate',
-          operator: 'GTE',
-          value: String(query.modifiedAfter.getTime()),
-        }],
+        filters: [
+          {
+            propertyName: 'lastmodifieddate',
+            operator: 'GTE',
+            value: String(query.modifiedAfter.getTime()),
+          },
+        ],
       });
     }
     if (query.modifiedBefore !== undefined) {
       filterGroups.push({
-        filters: [{
-          propertyName: 'lastmodifieddate',
-          operator: 'LTE',
-          value: String(query.modifiedBefore.getTime()),
-        }],
+        filters: [
+          {
+            propertyName: 'lastmodifieddate',
+            operator: 'LTE',
+            value: String(query.modifiedBefore.getTime()),
+          },
+        ],
       });
     }
     if (filterGroups.length > 0) {
@@ -315,7 +326,7 @@ export class HubSpotAdapter implements CRMAdapter {
   async pushContact(
     credentials: OAuthCredentials,
     contact: CrmContact,
-    existingExternalId?: string | undefined,
+    existingExternalId?: string,
   ): Promise<string> {
     const properties = {
       firstname: contact.firstName,
@@ -328,7 +339,11 @@ export class HubSpotAdapter implements CRMAdapter {
 
     if (existingExternalId !== undefined) {
       const url = `${HS_API_BASE}/crm/v3/objects/contacts/${existingExternalId}`;
-      const response = await this.httpClient.patch(url, { properties }, this.authHeaders(credentials));
+      const response = await this.httpClient.patch(
+        url,
+        { properties },
+        this.authHeaders(credentials),
+      );
       if (response.status !== 200) {
         throw new Error(`HubSpot contact update failed: HTTP ${String(response.status)}`);
       }
@@ -365,11 +380,13 @@ export class HubSpotAdapter implements CRMAdapter {
     const filterGroups: Record<string, unknown>[] = [];
     if (query.modifiedAfter !== undefined) {
       filterGroups.push({
-        filters: [{
-          propertyName: 'hs_lastmodifieddate',
-          operator: 'GTE',
-          value: String(query.modifiedAfter.getTime()),
-        }],
+        filters: [
+          {
+            propertyName: 'hs_lastmodifieddate',
+            operator: 'GTE',
+            value: String(query.modifiedAfter.getTime()),
+          },
+        ],
       });
     }
     if (filterGroups.length > 0) {
@@ -398,7 +415,7 @@ export class HubSpotAdapter implements CRMAdapter {
   async pushDeal(
     credentials: OAuthCredentials,
     deal: CrmDeal,
-    existingExternalId?: string | undefined,
+    existingExternalId?: string,
   ): Promise<string> {
     const properties = {
       dealname: deal.name,
@@ -409,7 +426,11 @@ export class HubSpotAdapter implements CRMAdapter {
 
     if (existingExternalId !== undefined) {
       const url = `${HS_API_BASE}/crm/v3/objects/deals/${existingExternalId}`;
-      const response = await this.httpClient.patch(url, { properties }, this.authHeaders(credentials));
+      const response = await this.httpClient.patch(
+        url,
+        { properties },
+        this.authHeaders(credentials),
+      );
       if (response.status !== 200) {
         throw new Error(`HubSpot deal update failed: HTTP ${String(response.status)}`);
       }
@@ -444,13 +465,17 @@ export class HubSpotAdapter implements CRMAdapter {
     }
 
     if (query.modifiedAfter !== undefined) {
-      searchBody['filterGroups'] = [{
-        filters: [{
-          propertyName: 'hs_lastmodifieddate',
-          operator: 'GTE',
-          value: String(query.modifiedAfter.getTime()),
-        }],
-      }];
+      searchBody['filterGroups'] = [
+        {
+          filters: [
+            {
+              propertyName: 'hs_lastmodifieddate',
+              operator: 'GTE',
+              value: String(query.modifiedAfter.getTime()),
+            },
+          ],
+        },
+      ];
     }
 
     const url = `${HS_API_BASE}/crm/v3/objects/tasks/search`;
@@ -475,7 +500,7 @@ export class HubSpotAdapter implements CRMAdapter {
   async pushActivity(
     credentials: OAuthCredentials,
     activity: CrmActivity,
-    existingExternalId?: string | undefined,
+    existingExternalId?: string,
   ): Promise<string> {
     const properties = {
       hs_task_subject: activity.subject,
@@ -486,7 +511,11 @@ export class HubSpotAdapter implements CRMAdapter {
 
     if (existingExternalId !== undefined) {
       const url = `${HS_API_BASE}/crm/v3/objects/tasks/${existingExternalId}`;
-      const response = await this.httpClient.patch(url, { properties }, this.authHeaders(credentials));
+      const response = await this.httpClient.patch(
+        url,
+        { properties },
+        this.authHeaders(credentials),
+      );
       if (response.status !== 200) {
         throw new Error(`HubSpot activity update failed: HTTP ${String(response.status)}`);
       }
@@ -536,7 +565,10 @@ export class HubSpotAdapter implements CRMAdapter {
     );
 
     const remaining = this.extractRateLimit(response.headers);
-    const resetSeconds = parseInt(response.headers['x-hubspot-ratelimit-interval-milliseconds'] ?? '10000', 10);
+    const resetSeconds = parseInt(
+      response.headers['x-hubspot-ratelimit-interval-milliseconds'] ?? '10000',
+      10,
+    );
 
     return {
       remaining: remaining ?? 0,
@@ -582,9 +614,11 @@ export class HubSpotAdapter implements CRMAdapter {
       if (response.status === 201 || response.status === 200) {
         const data = response.body as { results: readonly { id: string }[] };
         for (let j = 0; j < batch.length && j < data.results.length; j++) {
-          const batchContact = batch[j]!;
-          const resultItem = data.results[j]!;
-          results.set(batchContact.externalId, resultItem.id);
+          const batchContact = batch[j];
+          const resultItem = data.results[j];
+          if (batchContact !== undefined && resultItem !== undefined) {
+            results.set(batchContact.externalId, resultItem.id);
+          }
         }
       }
     }
@@ -631,9 +665,10 @@ export class HubSpotAdapter implements CRMAdapter {
       amount: hs.properties.amount !== null ? parseFloat(hs.properties.amount) : null,
       currency: 'USD',
       stage: hs.properties.dealstage,
-      probability: hs.properties.hs_deal_stage_probability !== null
-        ? parseFloat(hs.properties.hs_deal_stage_probability)
-        : null,
+      probability:
+        hs.properties.hs_deal_stage_probability !== null
+          ? parseFloat(hs.properties.hs_deal_stage_probability)
+          : null,
       closeDate: hs.properties.closedate !== null ? new Date(hs.properties.closedate) : null,
       contactExternalId: null,
       lastModified: new Date(hs.updatedAt),
@@ -657,46 +692,63 @@ export class HubSpotAdapter implements CRMAdapter {
   }
 
   private mapHsTypeToActivity(hsType: string): CrmActivity['type'] {
-    switch (hsType?.toUpperCase()) {
-      case 'CALL': return 'call';
-      case 'EMAIL': return 'email';
-      case 'MEETING': return 'event';
-      case 'NOTE': return 'note';
-      default: return 'task';
+    switch (hsType.toUpperCase()) {
+      case 'CALL':
+        return 'call';
+      case 'EMAIL':
+        return 'email';
+      case 'MEETING':
+        return 'event';
+      case 'NOTE':
+        return 'note';
+      default:
+        return 'task';
     }
   }
 
   private mapActivityTypeToHs(type: CrmActivity['type']): string {
     switch (type) {
-      case 'call': return 'CALL';
-      case 'email': return 'EMAIL';
-      case 'event': return 'MEETING';
-      case 'note': return 'NOTE';
-      case 'task': return 'TODO';
+      case 'call':
+        return 'CALL';
+      case 'email':
+        return 'EMAIL';
+      case 'event':
+        return 'MEETING';
+      case 'note':
+        return 'NOTE';
+      case 'task':
+        return 'TODO';
     }
   }
 
   private verifyWebhookSignature(
-    _payload: Readonly<Record<string, unknown>>,
+    payload: Readonly<Record<string, unknown>>,
     signature: string,
     secret: string,
   ): boolean {
-    // HubSpot uses HMAC-SHA256 of the request body
-    // In production: compute HMAC and use timing-safe comparison
-    if (signature.length === 0 || secret.length === 0) {
+    // HubSpot sends HMAC-SHA256 as hex (no prefix)
+    const body = JSON.stringify(payload);
+    const expected = createHmac('sha256', secret).update(body, 'utf8').digest('hex');
+    try {
+      return timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
+    } catch {
+      // timingSafeEqual throws if buffers have different length (invalid signature)
       return false;
     }
-    return signature.startsWith('sha256=');
   }
 
   private inferEntityType(payload: Readonly<Record<string, unknown>>): EntityType {
     const objectType = (payload['objectType'] as string | undefined) ?? '';
     switch (objectType.toLowerCase()) {
-      case 'contact': return 'contact';
-      case 'deal': return 'deal';
+      case 'contact':
+        return 'contact';
+      case 'deal':
+        return 'deal';
       case 'task':
-      case 'engagement': return 'activity';
-      default: return 'contact';
+      case 'engagement':
+        return 'activity';
+      default:
+        return 'contact';
     }
   }
 }
