@@ -6,6 +6,7 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  # Note: bucket and dynamodb_table names are suffixed with AWS account ID at runtime — see infrastructure/terraform/bootstrap/
   backend "s3" {
     bucket         = "ordr-connect-terraform-state"
     key            = "staging/terraform.tfstate"

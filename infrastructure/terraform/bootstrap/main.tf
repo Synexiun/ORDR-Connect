@@ -23,7 +23,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
+      version = "= 5.94.1"
     }
   }
 
@@ -34,6 +34,8 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+data "aws_caller_identity" "current" {}
 
 variable "aws_region" {
   description = "AWS region for all bootstrap resources"
@@ -66,7 +68,7 @@ resource "aws_kms_alias" "terraform_state" {
 # =============================================================================
 
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "ordr-connect-terraform-state"
+  bucket = "ordr-connect-tfstate-${data.aws_caller_identity.current.account_id}"
 
   # Prevent accidental deletion — must be removed manually if intentional
   lifecycle {
@@ -74,7 +76,7 @@ resource "aws_s3_bucket" "terraform_state" {
   }
 
   tags = {
-    Name        = "ordr-connect-terraform-state"
+    Name        = "ordr-connect-tfstate-${data.aws_caller_identity.current.account_id}"
     Environment = "shared"
     Compliance  = "SOC2-ISO27001-HIPAA"
   }
@@ -127,7 +129,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "terraform_state" {
 # =============================================================================
 
 resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "ordr-connect-terraform-locks"
+  name         = "ordr-connect-terraform-locks-${data.aws_caller_identity.current.account_id}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "LockID"
 
@@ -151,7 +153,8 @@ resource "aws_dynamodb_table" "terraform_locks" {
   }
 
   tags = {
-    Name        = "ordr-connect-terraform-locks"
+    Name        = "ordr-connect-terraform-locks-${data.aws_caller_identity.current.account_id}"
     Environment = "shared"
+    Compliance  = "SOC2-ISO27001-HIPAA"
   }
 }
