@@ -66,3 +66,17 @@ export { SalesforceAdapter } from './salesforce/adapter.js';
 
 // ─── HubSpot Adapter ────────────────────────────────────────────
 export { HubSpotAdapter } from './hubspot/adapter.js';
+
+// ─── Credential Manager ──────────────────────────────────────────
+export {
+  saveCredentials,
+  getCredentials,
+  ensureFreshCredentials,
+  IntegrationNotConnectedError,
+  IntegrationTokenExpiredError,
+} from './credential-manager.js';
+export type {
+  OAuthTokens,
+  IntegrationConfigRow,
+  CredentialManagerDeps,
+} from './credential-manager.js';
