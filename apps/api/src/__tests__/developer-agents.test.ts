@@ -227,5 +227,6 @@ describe('POST /api/v1/developers/agents/submit', () => {
     });
 
     expect(res.status).toBe(400);
+    expect(mockCreateListing).not.toHaveBeenCalled();
   });
 });

@@ -126,21 +126,38 @@ developerAgentsRouter.post('/submit', requireAuth(), async (c) => {
     );
   }
 
-  // Extract required fields from validated manifest
-  const mf = manifest as {
-    name: string;
-    version: string;
-    author: string;
-    license: string;
-  };
+  // Extract required fields from validated manifest — runtime guards ensure TypeScript
+  // type safety even though checkManifest already validated these via Zod.
+  const name = manifest['name'];
+  const version = manifest['version'];
+  const author = manifest['author'];
+  const license = manifest['license'];
+  if (
+    typeof name !== 'string' ||
+    typeof version !== 'string' ||
+    typeof author !== 'string' ||
+    typeof license !== 'string'
+  ) {
+    // Unreachable after checkManifest passes, but guards against schema drift
+    return c.json(
+      {
+        success: false as const,
+        message: 'Manifest missing required string fields',
+        errors: ['name, version, author, and license must be strings'],
+        warnings: [],
+        requestId,
+      },
+      422,
+    );
+  }
 
   const agent = await deps.createMarketplaceListing({
     publisherId: userId,
-    name: mf.name,
-    version: mf.version,
+    name,
+    version,
     description,
-    author: mf.author,
-    license: mf.license,
+    author,
+    license,
     manifest,
     packageHash,
   });
