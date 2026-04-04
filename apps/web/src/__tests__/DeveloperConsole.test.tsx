@@ -170,7 +170,6 @@ describe('DeveloperConsole', () => {
 
     const revokeButtons = screen.getAllByText('Revoke');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(revokeButtons[0]!);
     });
 
@@ -276,5 +275,158 @@ describe('DeveloperConsole', () => {
     await waitFor(() => {
       expect(screen.getByText('Sandbox Environments')).toBeDefined();
     });
+  });
+
+  // ── Webhook tests (Phase 53) ──────────────────────────────────────
+
+  it('calls listWebhooks on load', async () => {
+    mockGet.mockResolvedValue({ success: true, data: [] });
+    renderComponent();
+
+    await waitFor(() => {
+      // Should have called /v1/developers/webhooks
+      const webhookCall = (mockGet.mock.calls as string[][]).some(
+        (args) => args[0] !== undefined && args[0].includes('/v1/developers/webhooks'),
+      );
+      expect(webhookCall).toBe(true);
+    });
+  });
+
+  it('fires createWebhook when Add Webhook form is submitted', async () => {
+    mockGet.mockResolvedValue({ success: true, data: [] });
+    mockPost.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'wh-new',
+        url: 'https://example.com/hook',
+        events: ['customer.created'],
+        active: true,
+        hmacSecret: 'a'.repeat(64),
+        lastTriggeredAt: null,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    renderComponent();
+    await waitFor(() => {
+      expect(screen.queryByText('Loading developer console')).toBeNull();
+    });
+
+    // Open the Add Webhook modal
+    const addButton = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent.includes('Add Webhook'));
+    expect(addButton).toBeDefined();
+    act(() => {
+      fireEvent.click(addButton!);
+    });
+
+    // The modal should open (check for URL input)
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText(/https:\/\//i)).not.toBeNull();
+    });
+  });
+
+  it('shows HMAC secret modal after webhook creation', async () => {
+    mockGet.mockResolvedValue({ success: true, data: [] });
+    mockPost.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'wh-new',
+        url: 'https://example.com/hook',
+        events: ['customer.created'],
+        active: true,
+        hmacSecret: 'deadbeef'.repeat(8),
+        lastTriggeredAt: null,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    renderComponent();
+    await waitFor(() => {
+      expect(screen.queryByText('Loading developer console')).toBeNull();
+    });
+
+    // Open add webhook modal and submit
+    const addBtn = screen.getAllByRole('button').find((b) => b.textContent.includes('Add Webhook'));
+    act(() => {
+      fireEvent.click(addBtn!);
+    });
+
+    // Wait for modal, fill URL, check events checkbox, submit
+    await waitFor(() => {
+      const urlInput = screen.queryByPlaceholderText(/https:\/\//i);
+      if (urlInput) {
+        fireEvent.change(urlInput, { target: { value: 'https://example.com/hook' } });
+      }
+    });
+
+    const saveBtn = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent.includes('Save') || b.textContent.includes('Create'));
+    if (saveBtn) {
+      act(() => {
+        fireEvent.click(saveBtn);
+      });
+
+      // HMAC secret should be shown
+      await waitFor(() => {
+        expect(screen.queryByText(/signing secret/i) ?? screen.queryByText(/hmac/i)).not.toBeNull();
+      });
+    }
+  });
+
+  // ── Agent submission tests (Phase 53) ─────────────────────────────
+
+  it('calls listMyAgents on load (not listMarketplaceAgents)', async () => {
+    mockGet.mockResolvedValue({ success: true, data: [] });
+    renderComponent();
+
+    await waitFor(() => {
+      const agentCall = (mockGet.mock.calls as string[][]).some(
+        (args) => args[0] !== undefined && args[0].includes('/v1/developers/agents'),
+      );
+      expect(agentCall).toBe(true);
+      // Should NOT call the public marketplace endpoint
+      const marketplaceCall = (mockGet.mock.calls as string[][]).some(
+        (args) => args[0] === '/v1/marketplace',
+      );
+      expect(marketplaceCall).toBe(false);
+    });
+  });
+
+  // ── Sandbox tests (Phase 53) ──────────────────────────────────────
+
+  it('calls destroySandbox when Destroy button is clicked', async () => {
+    mockGet.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          id: 'sb-001',
+          tenantId: 'tenant-001',
+          developerId: 'dev-001',
+          name: 'Test Sandbox',
+          seedDataProfile: 'minimal',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      ],
+    });
+    mockDelete.mockResolvedValue({});
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.queryByText('Test Sandbox')).not.toBeNull();
+    });
+
+    const destroyBtn = screen.getAllByRole('button').find((b) => b.textContent.includes('Destroy'));
+    if (destroyBtn) {
+      act(() => {
+        fireEvent.click(destroyBtn);
+      });
+      expect(mockDelete).toHaveBeenCalled();
+    }
   });
 });

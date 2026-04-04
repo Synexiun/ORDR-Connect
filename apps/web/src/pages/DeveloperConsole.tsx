@@ -22,14 +22,20 @@ import {
   createApiKey,
   revokeApiKey,
   listSandboxes,
+  createSandbox,
+  destroySandbox,
   getDeveloperUsage,
+  listWebhooks,
+  createWebhook,
+  deleteWebhook,
+  toggleWebhook,
+  listMyAgents,
+  submitAgent,
   type ApiKey,
   type SandboxTenant,
+  type WebhookItem,
+  type MyAgent,
 } from '../lib/developer-api';
-import {
-  listMarketplaceAgents,
-  type MarketplaceAgent as ApiMarketplaceAgent,
-} from '../lib/marketplace-api';
 import {
   Key,
   Bot,
@@ -84,13 +90,7 @@ interface UsageStats {
   errorsToday: number;
 }
 
-interface WebhookConfig {
-  id: string;
-  url: string;
-  events: string[];
-  active: boolean;
-  lastTriggered: string | null;
-}
+// WebhookItem is imported from developer-api
 
 // --- Constants ---
 
@@ -160,14 +160,14 @@ const agentStatusMap: Record<string, PublishedAgent['status']> = {
   deprecated: 'rejected',
 };
 
-function adaptPublishedAgent(a: ApiMarketplaceAgent): PublishedAgent {
+function adaptPublishedAgent(a: MyAgent): PublishedAgent {
   return {
     id: a.id,
     name: a.name,
     version: a.version,
     status: (agentStatusMap[a.status] as PublishedAgent['status'] | undefined) ?? 'published',
     downloads: a.installCount,
-    createdAt: a.publishedAt,
+    createdAt: a.createdAt,
   };
 }
 
@@ -261,30 +261,6 @@ const mockUsage: UsageStats = {
   errorsToday: 12,
 };
 
-const mockWebhooks: WebhookConfig[] = [
-  {
-    id: 'wh-001',
-    url: 'https://api.example.com/webhooks/ordr',
-    events: ['customer.created', 'ticket.resolved', 'agent.completed'],
-    active: true,
-    lastTriggered: new Date(Date.now() - 2 * 3600000).toISOString(),
-  },
-  {
-    id: 'wh-002',
-    url: 'https://hooks.slack.com/services/T00/B00/xxx',
-    events: ['agent.error', 'compliance.alert'],
-    active: true,
-    lastTriggered: new Date(Date.now() - 24 * 3600000).toISOString(),
-  },
-  {
-    id: 'wh-003',
-    url: 'https://old.internal.example.com/notify',
-    events: ['customer.updated'],
-    active: false,
-    lastTriggered: null,
-  },
-];
-
 // --- API code example ---
 const apiExampleCode = `// Authenticate with your API key
 const response = await fetch('https://api.ordr-connect.com/v1/customers', {
@@ -311,6 +287,22 @@ const webhookExampleCode = `// Webhook payload format (POST to your endpoint)
   "signature": "sha256=..."  // HMAC-SHA256 for verification
 }`;
 
+/** Local copy of deliverable events for the Add Webhook modal checkboxes. */
+const WEBHOOK_EVENTS = [
+  'customer.created',
+  'customer.updated',
+  'interaction.logged',
+  'agent.triggered',
+  'agent.action_executed',
+  'agent.completed',
+  'ticket.created',
+  'ticket.resolved',
+  'dsr.approved',
+  'dsr.completed',
+  'compliance.alert',
+  'integration.webhook_received',
+] as const;
+
 // --- Component ---
 
 export function DeveloperConsole(): ReactNode {
@@ -321,7 +313,21 @@ export function DeveloperConsole(): ReactNode {
   const [usageChartData, setUsageChartData] = useState(fallbackUsageChart);
   const [errorChartData, setErrorChartData] = useState(fallbackErrorChart);
   const [endpointUsageData, setEndpointUsageData] = useState(fallbackEndpointData);
-  const [webhooks] = useState(mockWebhooks);
+  const [webhooks, setWebhooks] = useState<WebhookItem[]>([]);
+  const [newWebhookSecret, setNewWebhookSecret] = useState<string | null>(null);
+  const [showAddWebhook, setShowAddWebhook] = useState(false);
+  const [newWebhookUrl, setNewWebhookUrl] = useState('');
+  const [newWebhookEvents, setNewWebhookEvents] = useState<string[]>([]);
+  const [showSubmitAgent, setShowSubmitAgent] = useState(false);
+  const [agentManifestJson, setAgentManifestJson] = useState('');
+  const [agentPackageHash, setAgentPackageHash] = useState('');
+  const [agentDescription, setAgentDescription] = useState('');
+  const [agentSubmitErrors, setAgentSubmitErrors] = useState<string[]>([]);
+  const [showNewSandbox, setShowNewSandbox] = useState(false);
+  const [newSandboxName, setNewSandboxName] = useState('');
+  const [newSandboxProfile, setNewSandboxProfile] = useState<
+    'minimal' | 'collections' | 'healthcare'
+  >('minimal');
   const [loading, setLoading] = useState(true);
   const [showCreateKey, setShowCreateKey] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
@@ -331,36 +337,58 @@ export function DeveloperConsole(): ReactNode {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [keysRes, agentsRes, sandboxRes, usageRes] = await Promise.allSettled([
+      const [keysRes, agentsRes, sandboxRes, usageRes, webhooksRes] = await Promise.allSettled([
         listApiKeys(),
-        listMarketplaceAgents({ pageSize: 20 }),
+        listMyAgents(),
         listSandboxes(),
         getDeveloperUsage(7),
+        listWebhooks(),
       ]);
 
-      setKeys(keysRes.status === 'fulfilled' ? keysRes.value.data.map(adaptApiKey) : mockKeys);
+      setKeys(
+        keysRes.status === 'fulfilled' &&
+          keysRes.value.data.every((k) => 'keyPrefix' in (k as unknown as Record<string, unknown>))
+          ? keysRes.value.data.map(adaptApiKey)
+          : mockKeys,
+      );
       setAgents(
-        agentsRes.status === 'fulfilled'
+        agentsRes.status === 'fulfilled' &&
+          agentsRes.value.data.every((a) => 'version' in (a as unknown as Record<string, unknown>))
           ? agentsRes.value.data.map(adaptPublishedAgent)
           : mockAgents,
       );
       setSandboxes(
         sandboxRes.status === 'fulfilled' ? sandboxRes.value.data.map(adaptSandbox) : mockSandboxes,
       );
+      setWebhooks(
+        webhooksRes.status === 'fulfilled' &&
+          webhooksRes.value.data.every((w) => {
+            const rec = w as unknown as Record<string, unknown>;
+            return 'url' in rec && Array.isArray(rec['events']);
+          })
+          ? webhooksRes.value.data
+          : [],
+      );
 
       if (usageRes.status === 'fulfilled') {
-        const { stats, daily, endpoints } = usageRes.value.data;
-        setUsage({
-          totalCalls: stats.totalCalls,
-          totalErrors: stats.totalErrors,
-          callsToday: stats.callsToday,
-          errorsToday: stats.errorsToday,
-        });
-        setUsageChartData(daily.map((d) => ({ label: d.label, value: d.calls, color: '#3b82f6' })));
-        setErrorChartData(
-          daily.map((d) => ({ label: d.label, value: d.errors, color: '#ef4444' })),
-        );
-        setEndpointUsageData(endpoints.map((e) => ({ label: e.endpoint, value: e.calls })));
+        try {
+          const { stats, daily, endpoints } = usageRes.value.data;
+          setUsage({
+            totalCalls: stats.totalCalls,
+            totalErrors: stats.totalErrors,
+            callsToday: stats.callsToday,
+            errorsToday: stats.errorsToday,
+          });
+          setUsageChartData(
+            daily.map((d) => ({ label: d.label, value: d.calls, color: '#3b82f6' })),
+          );
+          setErrorChartData(
+            daily.map((d) => ({ label: d.label, value: d.errors, color: '#ef4444' })),
+          );
+          setEndpointUsageData(endpoints.map((e) => ({ label: e.endpoint, value: e.calls })));
+        } catch {
+          setUsage(mockUsage);
+        }
       } else {
         setUsage(mockUsage);
       }
@@ -420,6 +448,100 @@ export function DeveloperConsole(): ReactNode {
       }, 2000);
     }
   }, [rawKey]);
+
+  const handleAddWebhook = useCallback(async () => {
+    if (!newWebhookUrl.trim() || newWebhookEvents.length === 0) return;
+    try {
+      const res = await createWebhook({ url: newWebhookUrl, events: newWebhookEvents });
+      setWebhooks((prev) => [...prev, res.data]);
+      setNewWebhookSecret(res.data.hmacSecret);
+      setShowAddWebhook(false);
+      setNewWebhookUrl('');
+      setNewWebhookEvents([]);
+    } catch {
+      // Show error or leave modal open
+    }
+  }, [newWebhookUrl, newWebhookEvents]);
+
+  const handleDeleteWebhook = useCallback(async (webhookId: string) => {
+    try {
+      await deleteWebhook(webhookId);
+      setWebhooks((prev) => prev.filter((w) => w.id !== webhookId));
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  const handleToggleWebhook = useCallback(async (webhookId: string, currentActive: boolean) => {
+    try {
+      const res = await toggleWebhook(webhookId, !currentActive);
+      setWebhooks((prev) => prev.map((w) => (w.id === webhookId ? res.data : w)));
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  const handleSubmitAgent = useCallback(async () => {
+    setAgentSubmitErrors([]);
+    let manifest: Record<string, unknown>;
+    try {
+      manifest = JSON.parse(agentManifestJson) as Record<string, unknown>;
+    } catch {
+      setAgentSubmitErrors(['Manifest must be valid JSON']);
+      return;
+    }
+    try {
+      const res = await submitAgent({
+        manifest,
+        packageHash: agentPackageHash.trim(),
+        description: agentDescription.trim(),
+      });
+      setAgents((prev) => [
+        {
+          id: res.data.id,
+          name: res.data.name,
+          version: res.data.version,
+          status:
+            (agentStatusMap[res.data.status] as PublishedAgent['status'] | undefined) ?? 'review',
+          downloads: res.data.installCount,
+          createdAt: res.data.createdAt,
+        },
+        ...prev,
+      ]);
+      setShowSubmitAgent(false);
+      setAgentManifestJson('');
+      setAgentPackageHash('');
+      setAgentDescription('');
+    } catch (err: unknown) {
+      const body = (err as { response?: { errors?: string[] } }).response;
+      if (body?.errors) {
+        setAgentSubmitErrors(body.errors);
+      } else {
+        setAgentSubmitErrors(['Submission failed. Please try again.']);
+      }
+    }
+  }, [agentManifestJson, agentPackageHash, agentDescription]);
+
+  const handleCreateSandbox = useCallback(async () => {
+    if (!newSandboxName.trim()) return;
+    try {
+      const res = await createSandbox({ name: newSandboxName, seedProfile: newSandboxProfile });
+      setSandboxes((prev) => [adaptSandbox(res.data), ...prev]);
+      setShowNewSandbox(false);
+      setNewSandboxName('');
+    } catch {
+      // no-op
+    }
+  }, [newSandboxName, newSandboxProfile]);
+
+  const handleDestroySandbox = useCallback(async (sandboxId: string) => {
+    try {
+      await destroySandbox(sandboxId);
+      setSandboxes((prev) => prev.filter((s) => s.id !== sandboxId));
+    } catch {
+      // no-op
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -641,7 +763,21 @@ export function DeveloperConsole(): ReactNode {
       </Card>
 
       {/* Published agents */}
-      <Card title="Published Agents" accent="green">
+      <Card
+        title="Published Agents"
+        accent="green"
+        actions={
+          <Button
+            size="sm"
+            icon={<Plus className="h-3 w-3" />}
+            onClick={() => {
+              setShowSubmitAgent(true);
+            }}
+          >
+            Submit Agent
+          </Button>
+        }
+      >
         {agents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Bot className="h-8 w-8 text-content-tertiary" />
@@ -661,7 +797,7 @@ export function DeveloperConsole(): ReactNode {
             size="sm"
             icon={<Plus className="h-3 w-3" />}
             onClick={() => {
-              /* future: add webhook modal */
+              setShowAddWebhook(true);
             }}
           >
             Add Webhook
@@ -682,13 +818,10 @@ export function DeveloperConsole(): ReactNode {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1 space-y-2">
-                    {/* URL */}
                     <div className="flex items-center gap-2">
                       <Globe className="h-3.5 w-3.5 shrink-0 text-content-tertiary" />
                       <code className="truncate font-mono text-xs text-content">{wh.url}</code>
                     </div>
-
-                    {/* Event tags */}
                     <div className="flex flex-wrap gap-1.5">
                       {wh.events.map((evt) => (
                         <Badge key={evt} variant="info" size="sm">
@@ -696,18 +829,39 @@ export function DeveloperConsole(): ReactNode {
                         </Badge>
                       ))}
                     </div>
-
-                    {/* Last triggered */}
                     <p className="text-2xs text-content-tertiary">
-                      {wh.lastTriggered !== null
-                        ? `Last triggered ${new Date(wh.lastTriggered).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                      {wh.lastTriggeredAt !== null
+                        ? `Last triggered ${new Date(wh.lastTriggeredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
                         : 'Never triggered'}
                     </p>
                   </div>
-
-                  <Badge variant={wh.active ? 'success' : 'neutral'} dot size="sm">
-                    {wh.active ? 'Active' : 'Inactive'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={wh.active ? 'success' : 'neutral'} dot size="sm">
+                      {wh.active ? 'Active' : 'Inactive'}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Zap className="h-3.5 w-3.5" />}
+                      aria-label={wh.active ? 'Disable webhook' : 'Enable webhook'}
+                      onClick={() => {
+                        void handleToggleWebhook(wh.id, wh.active);
+                      }}
+                    >
+                      {''}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Trash2 className="h-3.5 w-3.5 text-content-tertiary" />}
+                      aria-label="Delete webhook"
+                      onClick={() => {
+                        void handleDeleteWebhook(wh.id);
+                      }}
+                    >
+                      {''}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))
@@ -727,7 +881,21 @@ export function DeveloperConsole(): ReactNode {
       </Card>
 
       {/* Sandboxes */}
-      <Card title="Sandbox Environments" accent="purple">
+      <Card
+        title="Sandbox Environments"
+        accent="purple"
+        actions={
+          <Button
+            size="sm"
+            icon={<Plus className="h-3 w-3" />}
+            onClick={() => {
+              setShowNewSandbox(true);
+            }}
+          >
+            New Sandbox
+          </Button>
+        }
+      >
         <div className="space-y-2">
           {sandboxes.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -757,6 +925,16 @@ export function DeveloperConsole(): ReactNode {
                     })}
                   </p>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Trash2 className="h-3.5 w-3.5 text-content-tertiary" />}
+                  onClick={() => {
+                    void handleDestroySandbox(sb.id);
+                  }}
+                >
+                  Destroy
+                </Button>
               </div>
             ))
           )}
@@ -896,6 +1074,245 @@ export function DeveloperConsole(): ReactNode {
             >
               {copiedKey ? 'Copied' : 'Copy'}
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add Webhook modal */}
+      <Modal
+        open={showAddWebhook}
+        onClose={() => {
+          setShowAddWebhook(false);
+        }}
+        title="Add Webhook"
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowAddWebhook(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              icon={<Webhook className="h-3 w-3" />}
+              onClick={() => {
+                void handleAddWebhook();
+              }}
+              disabled={!newWebhookUrl.trim() || newWebhookEvents.length === 0}
+            >
+              Save Webhook
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Endpoint URL"
+            placeholder="https://your-server.com/webhooks"
+            value={newWebhookUrl}
+            onChange={(e) => {
+              setNewWebhookUrl(e.target.value);
+            }}
+            required
+          />
+          <div>
+            <p className="mb-2 text-xs font-semibold text-content">Events to subscribe</p>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {WEBHOOK_EVENTS.map((evt) => (
+                <label key={evt} className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-border accent-kpi-blue"
+                    checked={newWebhookEvents.includes(evt)}
+                    onChange={() => {
+                      setNewWebhookEvents((prev) =>
+                        prev.includes(evt) ? prev.filter((e) => e !== evt) : [...prev, evt],
+                      );
+                    }}
+                  />
+                  <span className="font-mono text-xs text-content">{evt}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Webhook signing secret modal */}
+      <Modal
+        open={newWebhookSecret !== null}
+        onClose={() => {
+          setNewWebhookSecret(null);
+        }}
+        title="Webhook Signing Secret"
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setNewWebhookSecret(null);
+            }}
+          >
+            Done
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <p className="text-sm text-amber-400">
+              Copy this signing secret now. It will not be shown again.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-secondary p-3">
+            <code className="flex-1 break-all font-mono text-xs text-content">
+              {newWebhookSecret}
+            </code>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Copy className="h-3.5 w-3.5" />}
+              onClick={() => {
+                if (newWebhookSecret !== null) void navigator.clipboard.writeText(newWebhookSecret);
+              }}
+            >
+              Copy
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Submit Agent modal */}
+      <Modal
+        open={showSubmitAgent}
+        onClose={() => {
+          setShowSubmitAgent(false);
+        }}
+        title="Submit Agent"
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowSubmitAgent(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              icon={<Bot className="h-3 w-3" />}
+              onClick={() => {
+                void handleSubmitAgent();
+              }}
+              disabled={!agentManifestJson.trim() || !agentPackageHash.trim()}
+            >
+              Submit for Review
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {agentSubmitErrors.length > 0 && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+              <ul className="space-y-0.5">
+                {agentSubmitErrors.map((err, i) => (
+                  <li key={i} className="text-xs text-red-400">
+                    {err}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-content">Manifest JSON</label>
+            <textarea
+              className="w-full rounded-lg border border-border bg-surface p-2 font-mono text-xs text-content focus:outline-none focus:ring-1 focus:ring-kpi-blue"
+              rows={8}
+              placeholder={'{\n  "name": "my-agent",\n  "version": "1.0.0"\n}'}
+              value={agentManifestJson}
+              onChange={(e) => {
+                setAgentManifestJson(e.target.value);
+              }}
+            />
+          </div>
+          <Input
+            label="Package Hash (SHA-256)"
+            placeholder="64 lowercase hex characters"
+            value={agentPackageHash}
+            onChange={(e) => {
+              setAgentPackageHash(e.target.value);
+            }}
+          />
+          <Input
+            label="Description"
+            placeholder="What does this agent do?"
+            value={agentDescription}
+            onChange={(e) => {
+              setAgentDescription(e.target.value);
+            }}
+          />
+        </div>
+      </Modal>
+
+      {/* New Sandbox modal */}
+      <Modal
+        open={showNewSandbox}
+        onClose={() => {
+          setShowNewSandbox(false);
+        }}
+        title="New Sandbox"
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowNewSandbox(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              icon={<Terminal className="h-3 w-3" />}
+              onClick={() => {
+                void handleCreateSandbox();
+              }}
+              disabled={!newSandboxName.trim()}
+            >
+              Create Sandbox
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Input
+            label="Sandbox Name"
+            placeholder="e.g. Integration Testing"
+            value={newSandboxName}
+            onChange={(e) => {
+              setNewSandboxName(e.target.value);
+            }}
+            required
+          />
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-content">Seed Profile</label>
+            <select
+              className="w-full rounded-lg border border-border bg-surface p-2 text-sm text-content focus:outline-none focus:ring-1 focus:ring-kpi-blue"
+              value={newSandboxProfile}
+              onChange={(e) => {
+                setNewSandboxProfile(e.target.value as 'minimal' | 'collections' | 'healthcare');
+              }}
+            >
+              <option value="minimal">Minimal</option>
+              <option value="collections">Collections</option>
+              <option value="healthcare">Healthcare</option>
+            </select>
           </div>
         </div>
       </Modal>
