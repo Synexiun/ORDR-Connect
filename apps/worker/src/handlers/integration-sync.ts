@@ -235,6 +235,7 @@ async function handleCustomerCreated(
 async function handleCustomerUpdated(
   tenantId: string,
   customerId: string,
+  correlationId: string,
   deps: IntegrationSyncDeps,
 ): Promise<void> {
   const providers = await deps.listConnectedProviders(tenantId);
@@ -244,6 +245,17 @@ async function handleCustomerUpdated(
       provider,
       customerId,
       score: Date.now(),
+    });
+    await deps.auditLogger.log({
+      tenantId,
+      eventType: 'integration.outbound_enqueued',
+      actorType: 'system',
+      actorId: 'worker',
+      resource: 'customers',
+      resourceId: customerId,
+      action: 'enqueued_for_batch_sync',
+      details: { provider, correlation_id: correlationId },
+      timestamp: new Date(),
     });
   }
 }
@@ -406,7 +418,7 @@ export function createIntegrationSyncHandler(
       await handleCustomerCreated(event.tenantId, payload.customerId, correlationId, deps);
     } else if (type === 'customer.updated') {
       const payload = event.payload as { customerId: string };
-      await handleCustomerUpdated(event.tenantId, payload.customerId, deps);
+      await handleCustomerUpdated(event.tenantId, payload.customerId, correlationId, deps);
     } else {
       await handleWebhookReceived(
         event.payload as IntegrationWebhookReceivedPayload,
