@@ -26,11 +26,11 @@ Implement a compliant GDPR Data Subject Request (DSR) system allowing tenant adm
 **Flow:**
 ```
 Tenant admin → POST /v1/dsr → DB: data_subject_requests (pending)
-             → POST /v1/dsr/:id/approve → Kafka: dsr.approved
-             → Worker: export job → S3 encrypted archive
-             → Worker: (erasure only) CryptographicErasure.executeErasure()
+             → POST /v1/dsr/:id/approve → DB: status=approved + Kafka: dsr.approved
+             → Worker: transitions approved → processing, runs export job → S3 encrypted archive
+             → Worker: (erasure only) CryptographicErasure.executeErasure(keyId)
              → DB: dsr_exports + status=completed
-             → Tenant admin → GET /v1/dsr/:id → presigned S3 URL (24h)
+             → Tenant admin → GET /v1/dsr/:id → presigned S3 URL (24h, 410 if expired)
 ```
 
 ---
@@ -50,7 +50,7 @@ CREATE TABLE data_subject_requests (
   customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   type            TEXT NOT NULL CHECK (type IN ('access', 'erasure', 'portability')),
   status          TEXT NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','approved','processing','completed','rejected','cancelled')),
+                    CHECK (status IN ('pending','approved','processing','completed','rejected','cancelled','failed')),
   requested_by    TEXT NOT NULL,       -- actor ID (tenant admin user ID)
   reason          TEXT,                -- optional justification (required for erasure)
   deadline_at     TIMESTAMPTZ NOT NULL, -- created_at + 30 days (GDPR Art. 12)
@@ -92,6 +92,9 @@ ALTER TABLE dsr_exports ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY dsr_exports_tenant_isolation ON dsr_exports
   USING (tenant_id = current_setting('app.current_tenant')::uuid);
+
+-- Index
+CREATE INDEX idx_dsr_exports_dsr_id ON dsr_exports (dsr_id);
 ```
 
 ### Drizzle Schema Files
@@ -121,7 +124,10 @@ z.object({
   customerId: z.string().uuid(),
   type: z.enum(['access', 'erasure', 'portability']),
   reason: z.string().max(1000).optional(),
-})
+}).refine(
+  (data) => data.type !== 'erasure' || (data.reason && data.reason.length > 0),
+  { message: 'reason is required for erasure requests', path: ['reason'] }
+)
 ```
 
 **Logic:**
@@ -141,7 +147,7 @@ List DSRs for the tenant.
 **Query params:**
 ```typescript
 z.object({
-  status: z.enum(['pending','approved','processing','completed','rejected','cancelled']).optional(),
+  status: z.enum(['pending','approved','processing','completed','rejected','cancelled','failed']).optional(),
   type: z.enum(['access','erasure','portability']).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -156,7 +162,9 @@ z.object({
 
 #### `GET /v1/dsr/:id`
 
-Get DSR detail. If `status = 'completed'` and a `dsr_exports` row exists, generate a fresh S3 presigned GET URL (24h TTL) and include it in the response. Verify `checksum_sha256` before issuing the URL.
+Get DSR detail. If `status = 'completed'` and a `dsr_exports` row exists:
+- If `expires_at < now()` → return `410 Gone` with `{ error: 'export_expired', message: 'Export has expired and the file has been deleted.' }`
+- Otherwise → generate a fresh S3 presigned GET URL (24h TTL). Verify `checksum_sha256` before issuing the URL.
 
 **Response:**
 ```typescript
@@ -175,16 +183,18 @@ Get DSR detail. If `status = 'completed'` and a `dsr_exports` row exists, genera
 
 #### `POST /v1/dsr/:id/approve`
 
-Approve a pending DSR. Transitions `pending → processing`.
+Approve a pending DSR. Transitions `pending → approved`.
 
 **Logic:**
 1. Verify DSR is in `pending` status
 2. Verify DSR belongs to the requesting tenant
-3. Update status → `processing`
-4. Publish Kafka message to topic `dsr.approved`: `{ dsrId, tenantId, customerId, type }`
+3. Update status → `approved` in DB
+4. Publish Kafka message to topic `dsr.approved` (topic `ordr.dsr.events`): `{ dsrId, tenantId, customerId, type }` — uses idempotency key `dsrId` to prevent duplicate processing on retry
 5. Emit audit: `dsr.approved`
 
-**Response:** `200 { id, status: 'processing' }`
+**Note on idempotency:** If the Kafka publish fails after DB commit, the DSR remains `approved`. A stuck-DSR recovery job (part of the deadline enforcement scheduler) re-publishes any DSR in `approved` status older than 5 minutes.
+
+**Response:** `200 { id, status: 'approved' }`
 
 ---
 
@@ -223,15 +233,19 @@ Cancel a DSR. Only allowed when `status = 'pending'`.
 
 ### New file: `apps/worker/src/handlers/dsr-export.ts`
 
-Subscribes to Kafka topic `dsr.approved`. Handles both export and erasure flows.
+Subscribes to Kafka topic `ordr.dsr.events` (event type `dsr.approved`). Worker is idempotent: if `dsrId` is already `processing` or `completed`, it no-ops. Handles both export and erasure flows.
+
+**DB access:** Worker uses a service-account DB role with `BYPASSRLS` + scoped `SELECT/INSERT/UPDATE` on `data_subject_requests`, `dsr_exports`, `customers`, `contacts`, `consent_records`, `tickets`, `messages`, `agent_memories`. For each job, executes `SET LOCAL app.current_tenant = tenantId` within a transaction before any RLS-gated query (fallback to BYPASSRLS for cross-tenant scheduler queries).
 
 #### Export Job (type = `access` | `portability`)
 
 ```
+0. Transition status: approved → processing
 1. Load + decrypt customer profile (FieldEncryptor: name, email, phone)
 2. Load + decrypt contacts (FieldEncryptor: value)
 3. Load consent_records (WORM, no decryption)
 4. Load tickets (+ messages per ticket)
+4a. Load conversations/interactions (channel conversations + messages) scoped to customerId + tenantId
 5. Load agent_memories (FieldEncryptor: content)
 6. Load interaction analytics (health score, ticket counts, channel breakdown)
 7. Assemble JSON archive:
@@ -263,20 +277,26 @@ Subscribes to Kafka topic `dsr.approved`. Handles both export and erasure flows.
 
 ```
 1. Run export job first (GDPR Art. 15: right to access before erasure)
-2. CryptographicErasure.scheduleErasure(tenantId, customerId, reason)
+2. Resolve customer's encryption keyId:
+   - Query agent_memories.keyId WHERE customerId = :id (if agent memories exist)
+   - Fall back to deterministic key derivation ID: `tenant:{tenantId}:customer:{customerId}`
+   - This is the keyId passed to CryptographicErasure — NOT the customerId
+3. CryptographicErasure.scheduleErasure(tenantId, keyId, reason)
    → Emits audit: dsr.erasure_scheduled
-3. CryptographicErasure.executeErasure(record)
-   → Destroys derived HKDF key for this customer
+4. CryptographicErasure.executeErasure(record)
+   → Destroys the HKDF key identified by keyId in the key store (Vault KV or AWS Secrets Manager)
+   → All field-encrypted data using this key becomes permanently irrecoverable
    → Emits audit: dsr.erasure_executed
-4. CryptographicErasure.verifyErasure(record)
-   → Confirms key no longer readable
+5. CryptographicErasure.verifyErasure(record)
+   → Confirms key no longer readable from key store
    → Emits audit: dsr.erasure_verified
-5. Pseudonymise customer row (UPDATE in single transaction):
+6. Pseudonymise customer row + update DSR status in a SINGLE database transaction:
    - name     → '[erased]'
-   - email    → SHA-256(original_email) (preserves uniqueness for dedup, irrecoverable)
+   - email    → '[erased-' + randomUUID() + ']'  (random, non-reversible — NOT a hash)
    - phone    → null
    - Preserves id, tenant_id, created_at for FK integrity (tickets, audit logs)
-6. Update data_subject_requests: status=completed, completed_at=now()
+   - data_subject_requests.status → completed, completed_at → now()
+   (Both updates committed atomically; if either fails the transaction rolls back)
 ```
 
 #### Error Handling
@@ -369,12 +389,15 @@ For each result → emits `compliance.violation` audit event + in-app notificati
 - `packages/scheduler/src/jobs/dsr-deadline-check.ts` — daily deadline enforcement
 - `apps/api/src/__tests__/dsr.test.ts` — route unit tests
 - `apps/worker/src/__tests__/dsr-export.test.ts` — worker unit tests
+- `tests/compliance/check-dsr-audit-events.sh` — compliance test: verifies all 9 DSR event types present in audit types
 
 ### Modified
 - `packages/db/src/schema/index.ts` — export `dataSubjectRequests`, `dsrExports`
 - `packages/audit/src/types.ts` — add 9 new `AuditEventType` values
+- `packages/events/src/topics.ts` — add `DSR_EVENTS = 'ordr.dsr.events'` to `TOPICS` registry + `DEFAULT_TOPIC_CONFIGS`
+- `packages/events/src/schemas.ts` — add Zod schema for `dsr.approved` payload `{ dsrId, tenantId, customerId, type }`
 - `apps/api/src/server.ts` — mount `/v1/dsr` router
-- `apps/worker/src/index.ts` — register `dsr.approved` Kafka consumer
+- `apps/worker/src/index.ts` — register `ordr.dsr.events` Kafka consumer
 
 ---
 
@@ -399,5 +422,5 @@ For each result → emits `compliance.violation` audit event + in-app notificati
 | Art. 15 — Right of access | `access` DSR type → full JSON export |
 | Art. 17 — Right to erasure | `erasure` type → export first, then cryptographic erasure + pseudonymisation |
 | Art. 20 — Data portability | `portability` type → same export as access (JSON, machine-readable) |
-| Art. 30 — Records of processing | WORM audit log for all DSR operations |
+| Art. 30 — Records of processing | WORM audit log contributes evidence; full RoPA (Record of Processing Activities) is a separate compliance artefact outside this phase |
 | Art. 5(1)(f) — Integrity/confidentiality | Per-export DEK encryption, presigned URL auth, S3 auto-expiry |
