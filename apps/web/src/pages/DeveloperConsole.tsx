@@ -34,6 +34,7 @@ import {
   type ApiKey,
   type SandboxTenant,
   type WebhookItem,
+  type WebhookCreated,
   type MyAgent,
 } from '../lib/developer-api';
 import {
@@ -452,9 +453,11 @@ export function DeveloperConsole(): ReactNode {
   const handleAddWebhook = useCallback(async () => {
     if (!newWebhookUrl.trim() || newWebhookEvents.length === 0) return;
     try {
-      const res = await createWebhook({ url: newWebhookUrl, events: newWebhookEvents });
-      setWebhooks((prev) => [...prev, res.data]);
-      setNewWebhookSecret(res.data.hmacSecret);
+      const created: WebhookCreated = (
+        await createWebhook({ url: newWebhookUrl, events: newWebhookEvents })
+      ).data;
+      setWebhooks((prev) => [...prev, created]);
+      setNewWebhookSecret(created.hmacSecret);
       setShowAddWebhook(false);
       setNewWebhookUrl('');
       setNewWebhookEvents([]);

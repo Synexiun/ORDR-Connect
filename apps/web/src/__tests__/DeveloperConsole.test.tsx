@@ -364,16 +364,15 @@ describe('DeveloperConsole', () => {
     const saveBtn = screen
       .getAllByRole('button')
       .find((b) => b.textContent.includes('Save') || b.textContent.includes('Create'));
-    if (saveBtn) {
-      act(() => {
-        fireEvent.click(saveBtn);
-      });
+    expect(saveBtn).toBeDefined();
+    act(() => {
+      fireEvent.click(saveBtn!);
+    });
 
-      // HMAC secret should be shown
-      await waitFor(() => {
-        expect(screen.queryByText(/signing secret/i) ?? screen.queryByText(/hmac/i)).not.toBeNull();
-      });
-    }
+    // HMAC secret should be shown
+    await waitFor(() => {
+      expect(screen.queryByText(/signing secret/i) ?? screen.queryByText(/hmac/i)).not.toBeNull();
+    });
   });
 
   // ── Agent submission tests (Phase 53) ─────────────────────────────
@@ -422,11 +421,10 @@ describe('DeveloperConsole', () => {
     });
 
     const destroyBtn = screen.getAllByRole('button').find((b) => b.textContent.includes('Destroy'));
-    if (destroyBtn) {
-      act(() => {
-        fireEvent.click(destroyBtn);
-      });
-      expect(mockDelete).toHaveBeenCalled();
-    }
+    expect(destroyBtn).toBeDefined();
+    act(() => {
+      fireEvent.click(destroyBtn!);
+    });
+    expect(mockDelete).toHaveBeenCalledWith(expect.stringContaining('sb-001'));
   });
 });
