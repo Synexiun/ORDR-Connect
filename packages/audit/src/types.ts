@@ -45,7 +45,17 @@ export type AuditEventType =
   | 'user.mfa_disabled'
   | 'user.session_revoked'
   | 'api_key.created'
-  | 'api_key.revoked';
+  | 'api_key.revoked'
+  // DSR — GDPR Data Subject Requests (Art. 12, 15, 17, 20)
+  | 'dsr.requested'
+  | 'dsr.approved'
+  | 'dsr.rejected'
+  | 'dsr.cancelled'
+  | 'dsr.exported'
+  | 'dsr.failed'
+  | 'dsr.erasure_scheduled'
+  | 'dsr.erasure_executed'
+  | 'dsr.erasure_verified';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

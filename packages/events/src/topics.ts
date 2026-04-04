@@ -29,6 +29,9 @@ export const TOPICS = {
 
   /** Dead letter queue — failed events for manual review/retry */
   DEAD_LETTER: 'ordr.dlq',
+
+  /** GDPR Data Subject Request lifecycle events */
+  DSR_EVENTS: 'ordr.dsr.events',
 } as const;
 
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];
@@ -108,6 +111,14 @@ export const DEFAULT_TOPIC_CONFIGS: Record<TopicName, TopicConfig> = {
     partitions: 3,
     replicationFactor: 3,
     retentionMs: 30 * 24 * 60 * 60 * 1000, // 30 days
+    cleanupPolicy: 'delete',
+    minInsyncReplicas: 2,
+  },
+  [TOPICS.DSR_EVENTS]: {
+    name: TOPICS.DSR_EVENTS,
+    partitions: 6,
+    replicationFactor: 3,
+    retentionMs: 365 * 24 * 60 * 60 * 1000, // 1 year — GDPR/SOC2 audit retention
     cleanupPolicy: 'delete',
     minInsyncReplicas: 2,
   },

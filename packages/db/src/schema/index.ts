@@ -169,3 +169,6 @@ export {
 
 // Search Index (tsvector full-text search)
 export { searchIndex, searchEntityTypeEnum } from './search-index.js';
+
+// DSR — GDPR Data Subject Requests
+export { dataSubjectRequests, dsrExports, dsrTypeEnum, dsrStatusEnum } from './dsr.js';

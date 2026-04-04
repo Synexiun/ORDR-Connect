@@ -83,6 +83,15 @@ export interface AuthEventPayload {
   readonly ipAddress?: string | undefined;
 }
 
+// ─── DSR Payloads ─────────────────────────────────────────────────
+
+export interface DsrApprovedPayload {
+  readonly dsrId: string;
+  readonly tenantId: string;
+  readonly customerId: string;
+  readonly type: 'access' | 'erasure' | 'portability';
+}
+
 // ─── Event Type Constants ─────────────────────────────────────────
 
 export const EventType = {
@@ -104,6 +113,9 @@ export const EventType = {
   AUTH_LOGOUT: 'auth.logout',
   AUTH_FAILED: 'auth.failed',
   AUTH_MFA_VERIFIED: 'auth.mfa_verified',
+
+  // DSR
+  DSR_APPROVED: 'dsr.approved',
 } as const;
 
 export type EventTypeValue = (typeof EventType)[keyof typeof EventType];

@@ -15,6 +15,7 @@ export type {
   AgentActionExecutedPayload,
   ComplianceCheckPayload,
   AuthEventPayload,
+  DsrApprovedPayload,
   EventTypeValue,
 } from './types.js';
 
@@ -32,6 +33,7 @@ export {
   agentActionExecutedPayloadSchema,
   complianceCheckPayloadSchema,
   authEventPayloadSchema,
+  dsrApprovedPayloadSchema,
   eventSchemaRegistry,
   validateEvent,
 } from './schemas.js';

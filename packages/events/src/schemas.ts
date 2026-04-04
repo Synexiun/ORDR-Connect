@@ -118,6 +118,19 @@ export const authEventPayloadSchema = z.object({
   ipAddress: z.string().optional(),
 });
 
+// ─── DSR Schemas ──────────────────────────────────────────────────
+
+/**
+ * Payload for dsr.approved — no PII, IDs only.
+ * GDPR/HIPAA: type field tells the worker which flow to run.
+ */
+export const dsrApprovedPayloadSchema = z.object({
+  dsrId: z.string().uuid(),
+  tenantId: z.string().min(1),
+  customerId: z.string().uuid(),
+  type: z.enum(['access', 'erasure', 'portability']),
+});
+
 // ─── Schema Registry ──────────────────────────────────────────────
 
 /**
@@ -134,6 +147,7 @@ export const eventSchemaRegistry = new Map<string, ZodSchema>([
   [EventType.AUTH_LOGOUT, createEnvelopeSchema(authEventPayloadSchema)],
   [EventType.AUTH_FAILED, createEnvelopeSchema(authEventPayloadSchema)],
   [EventType.AUTH_MFA_VERIFIED, createEnvelopeSchema(authEventPayloadSchema)],
+  [EventType.DSR_APPROVED, createEnvelopeSchema(dsrApprovedPayloadSchema)],
 ]);
 
 // ─── Validation Helper ────────────────────────────────────────────
