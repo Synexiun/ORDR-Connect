@@ -42,3 +42,7 @@ export { DrizzleAuditStore } from './drizzle-audit-store.js';
 // DrizzleNotificationWriter — in-app notification insert helper
 export { DrizzleNotificationWriter } from './drizzle-notification-writer.js';
 export type { NotificationInsert } from './drizzle-notification-writer.js';
+
+// Developer Webhook Queries (Phase 53)
+export { makeWebhookQueries } from './queries/developer-webhooks.js';
+export type { WebhookRecord, WebhookQueries } from './queries/developer-webhooks.js';
