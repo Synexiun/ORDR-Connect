@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-DOCKERFILE=$(grep 'file:' .github/workflows/deploy-staging.yml | sed "s/.*file:[[:space:]]*//" | tr -d ' ')
+WORKFLOW=".github/workflows/deploy-staging.yml"
+if [ ! -f "$WORKFLOW" ]; then
+  echo "ERROR: workflow file not found at $WORKFLOW (run from repo root)"
+  exit 1
+fi
+
+DOCKERFILE=$(grep 'file:.*Dockerfile' "$WORKFLOW" | sed "s/.*file:[[:space:]]*//" | tr -d ' ')
 
 echo "deploy-staging.yml Dockerfile: $DOCKERFILE"
 
