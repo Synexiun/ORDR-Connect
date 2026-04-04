@@ -34,7 +34,7 @@ import { loadConfig } from '@ordr/core';
 import type { ParsedConfig } from '@ordr/core';
 import { createConnection, createDrizzle, closeConnection, DrizzleAuditStore } from '@ordr/db';
 import * as schema from '@ordr/db';
-import { createKafkaClient, createProducer, EventProducer } from '@ordr/events';
+import { createKafkaClient, createProducer, EventProducer, TOPICS, EventType } from '@ordr/events';
 import type { Producer } from '@ordr/events';
 import { AuditLogger } from '@ordr/audit';
 import {
@@ -103,6 +103,7 @@ import { configureWorkflowRoutes } from './routes/workflow.js';
 import { configureSearchRoutes } from './routes/search.js';
 import { configureSchedulerRoutes } from './routes/scheduler.js';
 import { configureIntegrationRoutes } from './routes/integrations.js';
+import { configureDsrRoutes } from './routes/dsr.js';
 import { configureTenantRoutes } from './routes/tenants.js';
 import { ChannelManager } from '@ordr/realtime';
 import { EventPublisher } from '@ordr/realtime';
@@ -1570,6 +1571,169 @@ async function bootstrap(): Promise<void> {
   console.warn(
     `[ORDR:API] Scheduler routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
   );
+
+  // ── P6.5b. DSR Routes (GDPR Art. 12, 15, 17, 20) ────────────────────────
+  {
+    const dsrEventProducer = new EventProducer(kafkaProducer);
+    configureDsrRoutes({
+      createDsr: async (params) => {
+        const result = await db
+          .insert(schema.dataSubjectRequests)
+          .values({
+            tenantId: params.tenantId,
+            customerId: params.customerId,
+            type: params.type,
+            requestedBy: params.requestedBy,
+            reason: params.reason ?? null,
+            deadlineAt: params.deadlineAt,
+          })
+          .returning();
+        if (!result[0]) throw new Error('DSR insert returned no row');
+        return result[0] as never;
+      },
+      listDsrs: async (params) => {
+        const conditions = [
+          eq(schema.dataSubjectRequests.tenantId, params.tenantId),
+          ...(params.status !== undefined
+            ? [eq(schema.dataSubjectRequests.status, params.status as never)]
+            : []),
+          ...(params.type !== undefined
+            ? [eq(schema.dataSubjectRequests.type, params.type as never)]
+            : []),
+        ];
+        const whereClause = and(...conditions);
+        const offset = (params.page - 1) * params.limit;
+        const [items, overdueRows] = await Promise.all([
+          db
+            .select()
+            .from(schema.dataSubjectRequests)
+            .where(whereClause)
+            .limit(params.limit)
+            .offset(offset),
+          db
+            .select({ cnt: count() })
+            .from(schema.dataSubjectRequests)
+            .where(
+              and(
+                eq(schema.dataSubjectRequests.tenantId, params.tenantId),
+                eq(schema.dataSubjectRequests.status, 'pending' as never),
+              ),
+            ),
+        ]);
+        return {
+          items: items as never,
+          total: items.length,
+          overdue_count: overdueRows[0]?.cnt ?? 0,
+        };
+      },
+      getDsr: async (params) => {
+        const dsrs = await db
+          .select()
+          .from(schema.dataSubjectRequests)
+          .where(
+            and(
+              eq(schema.dataSubjectRequests.id, params.dsrId),
+              eq(schema.dataSubjectRequests.tenantId, params.tenantId),
+            ),
+          )
+          .limit(1);
+        if (!dsrs[0]) return null;
+        const exports = await db
+          .select()
+          .from(schema.dsrExports)
+          .where(eq(schema.dsrExports.dsrId, params.dsrId))
+          .limit(1);
+        const exp = exports[0];
+        return {
+          dsr: dsrs[0] as never,
+          export: exp
+            ? {
+                expiresAt: exp.expiresAt.toISOString(),
+                checksumSha256: exp.checksumSha256,
+                s3Key: exp.s3Key,
+                s3Bucket: exp.s3Bucket,
+                fileSizeBytes: exp.fileSizeBytes ?? null,
+              }
+            : null,
+        };
+      },
+      approveDsr: async (params) => {
+        const rows = await db
+          .update(schema.dataSubjectRequests)
+          .set({ status: 'approved' as never, updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.dataSubjectRequests.id, params.dsrId),
+              eq(schema.dataSubjectRequests.tenantId, params.tenantId),
+              eq(schema.dataSubjectRequests.status, 'pending' as never),
+            ),
+          )
+          .returning();
+        if (!rows[0])
+          throw Object.assign(new Error('DSR not pending or not found'), {
+            code: 'DSR_STATE_ERROR',
+          });
+        return rows[0] as never;
+      },
+      rejectDsr: async (params) => {
+        const rows = await db
+          .update(schema.dataSubjectRequests)
+          .set({
+            status: 'rejected' as never,
+            rejectionReason: params.rejectionReason,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.dataSubjectRequests.id, params.dsrId),
+              eq(schema.dataSubjectRequests.tenantId, params.tenantId),
+              eq(schema.dataSubjectRequests.status, 'pending' as never),
+            ),
+          )
+          .returning();
+        if (!rows[0])
+          throw Object.assign(new Error('DSR not pending or not found'), {
+            code: 'DSR_STATE_ERROR',
+          });
+        return rows[0] as never;
+      },
+      cancelDsr: async (params) => {
+        const rows = await db
+          .update(schema.dataSubjectRequests)
+          .set({ status: 'cancelled' as never, updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.dataSubjectRequests.id, params.dsrId),
+              eq(schema.dataSubjectRequests.tenantId, params.tenantId),
+              eq(schema.dataSubjectRequests.status, 'pending' as never),
+            ),
+          )
+          .returning();
+        if (!rows[0])
+          throw Object.assign(new Error('DSR not pending or not found'), {
+            code: 'DSR_STATE_ERROR',
+          });
+        return rows[0] as never;
+      },
+      publishApproved: async (params) => {
+        await dsrEventProducer.publish(TOPICS.DSR_EVENTS, {
+          id: crypto.randomUUID(),
+          type: EventType.DSR_APPROVED,
+          tenantId: params.tenantId,
+          payload: params,
+          metadata: {
+            correlationId: crypto.randomUUID(),
+            causationId: crypto.randomUUID(),
+            source: 'api',
+            version: 1,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      },
+      auditLogger,
+    });
+    console.warn('[ORDR:API] DSR routes configured');
+  }
 
   // ── P6.6. CRM integration routes ────────────────────────────────────────
   // Adapters are initialized with a lightweight fetch-based HTTP client.

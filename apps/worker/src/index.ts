@@ -21,3 +21,6 @@ export type { AgentEventsDeps } from './handlers/agent-events.js';
 
 export { createOutboundMessagesHandler } from './handlers/outbound-messages.js';
 export type { OutboundMessagesDeps } from './handlers/outbound-messages.js';
+
+export { createDsrExportHandler } from './handlers/dsr-export.js';
+export type { DsrExportDeps } from './handlers/dsr-export.js';

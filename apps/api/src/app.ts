@@ -82,6 +82,7 @@ import { integrationsRouter } from './routes/integrations.js';
 import { auditLogsRouter } from './routes/audit-logs.js';
 import { messagingRouter } from './routes/messaging.js';
 import { cobrowseRouter } from './routes/cobrowse.js';
+import { dsrRouter } from './routes/dsr.js';
 import { createMetricsRouter } from './routes/metrics.js';
 import type { MetricsRegistry } from '@ordr/observability';
 import type { ThreatDetectionConfig } from './middleware/threat-detection.js';
@@ -235,6 +236,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Compliance dashboard routes — summary, violations, consent status
   app.route('/api/v1/compliance', complianceDashboardRouter);
+
+  // GDPR DSR routes — data subject request lifecycle (Art. 12, 15, 17, 20)
+  app.route('/api/v1/dsr', dsrRouter);
 
   // SSE events stream — real-time dashboard updates
   app.route('/api/v1/events', eventsRouter);

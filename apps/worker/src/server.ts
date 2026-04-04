@@ -39,6 +39,8 @@ import {
 } from './handlers/interaction-events.js';
 import { createAgentEventsHandler } from './handlers/agent-events.js';
 import { createOutboundMessagesHandler } from './handlers/outbound-messages.js';
+import { createDsrExportHandler } from './handlers/dsr-export.js';
+import type { DsrExportDeps } from './handlers/dsr-export.js';
 
 export type { NotificationWriter, NotificationInsert } from './types.js';
 
@@ -130,12 +132,43 @@ export async function startWorker(
   });
   handlers.set('outbound.message', outboundHandler);
 
+  // DSR export + erasure handler — deps are resolved at runtime via injected stubs.
+  // Full implementation wires real DB/S3 deps in the concrete server bootstrap.
+
+  const notConfigured = (name: string) => (): Promise<never> =>
+    Promise.reject(new Error(`[ORDR:WORKER:DSR] ${name} not configured`));
+  const dsrExportDeps: DsrExportDeps = {
+    transitionProcessing: notConfigured('transitionProcessing'),
+    loadCustomer: notConfigured('loadCustomer'),
+    loadContacts: notConfigured('loadContacts'),
+    loadConsent: notConfigured('loadConsent'),
+    loadTickets: notConfigured('loadTickets'),
+    loadMemories: notConfigured('loadMemories'),
+    loadAnalytics: notConfigured('loadAnalytics'),
+    uploadExport: notConfigured('uploadExport'),
+    saveExport: notConfigured('saveExport'),
+    completeDsr: notConfigured('completeDsr'),
+    scheduleErasure: notConfigured('scheduleErasure'),
+    executeErasure: notConfigured('executeErasure'),
+    verifyErasure: notConfigured('verifyErasure'),
+    pseudonymise: notConfigured('pseudonymise'),
+    auditLogger: deps.auditLogger,
+  };
+  // Cast: EventHandler accepts EventEnvelope<unknown>; DSR handler is typed
+  // more specifically as EventEnvelope<DsrApprovedPayload>. Safe cast: the
+  // consumer only sends dsr.approved events to this handler at runtime.
+  handlers.set(
+    'dsr.approved',
+    createDsrExportHandler(dsrExportDeps) as unknown as import('@ordr/events').EventHandler,
+  );
+
   // Subscribe to topics
   await consumer.subscribe([
     TOPICS.CUSTOMER_EVENTS,
     TOPICS.INTERACTION_EVENTS,
     TOPICS.AGENT_EVENTS,
     TOPICS.OUTBOUND_MESSAGES,
+    TOPICS.DSR_EVENTS,
   ]);
 
   // Start consuming
@@ -158,6 +191,7 @@ export async function startWorker(
         TOPICS.INTERACTION_EVENTS,
         TOPICS.AGENT_EVENTS,
         TOPICS.OUTBOUND_MESSAGES,
+        TOPICS.DSR_EVENTS,
       ],
     },
     timestamp: new Date(),
