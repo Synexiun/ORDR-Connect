@@ -98,7 +98,7 @@ describe('listOrganizations', () => {
     const result = await listOrganizations();
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].id).toBe('org-test-1');
+    expect(result.data[0]!.id).toBe('org-test-1');
   });
 });
 
@@ -179,6 +179,6 @@ describe('getOrganizationHierarchy', () => {
     const result = await getOrganizationHierarchy('org-test-1');
     expect(result.data.id).toBe('org-test-1');
     expect(result.data.children).toHaveLength(1);
-    expect(result.data.children[0].id).toBe('org-test-2');
+    expect(result.data.children[0]!.id).toBe('org-test-2');
   });
 });

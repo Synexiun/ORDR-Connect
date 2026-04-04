@@ -199,7 +199,7 @@ describe('listHitl', () => {
     mockGet.mockResolvedValue(HITL_LIST_RESPONSE);
     const result = await listHitl();
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].id).toBe('hitl-test-1');
+    expect(result.data[0]!.id).toBe('hitl-test-1');
   });
 });
 

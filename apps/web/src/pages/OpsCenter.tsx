@@ -227,7 +227,7 @@ function mapHitlItem(item: HitlItem): HitlTask {
 }
 
 function mapAuditEntry(event: AuditLogEvent): ActivityEntry {
-  const actor: ActorType = event.actorType === 'human' ? 'Human' : 'AI';
+  const actor: ActorType = event.actorType === 'user' ? 'Human' : 'AI';
   return {
     id: event.id,
     actor,
@@ -1562,15 +1562,15 @@ export function OpsCenter(): ReactNode {
   // Handler signature matches EventHandler: (data: Record<string, unknown>) => void
   useRealtimeEvents({
     'audit.event': (data) => {
-      const event = data as AuditLogEvent;
+      const event = data as unknown as AuditLogEvent;
       setAuditLogs((prev) => [event, ...prev].slice(0, 100));
       setActivity((prev) => [mapAuditEntry(event), ...prev].slice(0, 100));
     },
     'hitl.created': (data) => {
-      setHitl((prev) => [mapHitlItem(data as HitlItem), ...prev]);
+      setHitl((prev) => [mapHitlItem(data as unknown as HitlItem), ...prev]);
     },
     'counters.update': (data) => {
-      setCounters(data as RealTimeCounters);
+      setCounters(data as unknown as RealTimeCounters);
     },
   });
 

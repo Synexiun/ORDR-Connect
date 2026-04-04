@@ -227,14 +227,14 @@ describe('fetchSsoConnections', () => {
     mockGet.mockResolvedValue([API_SSO_CONNECTION]);
     const result = await fetchSsoConnections();
     expect(result).toHaveLength(1);
-    expect(result[0].provider).toBe('Okta');
+    expect(result[0]!.provider).toBe('Okta');
   });
 
   it('falls back to mock SSO connections on failure', async () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchSsoConnections();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].provider).toBe('Okta');
+    expect(result[0]!.provider).toBe('Okta');
   });
 });
 
@@ -249,7 +249,7 @@ describe('fetchRoles', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchRoles();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].name).toBe('Admin');
+    expect(result[0]!.name).toBe('Admin');
   });
 });
 
@@ -286,7 +286,7 @@ describe('fetchChannelConfig', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchChannelConfig();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].channel).toBe('Email');
+    expect(result[0]!.channel).toBe('Email');
   });
 });
 
@@ -301,7 +301,7 @@ describe('fetchNotificationPrefs', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchNotificationPrefs();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].key).toBe('compliance_violations');
+    expect(result[0]!.key).toBe('compliance_violations');
   });
 });
 
@@ -338,7 +338,7 @@ describe('fetchTeamMembers', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchTeamMembers();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].name).toBe('Sarah Chen');
+    expect(result[0]!.name).toBe('Sarah Chen');
   });
 });
 
@@ -353,7 +353,7 @@ describe('fetchActiveSessions', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchActiveSessions();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].current).toBe(true);
+    expect(result[0]!.current).toBe(true);
   });
 });
 
@@ -368,7 +368,7 @@ describe('fetchApiTokens', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchApiTokens();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].name).toBe('CI/CD Pipeline');
+    expect(result[0]!.name).toBe('CI/CD Pipeline');
   });
 });
 
@@ -383,7 +383,7 @@ describe('fetchTeamActivity', () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     const result = await fetchTeamActivity();
     expect(result.length).toBeGreaterThan(0);
-    expect(result[0].action).toBe('Invited member');
+    expect(result[0]!.action).toBe('Invited member');
   });
 });
 

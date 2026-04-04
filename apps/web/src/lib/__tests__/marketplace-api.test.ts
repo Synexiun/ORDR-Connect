@@ -137,7 +137,7 @@ describe('listMarketplaceAgents', () => {
     const result = await listMarketplaceAgents();
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].id).toBe('agent-mkt-1');
+    expect(result.data[0]!.id).toBe('agent-mkt-1');
   });
 });
 
@@ -190,7 +190,7 @@ describe('listReviews', () => {
     mockGet.mockResolvedValue({ success: true, data: [MOCK_REVIEW], total: 1 });
     const result = await listReviews('agent-mkt-1');
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].rating).toBe(5);
+    expect(result.data[0]!.rating).toBe(5);
     expect(result.total).toBe(1);
   });
 });

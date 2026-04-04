@@ -155,7 +155,7 @@ describe('fetchChannelMetrics', () => {
     mockGet.mockResolvedValue({ success: true, data: MOCK_CHANNEL_METRICS });
     const result = await fetchChannelMetrics('7d');
     expect(result.channels).toHaveLength(1);
-    expect(result.channels[0].channel).toBe('sms');
+    expect(result.channels[0]!.channel).toBe('sms');
   });
 });
 
@@ -173,7 +173,7 @@ describe('fetchAgentMetrics', () => {
     mockGet.mockResolvedValue({ success: true, data: MOCK_AGENT_METRICS });
     const result = await fetchAgentMetrics('7d');
     expect(result.agents).toHaveLength(1);
-    expect(result.agents[0].agentRole).toBe('collections');
+    expect(result.agents[0]!.agentRole).toBe('collections');
   });
 });
 
@@ -190,7 +190,7 @@ describe('fetchComplianceMetrics', () => {
     mockGet.mockResolvedValue({ success: true, data: MOCK_COMPLIANCE_METRICS });
     const result = await fetchComplianceMetrics('30d');
     expect(result.scoreTrend).toHaveLength(1);
-    expect(result.scoreTrend[0].score).toBe(98.2);
+    expect(result.scoreTrend[0]!.score).toBe(98.2);
   });
 });
 
@@ -208,7 +208,7 @@ describe('fetchTrend', () => {
     const result = await fetchTrend('resolution_rate', '7d');
     expect(result.metric).toBe('resolution_rate');
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].value).toBe(94.5);
+    expect(result.data[0]!.value).toBe(94.5);
   });
 
   it('includes from/to URL params', async () => {

@@ -117,13 +117,16 @@ const MOCK_TEMPLATES: Array<{
 ];
 
 function makeMockEvent(index: number): FeedEvent {
-  const t = MOCK_TEMPLATES[index % MOCK_TEMPLATES.length] ?? MOCK_TEMPLATES[0];
+  const template = MOCK_TEMPLATES[index % MOCK_TEMPLATES.length];
+  const type = template?.type ?? 'agent.session';
+  const description = template?.description ?? 'Agent completed session';
+  const severity = template?.severity ?? 'info';
   return {
     id: `mock-${index}`,
-    type: t.type,
-    description: t.description,
+    type,
+    description,
     timestamp: new Date(Date.now() - index * 90_000).toISOString(),
-    severity: t.severity,
+    severity,
   };
 }
 

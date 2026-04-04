@@ -51,6 +51,7 @@ export {
 
   // Actions
   Plus,
+  Edit,
   Pencil,
   Trash2,
   Download,

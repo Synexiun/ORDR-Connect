@@ -192,7 +192,7 @@ describe('SchedulerMonitor page', () => {
       // Tab label includes count "Dead Letter (1)"
       expect(screen.getAllByText(/Dead Letter \(/i).length).toBeGreaterThan(0);
     });
-    fireEvent.click(screen.getAllByText(/Dead Letter \(/i)[0]);
+    fireEvent.click(screen.getAllByText(/Dead Letter \(/i)[0]!);
     await waitFor(() => {
       expect(screen.getByText('Dead-lettered')).toBeDefined();
     });
@@ -204,7 +204,7 @@ describe('SchedulerMonitor page', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/Dead Letter \(/i).length).toBeGreaterThan(0);
     });
-    fireEvent.click(screen.getAllByText(/Dead Letter \(/i)[0]);
+    fireEvent.click(screen.getAllByText(/Dead Letter \(/i)[0]!);
     await waitFor(() => {
       expect(screen.getByText('webhook-delivery')).toBeDefined();
     });
@@ -222,7 +222,7 @@ describe('SchedulerMonitor page', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/Dead Letter \(/i).length).toBeGreaterThan(0);
     });
-    fireEvent.click(screen.getAllByText(/Dead Letter \(/i)[0]);
+    fireEvent.click(screen.getAllByText(/Dead Letter \(/i)[0]!);
     await waitFor(() => {
       expect(screen.getByText('Dead-letter queue empty')).toBeDefined();
     });

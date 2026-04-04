@@ -190,8 +190,8 @@ describe('fetchViolations', () => {
     const result = await fetchViolations();
     expect(result.success).toBe(true);
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].id).toBe('vio-test-1');
-    expect(result.data[0].regulation).toBe('TCPA');
+    expect(result.data[0]!.id).toBe('vio-test-1');
+    expect(result.data[0]!.regulation).toBe('TCPA');
   });
 });
 
@@ -226,7 +226,7 @@ describe('fetchConsentStatus', () => {
     mockGet.mockResolvedValue({ success: true, data: MOCK_CONSENT_CHANNELS });
     const result = await fetchConsentStatus();
     expect(result.data).toHaveLength(2);
-    expect(result.data[0].channel).toBe('sms');
-    expect(result.data[0].percentage).toBe(95);
+    expect(result.data[0]!.channel).toBe('sms');
+    expect(result.data[0]!.percentage).toBe(95);
   });
 });

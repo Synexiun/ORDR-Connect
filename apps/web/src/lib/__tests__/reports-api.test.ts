@@ -101,7 +101,7 @@ describe('fetchReportTemplates', () => {
   it('returns API templates on success', async () => {
     const result = await fetchReportTemplates();
     expect(result).toHaveLength(1);
-    expect(result[0].type).toBe('operations');
+    expect(result[0]!.type).toBe('operations');
   });
 
   it('falls back to mockReportTemplates on API failure', async () => {

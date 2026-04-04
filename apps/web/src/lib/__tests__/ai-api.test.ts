@@ -73,7 +73,7 @@ describe('analyzeSentiment', () => {
   it('returns sentiment results on success', async () => {
     const result = await analyzeSentiment({ texts: ['token-a'] });
     expect(result.results).toHaveLength(1);
-    expect(result.results[0].label).toBe('positive');
+    expect(result.results[0]!.label).toBe('positive');
     expect(result.costCents).toBe(1);
   });
 

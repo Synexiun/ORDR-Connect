@@ -115,7 +115,7 @@ describe('fetchAuditLogs', () => {
     const result = await fetchAuditLogs();
     expect(result.events).toHaveLength(1);
     expect(result.total).toBe(1);
-    expect(result.events[0].id).toBe('evt-test-1');
+    expect(result.events[0]!.id).toBe('evt-test-1');
   });
 });
 

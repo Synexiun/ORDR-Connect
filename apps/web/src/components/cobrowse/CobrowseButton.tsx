@@ -406,7 +406,7 @@ export function CobrowseButton({
                     <Button
                       size="sm"
                       icon={<Monitor className="h-3.5 w-3.5" />}
-                      loading={session.status === 'creating'}
+                      loading={false}
                       onClick={() => {
                         void handleInitiate();
                       }}

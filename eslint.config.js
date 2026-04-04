@@ -66,6 +66,15 @@ export default tseslint.config(
     },
   },
   {
+    // Test files: relax rules that are impractical for test assertions.
+    // Non-null assertions in expect() calls are the idiomatic way to satisfy
+    // noUncheckedIndexedAccess in strict mode without bloating test logic.
+    files: ['**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  {
     ignores: [
       'dist/**',
       'node_modules/**',

@@ -82,7 +82,7 @@ describe('fetchCategories', () => {
   it('returns API categories on success', async () => {
     const result = await fetchCategories();
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cat-api-1');
+    expect(result[0]!.id).toBe('cat-api-1');
   });
 
   it('falls back to mockCategories on failure', async () => {
@@ -104,7 +104,7 @@ describe('fetchArticles', () => {
     mockGet.mockResolvedValue([API_ARTICLE]);
     const result = await fetchArticles('cat-api-1');
     expect(result).toHaveLength(1);
-    expect(result[0].slug).toBe('test-article');
+    expect(result[0]!.slug).toBe('test-article');
   });
 
   it('falls back to filtered mock articles for the category on failure', async () => {
@@ -139,7 +139,7 @@ describe('fetchArticle', () => {
   it('falls back to mock article by slug on failure', async () => {
     mockGet.mockRejectedValue(new Error('Network error'));
     // Use a slug that exists in mockArticles
-    const firstSlug = mockArticles[0].slug;
+    const firstSlug = mockArticles[0]!.slug;
     const result = await fetchArticle(firstSlug);
     expect(result).not.toBeNull();
     expect(result?.slug).toBe(firstSlug);

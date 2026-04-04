@@ -119,8 +119,8 @@ describe('getPatientQueue', () => {
     mockFetchSuccess([MOCK_QUEUE_ITEM]);
     const result = await getPatientQueue();
     expect(result).toHaveLength(1);
-    expect(result[0].tokenId).toBe('tok-q-001');
-    expect(result[0].priority).toBe('high');
+    expect(result[0]!.tokenId).toBe('tok-q-001');
+    expect(result[0]!.priority).toBe('high');
   });
 
   it('throws on non-ok response', async () => {
@@ -143,8 +143,8 @@ describe('getAppointments', () => {
     mockFetchSuccess([MOCK_APPOINTMENT]);
     const result = await getAppointments();
     expect(result).toHaveLength(1);
-    expect(result[0].type).toBe('consultation');
-    expect(result[0].status).toBe('scheduled');
+    expect(result[0]!.type).toBe('consultation');
+    expect(result[0]!.status).toBe('scheduled');
   });
 });
 
@@ -161,8 +161,8 @@ describe('getCarePlans', () => {
   it('returns care plan statuses on success', async () => {
     mockFetchSuccess([MOCK_CARE_PLAN]);
     const result = await getCarePlans();
-    expect(result[0].phase).toBe('implementation');
-    expect(result[0].completionPct).toBe(65);
+    expect(result[0]!.phase).toBe('implementation');
+    expect(result[0]!.completionPct).toBe(65);
   });
 });
 
@@ -199,8 +199,8 @@ describe('getAgentActivity', () => {
     mockFetchSuccess([MOCK_AGENT_ACTIVITY]);
     const result = await getAgentActivity();
     expect(result).toHaveLength(1);
-    expect(result[0].status).toBe('completed');
-    expect(result[0].confidence).toBe(0.92);
+    expect(result[0]!.status).toBe('completed');
+    expect(result[0]!.confidence).toBe(0.92);
   });
 
   it('throws when success=false in response body', async () => {

@@ -154,8 +154,8 @@ describe('listPayouts', () => {
     mockGet.mockResolvedValue({ success: true, data: [MOCK_PAYOUT], total: 1 });
     const result = await listPayouts();
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].status).toBe('paid');
-    expect(result.data[0].amount).toBe(1500);
+    expect(result.data[0]!.status).toBe('paid');
+    expect(result.data[0]!.amount).toBe(1500);
   });
 });
 
@@ -208,6 +208,6 @@ describe('getPartnerStats', () => {
     const result = await getPartnerStats();
     expect(result.data.monthly).toHaveLength(1);
     expect(result.data.funnel).toHaveLength(1);
-    expect(result.data.monthly[0].amountCents).toBe(180000);
+    expect(result.data.monthly[0]!.amountCents).toBe(180000);
   });
 });

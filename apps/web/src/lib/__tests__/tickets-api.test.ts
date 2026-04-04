@@ -112,7 +112,7 @@ describe('fetchTickets', () => {
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBeGreaterThan(0);
     // mockTickets has 8 entries
-    expect(result[0].id).toBe('TKT-001');
+    expect(result[0]!.id).toBe('TKT-001');
   });
 });
 

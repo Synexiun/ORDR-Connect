@@ -147,7 +147,7 @@ describe('listApiKeys', () => {
     mockGet.mockResolvedValue({ success: true, data: [MOCK_API_KEY] });
     const result = await listApiKeys();
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].keyPrefix).toBe('ordr_test_abc1');
+    expect(result.data[0]!.keyPrefix).toBe('ordr_test_abc1');
   });
 });
 
@@ -197,7 +197,7 @@ describe('listSandboxes', () => {
     mockGet.mockResolvedValue({ success: true, data: [MOCK_SANDBOX] });
     const result = await listSandboxes();
     expect(result.data).toHaveLength(1);
-    expect(result.data[0].name).toBe('Test Sandbox');
+    expect(result.data[0]!.name).toBe('Test Sandbox');
   });
 });
 

@@ -170,7 +170,7 @@ function StartWorkflowModal({ definitions, open, onClose, onStarted }: StartModa
               className="input w-full font-mono text-xs"
               value={correlationId}
               onChange={(e) => {
-                setCorrelationId(e.target.value);
+                setCorrelationId(e.target.value as ReturnType<typeof crypto.randomUUID>);
               }}
             />
             <Button
