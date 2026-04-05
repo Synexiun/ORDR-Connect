@@ -51,6 +51,7 @@ import {
   InMemorySSOClient,
   InMemorySSOConnectionStore,
   SSOManager,
+  RedisRateLimiter,
   InMemoryRateLimiter,
 } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
@@ -67,6 +68,7 @@ import {
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
 import { and, eq, gte, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
 import { MetricsRegistry } from '@ordr/observability';
+import { Redis } from 'ioredis';
 import { createApp } from './app.js';
 import { configureAuth } from './middleware/auth.js';
 import { configureAudit } from './middleware/audit.js';
@@ -1034,10 +1036,16 @@ async function bootstrap(): Promise<void> {
   // ── 7. Configure middleware ────────────────────────────────────────────
   configureAuth(jwtConfig);
 
-  // Rate limiter — InMemoryRateLimiter for single-instance deployments.
-  // Swap for RedisRateLimiter(new Redis(process.env.REDIS_URL)) in multi-instance prod.
-  configureRateLimit(new InMemoryRateLimiter());
-  console.warn('[ORDR:API] Rate limiter initialized (InMemory sliding window)');
+  // Rate limiter -- Redis-backed in production (REDIS_URL set), in-memory otherwise.
+  // RedisRateLimiter shares window state across K8s pod replicas (SOC2 CC6.6).
+  const redisUrl = process.env['REDIS_URL'];
+  if (redisUrl !== undefined && redisUrl !== '') {
+    configureRateLimit(new RedisRateLimiter(new Redis(redisUrl)));
+    console.warn('[ORDR:API] Rate limiter initialized (Redis sliding window)');
+  } else {
+    configureRateLimit(new InMemoryRateLimiter());
+    console.warn('[ORDR:API] Rate limiter initialized (InMemory -- set REDIS_URL for production)');
+  }
 
   configureEventsRoute({ jwtConfig });
 
