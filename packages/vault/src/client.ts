@@ -85,6 +85,8 @@ export class VaultClient {
         '[ORDR:VAULT] Token renewal error:',
         err instanceof Error ? err.message : 'unknown',
       );
+      // Best-effort re-auth — if this also fails, token expires and callers will throw
+      await this.authenticate().catch(() => undefined);
     }
   }
 

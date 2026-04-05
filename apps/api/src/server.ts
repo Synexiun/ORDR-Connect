@@ -154,6 +154,7 @@ function setJwtConfig(config: JwtConfig): void {
 // ---- State -----------------------------------------------------------------
 
 let limbInstance: Limb | null = null;
+let vaultClientInstance: VaultClient | null = null;
 let dbConnection: postgres.Sql | null = null;
 let kafkaProducer: Producer | null = null;
 let llmClient: LLMClient | null = null;
@@ -221,7 +222,8 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 1.5. Vault secret store ────────────────────────────────────────────
-  const vaultClient = new VaultClient();
+  vaultClientInstance = new VaultClient();
+  const vaultClient = vaultClientInstance;
   try {
     await vaultClient.authenticate();
     await initSecretStore(vaultClient, [...TRACKED_SECRET_KEYS]);
@@ -1812,7 +1814,7 @@ async function bootstrap(): Promise<void> {
           oldVersion,
         );
 
-        return runKeyRotation({
+        const result = await runKeyRotation({
           oldKekHex,
           newKekHex,
           oldVersion,
@@ -1913,6 +1915,9 @@ async function bootstrap(): Promise<void> {
             });
           },
         });
+        // Soft-delete old KEK version — retains data for 7-year audit (Rule 3), marks inactive
+        await tracker.markVersionInactive(vaultClient, 'ENCRYPTION_MASTER_KEY', oldVersion);
+        return result;
       },
 
       auditLogger: {
@@ -2570,7 +2575,15 @@ async function shutdown(signal: string): Promise<void> {
     }
   }
 
-  // 5. Close database connection pool
+  // 5. Stop Vault token renewal timer and SecretStore polling interval
+  if (vaultClientInstance !== null) {
+    vaultClientInstance.destroy();
+    console.warn('[ORDR:API] Vault client token renewal timer cleared');
+  }
+  secretStore.destroy();
+  console.warn('[ORDR:API] SecretStore polling interval cleared');
+
+  // 6. Close database connection pool
   if (dbConnection !== null) {
     try {
       await closeConnection(dbConnection);
