@@ -72,3 +72,12 @@ export {
 } from './jobs/integration-batch-sync.js';
 
 export type { IntegrationBatchSyncDeps } from './jobs/integration-batch-sync.js';
+
+export {
+  createKeyRotationCheckDefinition,
+  createKeyRotationCheckHandler,
+  KEY_ROTATION_CHECK_JOB_ID,
+  KEY_ROTATION_CHECK_CRON,
+} from './jobs/key-rotation-check.js';
+
+export type { KeyRotationCheckDeps } from './jobs/key-rotation-check.js';
