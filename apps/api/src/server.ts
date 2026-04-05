@@ -222,9 +222,17 @@ async function bootstrap(): Promise<void> {
 
   // ── 1.5. Vault secret store ────────────────────────────────────────────
   const vaultClient = new VaultClient();
-  await vaultClient.authenticate();
-  await initSecretStore(vaultClient, [...TRACKED_SECRET_KEYS]);
-  console.warn('[ORDR:API] Secret store initialized (Vault enabled:', vaultClient.isEnabled, ')');
+  try {
+    await vaultClient.authenticate();
+    await initSecretStore(vaultClient, [...TRACKED_SECRET_KEYS]);
+    console.warn('[ORDR:API] Secret store initialized (Vault enabled:', vaultClient.isEnabled, ')');
+  } catch (error: unknown) {
+    console.error(
+      '[ORDR:API] FATAL: Vault secret store initialization failed:',
+      error instanceof Error ? error.message : error,
+    );
+    process.exit(1);
+  }
 
   // ── 1.6. Hot-reload callbacks ──────────────────────────────────────────
   secretStore.onRotate('JWT_PRIVATE_KEY', (val: string) => {
