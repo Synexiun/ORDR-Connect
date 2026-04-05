@@ -121,12 +121,28 @@ export function rateLimit(tier: RateLimitTier): MiddlewareHandler<Env> {
     let config: Readonly<RateLimitConfig>;
 
     if (tier === 'agent') {
-      const agentId = c.req.param('agentId') ?? c.req.header('X-Agent-Id');
-      if (agentId !== undefined && agentId !== '') {
+      const rawAgentId = c.req.param('agentId') ?? c.req.header('X-Agent-Id');
+      // Validate agentId: max 128 chars, alphanumeric + hyphen + underscore only.
+      // Invalid values are treated as absent (falls back to write tier).
+      // CLAUDE.md Rule 4 -- all external input must be validated before use.
+      const agentId =
+        rawAgentId !== undefined &&
+        rawAgentId.length > 0 &&
+        rawAgentId.length <= 128 &&
+        /^[A-Za-z0-9_-]+$/.test(rawAgentId)
+          ? rawAgentId
+          : undefined;
+      if (agentId !== undefined) {
         key = `rl:agent:${tenantCtx.tenantId}:${agentId}`;
         config = TIER_CONFIGS.agent;
       } else {
-        // No agentId available -- fall back to write-tier bucket and limit
+        // No agentId available -- fall back to write-tier bucket and limit.
+        // This indicates a misconfigured agent route (missing :agentId in path
+        // or missing X-Agent-Id header). Log so it is observable in production.
+        const requestId = c.get('requestId');
+        console.warn(
+          `[ORDR:API] rateLimit('agent') fallback to write tier — no agentId on ${c.req.method} ${new URL(c.req.url).pathname} (requestId: ${requestId})`,
+        );
         key = `rl:write:${tenantCtx.tenantId}`;
         config = TIER_CONFIGS.write;
       }

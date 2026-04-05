@@ -15,7 +15,6 @@
  * SOC2 CC6.6 -- Rate limiting protects system availability.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import { rateLimit, configureRateLimit } from '../rate-limit.js';
@@ -80,12 +79,30 @@ function buildApp(tier: Parameters<typeof rateLimit>[0], agentIdInPath = false):
 }
 
 // ---- Tests -------------------------------------------------------------------
-// IMPORTANT: no-op test MUST run first -- limiter is null at module start.
+// IMPORTANT: The no-op test uses vi.isolateModules() to get a fresh module instance
+// with limiter === null, independent of test ordering or other describe blocks.
+// All other tests call configureRateLimit(mock) at the start of each test case.
 
 describe('rateLimit -- no-op when limiter is null', () => {
   it('passes through when configureRateLimit was not called', async () => {
-    // Do NOT call configureRateLimit here. limiter is null in this fresh module.
-    const app = buildApp('write');
+    // vi.resetModules() clears the module registry so the re-import gets a
+    // fresh module instance where limiter === null, regardless of whether
+    // other tests in this file have already called configureRateLimit().
+    vi.resetModules();
+    const { rateLimit: freshRateLimit } = (await import('../rate-limit.js')) as {
+      rateLimit: typeof rateLimit;
+    };
+    // Restore the module registry so subsequent tests get their own fresh
+    // configureRateLimit state via the top-level import.
+    vi.resetModules();
+
+    const app = new Hono<Env>();
+    app.use('*', async (c, next) => {
+      c.set('tenantContext', { tenantId: TENANT, userId: 'user-1', roles: [], permissions: [] });
+      await next();
+    });
+    app.post('/action', freshRateLimit('write'), (c) => c.json({ ok: true }));
+
     const res = await app.request('/action', { method: 'POST' });
     expect(res.status).toBe(200);
   });
@@ -170,7 +187,8 @@ describe('rateLimit -- 429 response shape', () => {
     const body = (await res.json()) as { success: boolean; error: { code: string } };
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('RATE_LIMITED');
-    expect(res.headers.get('Retry-After')).toBeTruthy();
+    const retryAfter = Number(res.headers.get('Retry-After'));
+    expect(retryAfter).toBeGreaterThan(0);
     expect(res.headers.get('X-RateLimit-Remaining')).toBe('0');
     expect(res.headers.get('X-RateLimit-Limit')).toBe('100');
   });
@@ -185,7 +203,8 @@ describe('rateLimit -- allowed response headers', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('X-RateLimit-Remaining')).toBe('42');
     expect(res.headers.get('X-RateLimit-Limit')).toBe('500');
-    expect(res.headers.get('X-RateLimit-Reset')).toBeTruthy();
+    const reset = Number(res.headers.get('X-RateLimit-Reset'));
+    expect(reset).toBeGreaterThan(Date.now() / 1000);
   });
 });
 
