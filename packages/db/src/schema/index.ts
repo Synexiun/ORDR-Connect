@@ -190,3 +190,7 @@ export {
   integrationEntityTypeEnum,
   fieldMappingDirectionEnum,
 } from './integrations.js';
+
+// Encrypted Fields + Key Rotation Jobs (Phase 55)
+export { encryptedFields } from './encrypted-fields.js';
+export { keyRotationJobs } from './key-rotation-jobs.js';

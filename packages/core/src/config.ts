@@ -12,60 +12,75 @@ import { z } from 'zod';
 // ─── Helpers ──────────────────────────────────────────────────────
 
 /** Env vars are strings — 'true'/'1' = true, everything else = false */
-const booleanFromEnv = z
-  .union([z.boolean(), z.string()])
-  .transform((val) => {
-    if (typeof val === 'boolean') return val;
-    return val === 'true' || val === '1';
-  });
+const booleanFromEnv = z.union([z.boolean(), z.string()]).transform((val) => {
+  if (typeof val === 'boolean') return val;
+  return val === 'true' || val === '1';
+});
 
 // ─── Environment Schema ───────────────────────────────────────────
 
-export const envSchema = z.object({
-  // ── General ─────────────────────────────────────────
-  NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  CORS_ORIGINS: z.string().default('http://localhost:3000'),
+export const envSchema = z
+  .object({
+    // ── General ─────────────────────────────────────────
+    NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
+    PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+    LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+    CORS_ORIGINS: z.string().default('http://localhost:3000'),
 
-  // ── Database ────────────────────────────────────────
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  DATABASE_POOL_MIN: z.coerce.number().int().min(1).default(2),
-  DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
-  DATABASE_SSL: booleanFromEnv.default(true),
+    // ── Database ────────────────────────────────────────
+    DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+    DATABASE_POOL_MIN: z.coerce.number().int().min(1).default(2),
+    DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(10),
+    DATABASE_SSL: booleanFromEnv.default(true),
 
-  // ── Redis ───────────────────────────────────────────
-  REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
-  REDIS_KEY_PREFIX: z.string().default('ordr:'),
+    // ── Redis ───────────────────────────────────────────
+    REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+    REDIS_KEY_PREFIX: z.string().default('ordr:'),
 
-  // ── Kafka ───────────────────────────────────────────
-  KAFKA_BROKERS: z.string().min(1, 'KAFKA_BROKERS is required'),
-  KAFKA_CLIENT_ID: z.string().default('ordr-connect'),
-  KAFKA_GROUP_ID: z.string().default('ordr-connect-group'),
-  KAFKA_SSL: booleanFromEnv.default(true),
+    // ── Kafka ───────────────────────────────────────────
+    KAFKA_BROKERS: z.string().min(1, 'KAFKA_BROKERS is required'),
+    KAFKA_CLIENT_ID: z.string().default('ordr-connect'),
+    KAFKA_GROUP_ID: z.string().default('ordr-connect-group'),
+    KAFKA_SSL: booleanFromEnv.default(true),
 
-  // ── Auth (secrets — NO defaults) ────────────────────
-  JWT_PRIVATE_KEY: z.string().min(1, 'JWT_PRIVATE_KEY is required'),
-  JWT_PUBLIC_KEY: z.string().min(1, 'JWT_PUBLIC_KEY is required'),
-  JWT_ACCESS_TOKEN_EXPIRY: z.string().default('15m'),
-  JWT_REFRESH_TOKEN_EXPIRY: z.string().default('7d'),
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
+    // ── Auth (secrets — NO defaults) ────────────────────
+    JWT_PRIVATE_KEY: z.string().min(1, 'JWT_PRIVATE_KEY is required'),
+    JWT_PUBLIC_KEY: z.string().min(1, 'JWT_PUBLIC_KEY is required'),
+    JWT_ACCESS_TOKEN_EXPIRY: z.string().default('15m'),
+    JWT_REFRESH_TOKEN_EXPIRY: z.string().default('7d'),
+    SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
 
-  // ── Encryption (secrets — NO defaults) ──────────────
-  ENCRYPTION_MASTER_KEY: z.string().min(1, 'ENCRYPTION_MASTER_KEY is required'),
-  HMAC_SECRET: z.string().min(1, 'HMAC_SECRET is required'),
+    // ── Encryption (secrets — NO defaults) ──────────────
+    ENCRYPTION_MASTER_KEY: z.string().min(1, 'ENCRYPTION_MASTER_KEY is required'),
+    HMAC_SECRET: z.string().min(1, 'HMAC_SECRET is required'),
 
-  // ── AI ──────────────────────────────────────────────
-  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
-  AI_MODEL: z.string().default('gpt-4o'),
-  AI_MAX_TOKENS: z.coerce.number().int().min(1).default(4096),
-  AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.1),
+    // ── AI ──────────────────────────────────────────────
+    OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
+    AI_MODEL: z.string().default('gpt-4o'),
+    AI_MAX_TOKENS: z.coerce.number().int().min(1).default(4096),
+    AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.1),
 
-  // ── Monitoring ──────────────────────────────────────
-  SENTRY_DSN: z.string().optional(),
-  OTEL_EXPORTER_ENDPOINT: z.string().optional(),
-  OTEL_SERVICE_NAME: z.string().default('ordr-connect'),
-});
+    // ── Monitoring ──────────────────────────────────────
+    SENTRY_DSN: z.string().optional(),
+    OTEL_EXPORTER_ENDPOINT: z.string().optional(),
+    OTEL_SERVICE_NAME: z.string().default('ordr-connect'),
+
+    // ── Vault (Secret Management — optional; no-op when absent) ─────
+    VAULT_ADDR: z.string().url().optional(),
+    VAULT_ROLE: z.string().min(1).optional(),
+    VAULT_MOUNT: z.string().min(1).default('secret'),
+    VAULT_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+    KEY_ROTATION_CHECK_CRON: z.string().default('0 2 * * *'),
+  })
+  .refine(
+    (data) => {
+      if (data.VAULT_ADDR !== undefined && data.VAULT_ADDR !== '') {
+        return data.VAULT_ROLE !== undefined && data.VAULT_ROLE !== '';
+      }
+      return true;
+    },
+    { message: 'VAULT_ROLE is required when VAULT_ADDR is set', path: ['VAULT_ROLE'] },
+  );
 
 // ─── Derived Type ─────────────────────────────────────────────────
 
@@ -118,6 +133,14 @@ export interface MonitoringConfig {
   readonly otelServiceName: string;
 }
 
+export interface VaultConfig {
+  readonly addr: string | undefined;
+  readonly role: string | undefined;
+  readonly mount: string;
+  readonly pollIntervalMs: number;
+  readonly keyRotationCheckCron: string;
+}
+
 export interface ParsedConfig {
   readonly nodeEnv: AppConfig['NODE_ENV'];
   readonly port: number;
@@ -130,6 +153,7 @@ export interface ParsedConfig {
   readonly encryption: EncryptionConfig;
   readonly ai: AIConfig;
   readonly monitoring: MonitoringConfig;
+  readonly vault: VaultConfig;
 }
 
 // ─── Loader ───────────────────────────────────────────────────────
@@ -183,6 +207,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       sentryDsn: parsed.SENTRY_DSN,
       otelEndpoint: parsed.OTEL_EXPORTER_ENDPOINT,
       otelServiceName: parsed.OTEL_SERVICE_NAME,
+    },
+    vault: {
+      addr: parsed.VAULT_ADDR,
+      role: parsed.VAULT_ROLE,
+      mount: parsed.VAULT_MOUNT,
+      pollIntervalMs: parsed.VAULT_POLL_INTERVAL_MS,
+      keyRotationCheckCron: parsed.KEY_ROTATION_CHECK_CRON,
     },
   };
 }
