@@ -162,7 +162,14 @@ CREATE TRIGGER workos_events_no_delete
   BEFORE DELETE ON workos_events FOR EACH ROW EXECUTE FUNCTION workos_events_immutable();
 ```
 
-Simple lookup table. No tenant scope — event IDs are globally unique from WorkOS. No RLS needed; access restricted to the API service database role via `GRANT INSERT, SELECT ON workos_events TO ordr_api_role`.
+Simple lookup table. No tenant scope — event IDs are globally unique from WorkOS. No RLS needed; access locked to the API service role only:
+
+```sql
+REVOKE ALL ON workos_events FROM PUBLIC;
+GRANT INSERT, SELECT ON workos_events TO ordr_api_role;
+```
+
+`REVOKE ALL FROM PUBLIC` must precede the GRANT to ensure no other role (migration runner, analytics connector, read-replica) inherits implicit access to this WORM tamper-guard table (Rule 3, Rule 10).
 
 ---
 
@@ -311,7 +318,7 @@ All emitted **after** DB transaction commits (best-effort). Consumers include: a
 | `eq` | `WHERE col = $value` |
 | `ne` | `WHERE col <> $value` |
 | `co` | `WHERE col ILIKE ${'%' + value + '%'}` (parameterized; no ReDoS risk with ILIKE) |
-| `sw` | `WHERE col ILIKE ${'%' + value}` |
+| `sw` | `WHERE col ILIKE ${value + '%'}` |
 | `pr` | `WHERE col IS NOT NULL` |
 
 All values are passed as Drizzle parameterized query parameters (Rule 4 — no string concatenation into SQL).
