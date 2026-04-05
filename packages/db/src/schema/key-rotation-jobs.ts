@@ -5,6 +5,13 @@
  * on multi-replica worker deployments. Stores keyset cursor for idempotent
  * resume after crash.
  *
+ * NOTE: This is a GLOBAL operations table — not tenant-scoped.
+ * The ENCRYPTION_MASTER_KEY is a single global KEK shared across all tenants
+ * (each tenant's DEK envelope is wrapped by the same KEK). Rotating it affects
+ * all `encrypted_fields` rows regardless of tenant. No tenant_id column or RLS
+ * policy is applied here by design. Access is restricted to the scheduler job
+ * running inside the trusted API process.
+ *
  * Rule 3 — WORM audit events accompany every job state change.
  * Rule 1 — Key rotation automated at ≤90 day cycle.
  */
