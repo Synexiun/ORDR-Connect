@@ -32,6 +32,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { bodyLimit } from 'hono/body-limit';
 import type { Env } from './types.js';
 import { requestId } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
@@ -141,6 +142,30 @@ export function createApp(config: AppConfig): Hono<Env> {
   // SECURITY: Hono's built-in logger logs method, path, status, duration only.
   // It does NOT log request bodies or headers (no PHI leakage).
   app.use('*', logger());
+
+  // ── 4.5. Body size limit — 1 MB application-layer enforcement (Rule 4) ──
+  // Matches NGINX ingress limit. Prevents OOM from oversized request bodies
+  // before they reach business logic. Returns 413 on excess.
+  app.use(
+    '*',
+    bodyLimit({
+      maxSize: 1 * 1024 * 1024, // 1 MB
+      onError: (c) => {
+        const requestIdValue = c.get('requestId') as string;
+        return c.json(
+          {
+            success: false as const,
+            error: {
+              code: 'PAYLOAD_TOO_LARGE' as const,
+              message: 'Request body exceeds the 1 MB limit',
+              correlationId: requestIdValue,
+            },
+          },
+          413,
+        );
+      },
+    }),
+  );
 
   // ── 5. Rate limiting — per-tenant / per-IP sliding window ───────────────
   // Returns 429 + X-RateLimit-* headers when limits are exceeded.
