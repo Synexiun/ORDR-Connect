@@ -11,7 +11,7 @@
  * Rule 3 — WORM audit events emitted by the pipeline for each batch.
  */
 
-import type { JobDefinition, JobHandler } from '../types.js';
+import type { JobDefinition, JobHandler, JobResult } from '../types.js';
 import { createCronExpression } from '../cron-parser.js';
 
 // ── Job Constants ─────────────────────────────────────────────────
@@ -75,7 +75,7 @@ export interface KeyRotationCheckDeps {
 // ── Handler Factory ───────────────────────────────────────────────
 
 export function createKeyRotationCheckHandler(deps: KeyRotationCheckDeps): JobHandler {
-  return async (): Promise<import('../types.js').JobResult> => {
+  return async (): Promise<JobResult> => {
     const startMs = Date.now();
 
     const approaching = await deps.isKeyApproachingExpiry(80);
@@ -87,7 +87,29 @@ export function createKeyRotationCheckHandler(deps: KeyRotationCheckDeps): JobHa
       };
     }
 
-    const result = await deps.runKeyRotation();
+    let result: { rowsProcessed: number };
+    try {
+      result = await deps.runKeyRotation();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'unknown error';
+      await deps.auditLogger.log({
+        tenantId: 'system',
+        eventType: 'security.key_rotation',
+        actorType: 'system',
+        actorId: 'scheduler:key-rotation-check',
+        resource: 'encryption_key',
+        resourceId: 'ENCRYPTION_MASTER_KEY',
+        action: 'rotation_check_failed',
+        details: { error: errorMessage },
+        timestamp: new Date(),
+      });
+      return {
+        success: false,
+        error: errorMessage,
+        data: {},
+        durationMs: Date.now() - startMs,
+      };
+    }
 
     await deps.auditLogger.log({
       tenantId: 'system',
