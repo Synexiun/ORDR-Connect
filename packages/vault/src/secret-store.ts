@@ -28,6 +28,10 @@ class SecretStoreImpl {
   private trackedKeys: string[] = [];
 
   async init(client: VaultClient, keys: string[]): Promise<void> {
+    if (this.pollTimer !== null) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     this.client = client;
     this.trackedKeys = keys;
 
@@ -51,7 +55,7 @@ class SecretStoreImpl {
   }
 
   private async poll(): Promise<void> {
-    if (!this.client) return;
+    if (this.client === null) return;
     for (const key of this.trackedKeys) {
       try {
         const meta = await this.client.getMetadata(key);
@@ -86,7 +90,7 @@ class SecretStoreImpl {
 
   /** Stop the polling interval. Call on process shutdown. */
   destroy(): void {
-    if (this.pollTimer) {
+    if (this.pollTimer !== null) {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
