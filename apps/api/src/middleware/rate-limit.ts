@@ -24,6 +24,7 @@
  */
 
 import { createMiddleware } from 'hono/factory';
+import type { MiddlewareHandler } from 'hono';
 import type { RateLimiter, RateLimitConfig, RateLimitResult } from '@ordr/auth';
 import type { Env } from '../types.js';
 
@@ -58,6 +59,106 @@ export const ANON_WINDOW: Readonly<RateLimitConfig> = {
   windowMs: 60_000,
   maxRequests: 200,
 } as const;
+
+// ─── Per-endpoint tier configs ────────────────────────────────────────────────
+
+/**
+ * Named rate limit tiers for per-endpoint enforcement.
+ * Applied via rateLimit(tier) after requireAuth() on individual routes.
+ *
+ * Key prefix "rl:" avoids collision with existing global keys:
+ *   api:{tenantId} -- global authenticated ceiling (rateLimitMiddleware)
+ *   auth:{ip}      -- auth endpoint brute-force protection
+ *   anon:{ip}      -- unauthenticated traffic
+ *
+ * CLAUDE.md Rule 4 -- per-endpoint + per-agent rate limiting.
+ * SOC2 CC6.6 -- Throttle abusive callers per endpoint.
+ */
+export type RateLimitTier = 'write' | 'read' | 'bulk' | 'agent';
+
+const TIER_CONFIGS: Record<RateLimitTier, Readonly<RateLimitConfig>> = {
+  /** POST/PUT/PATCH on domain data -- 100 req/min per tenant */
+  write: { windowMs: 60_000, maxRequests: 100 },
+  /** GET on domain data -- 500 req/min per tenant */
+  read: { windowMs: 60_000, maxRequests: 500 },
+  /** Exports, DSR submissions, batch imports -- 20 req/min per tenant */
+  bulk: { windowMs: 60_000, maxRequests: 20 },
+  /** Agent-runtime tool calls and decisions -- 200 req/min per tenant+agent */
+  agent: { windowMs: 60_000, maxRequests: 200 },
+} as const;
+
+/**
+ * Per-endpoint rate limit middleware factory.
+ *
+ * Usage (place after requireAuth()):
+ *   router.post('/resource', rateLimit('write'), requirePermission(...), handler)
+ *
+ * The global rateLimitMiddleware ceiling (1,000 req/min) remains in force.
+ * Per-endpoint tiers add a tighter second layer per the spec tier table.
+ *
+ * Agent tier key construction:
+ *   1. c.req.param('agentId') -- works when route path includes :agentId
+ *   2. c.req.header('X-Agent-Id') -- fallback for flat-path routes
+ *   3. Falls back to write-tier bucket (rl:write:{tenantId}) when neither present
+ *
+ * No-op when configureRateLimit() was not called (limiter === null).
+ * Route tests that skip configureRateLimit are completely unaffected.
+ */
+export function rateLimit(tier: RateLimitTier): MiddlewareHandler<Env> {
+  return createMiddleware<Env>(async (c, next) => {
+    if (limiter === null) {
+      await next();
+      return;
+    }
+
+    const tenantCtx = c.get('tenantContext');
+    if (tenantCtx === undefined) {
+      await next();
+      return;
+    }
+
+    let key: string;
+    let config: Readonly<RateLimitConfig>;
+
+    if (tier === 'agent') {
+      const agentId = c.req.param('agentId') ?? c.req.header('X-Agent-Id');
+      if (agentId !== undefined && agentId !== '') {
+        key = `rl:agent:${tenantCtx.tenantId}:${agentId}`;
+        config = TIER_CONFIGS.agent;
+      } else {
+        // No agentId available -- fall back to write-tier bucket and limit
+        key = `rl:write:${tenantCtx.tenantId}`;
+        config = TIER_CONFIGS.write;
+      }
+    } else {
+      key = `rl:${tier}:${tenantCtx.tenantId}`;
+      config = TIER_CONFIGS[tier];
+    }
+
+    const result = await limiter.check(key, config);
+
+    if (!result.allowed) {
+      const retryAfter = Math.ceil((result.resetAt.getTime() - Date.now()) / 1000);
+      const res = c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'RATE_LIMITED' as const,
+            message: 'Too many requests. Please retry after the reset period.',
+            retryAfter,
+          },
+        },
+        429,
+      );
+      applyHeaders(res.headers, config, result);
+      res.headers.set('Retry-After', String(retryAfter));
+      return res;
+    }
+
+    await next();
+    applyHeaders(c.res.headers, config, result);
+  });
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
