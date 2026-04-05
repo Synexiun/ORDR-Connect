@@ -195,7 +195,7 @@ export async function runKeyRotation(deps: KeyRotationDeps): Promise<{ rowsProce
     await deps
       .emitAudit('KEY_ROTATION_FAILED', {
         key_name: 'ENCRYPTION_MASTER_KEY',
-        rows_done: 0,
+        rows_done: rowsDone,
         reason,
       })
       .catch(() => undefined);
