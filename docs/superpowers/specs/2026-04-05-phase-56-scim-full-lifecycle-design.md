@@ -32,6 +32,18 @@ WorkOS Directory Sync ──→ WorkOS Webhook Receiver ──→ Normalizer ─
 
 Both paths converge on `SCIMHandler`. The WorkOS normalizer maps WorkOS event shapes to standard SCIM payloads/method calls. Zero logic duplication.
 
+**Method naming:** Phase 56 renames all existing `handle*` methods on `SCIMHandler` to short, verb-first names matching the table in Section 5. The mapping is:
+
+| Old name (scim.ts) | New name (handler.ts) |
+|---|---|
+| `handleCreateUser` | `createUser` |
+| `handleUpdateUser` | `updateUser` |
+| `handleDeactivateUser` | `deleteUser` (triggers deprovisioning cascade) |
+| `handleListUsers` | `listUsers` |
+| `handleGetUser` | `getUser` |
+
+Group methods (`createGroup`, `updateGroup`, `deleteGroup`, `listGroups`, `getGroup`, `patchGroup`) are new — no old names to rename. The WorkOS normalizer and SCIM router both call the new names directly. No alias or backward-compat shim is needed since `scim.ts` is being replaced wholesale by the `scim/` submodule.
+
 ---
 
 ## 3. File Structure
@@ -78,9 +90,12 @@ Add to `users` table:
 
 These fields are nullable so existing users (created before SCIM) remain valid. The unique constraint is partial (only when `scim_external_id IS NOT NULL`).
 
+**Field mapping:** The existing `SCIMUserRecord` interface in `scim.ts` has a plain `externalId` field. In the new `types.ts`, `SCIMUserRecord.externalId` is preserved as-is. `DrizzleUserStore` maps the DB column `scim_external_id` ↔ `SCIMUserRecord.externalId` in both read and write paths. The DB column name changes (`scim_external_id` is the namespaced form for future-proofing); the interface field name stays `externalId` for SCIM protocol compatibility.
+
 ### Migration 0017 — Groups
 
 ```sql
+-- Migration 0017
 CREATE TABLE groups (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   UUID NOT NULL REFERENCES tenants(id),
@@ -100,7 +115,30 @@ CREATE TABLE group_members (
 );
 ```
 
-RLS: `tenant_id = current_setting('app.current_tenant_id')::uuid` on `groups`. `group_members` inherits protection via `groups` FK.
+**RLS — `groups`:** Standard `tenant_id = current_setting('app.current_tenant_id')::uuid` policy (same pattern as all other tenant-scoped tables in `rls.ts`).
+
+**RLS — `group_members`:** PostgreSQL RLS does NOT propagate through foreign key relationships. An explicit policy is required:
+
+```sql
+CREATE POLICY "group_members_tenant_isolation" ON "group_members"
+  FOR ALL
+  USING (
+    group_id IN (
+      SELECT id FROM groups
+      WHERE tenant_id = current_setting('app.current_tenant_id')::uuid
+    )
+  );
+ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
+```
+
+Both `groups` and `group_members` must be added to `RLS_TABLES` in `packages/db/src/rls.ts`.
+
+### Migration 0016b — `directory_id` on `scim_tokens`
+
+Add to `scim_tokens` table:
+- `directory_id TEXT UNIQUE` — nullable; set when a WorkOS Directory Sync connection is established for this token's tenant
+
+This column enables webhook tenant resolution: `event.data.directory_id` → `scim_tokens.directory_id` → `scim_tokens.tenant_id`. Without it, the WorkOS webhook receiver cannot determine which tenant an event belongs to.
 
 ### Migration 0018 — WorkOS webhook idempotency
 
@@ -109,9 +147,22 @@ CREATE TABLE workos_events (
   id           TEXT PRIMARY KEY,   -- WorkOS event ID (e.g. 'evt_01...')
   processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- WORM protection (Rule 3): idempotency guard must itself be tamper-proof
+CREATE OR REPLACE FUNCTION workos_events_immutable() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'workos_events rows are immutable';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER workos_events_no_update
+  BEFORE UPDATE ON workos_events FOR EACH ROW EXECUTE FUNCTION workos_events_immutable();
+
+CREATE TRIGGER workos_events_no_delete
+  BEFORE DELETE ON workos_events FOR EACH ROW EXECUTE FUNCTION workos_events_immutable();
 ```
 
-Simple lookup table. No tenant scope — event IDs are globally unique from WorkOS.
+Simple lookup table. No tenant scope — event IDs are globally unique from WorkOS. No RLS needed; access restricted to the API service database role via `GRANT INSERT, SELECT ON workos_events TO ordr_api_role`.
 
 ---
 
@@ -149,7 +200,7 @@ Transactional full-replace ensures no partial states survive a crash mid-sync.
 
 ## 6. Deprovisioning Cascade
 
-Triggered when `SCIMHandler.deleteUser(tenantId, userId)` is called. All steps run in a **single Drizzle transaction** except Kafka emission (after commit).
+Triggered when `SCIMHandler.deleteUser(tenantId, userId)` is called (renamed from `handleDeactivateUser` — see Section 2). All steps run in a **single Drizzle transaction** except Kafka emission (after commit).
 
 **Transaction steps (atomic):**
 1. Set `users.status = 'inactive'`, `users.deactivatedAt = now()`
@@ -173,12 +224,18 @@ Triggered when `SCIMHandler.deleteUser(tenantId, userId)` is called. All steps r
 
 **Step 1 — HMAC-SHA256 verification**
 
-```
-WORKOS_WEBHOOK_SECRET from Vault (via secretStore.get('WORKOS_WEBHOOK_SECRET'))
-Expected: HMAC-SHA256(secret, rawBody) === X-WorkOS-Signature header
+```typescript
+const secret = secretStore.get('WORKOS_WEBHOOK_SECRET');
+const expected = crypto.createHmac('sha256', secret).update(rawBody).digest();
+const actual = Buffer.from(c.req.header('X-WorkOS-Signature') ?? '', 'hex');
+// crypto.timingSafeEqual is required — string equality is timing-unsafe (Rule 1, Rule 4)
+if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+  // emit audit + return 401
+}
 ```
 
 On mismatch: `401 Unauthorized` (log attempt with Rule 3 audit event `WEBHOOK_SIGNATURE_INVALID`).
+Tests must cover: valid signature passes, tampered body fails, wrong secret fails.
 
 **Step 2 — Idempotency**
 
@@ -217,7 +274,7 @@ Six new event types in the `identity` topic:
 | Event Type | Payload |
 |---|---|
 | `group.created` | `{ tenantId, groupId, displayName, externalId, source }` |
-| `group.updated` | `{ tenantId, groupId, displayName, memberCount }` |
+| `group.updated` | `{ tenantId, groupId, displayName, memberCount }` — `memberCount` is a snapshot integer captured inside the transaction before commit; no subsequent race is possible |
 | `group.deleted` | `{ tenantId, groupId, externalId }` |
 | `group.member.added` | `{ tenantId, groupId, userId, addedBy }` |
 | `group.member.removed` | `{ tenantId, groupId, userId, removedBy }` |
@@ -247,7 +304,17 @@ All emitted **after** DB transaction commits (best-effort). Consumers include: a
 
 **Error behavior:** Unknown attribute → `400 Bad Request` with SCIM error schema (`scimType: "invalidFilter"`). Invalid syntax → same.
 
-**SQL translation:** `DrizzleUserStore.list()` and `DrizzleGroupStore.list()` accept a `SCIMFilter | null` and build a Drizzle `where` clause. Only `eq` and `sw` are translated to SQL; `co` and `ne` are applied in-memory on the page result (acceptable at SCIM scale — typically <10K users per tenant).
+**SQL translation:** All 5 operators are translated to SQL to ensure correct `totalResults` pagination counts. SCIM clients (Okta, Azure AD) use `totalResults` to drive pagination; in-memory post-filtering would produce a `totalResults` higher than the actual match count, causing clients to request phantom pages indefinitely.
+
+| Operator | SQL translation |
+|---|---|
+| `eq` | `WHERE col = $value` |
+| `ne` | `WHERE col <> $value` |
+| `co` | `WHERE col ILIKE ${'%' + value + '%'}` (parameterized; no ReDoS risk with ILIKE) |
+| `sw` | `WHERE col ILIKE ${'%' + value}` |
+| `pr` | `WHERE col IS NOT NULL` |
+
+All values are passed as Drizzle parameterized query parameters (Rule 4 — no string concatenation into SQL).
 
 ---
 
@@ -255,12 +322,13 @@ All emitted **after** DB transaction commits (best-effort). Consumers include: a
 
 | Rule | How Phase 56 Satisfies It |
 |------|--------------------------|
-| Rule 1 | `WORKOS_WEBHOOK_SECRET` fetched from Vault, never hardcoded |
-| Rule 2 | SCIM tokens validated server-side; tenant derived from token, never client input; group RLS enforced |
-| Rule 3 | WORM audit events for all state changes: user deprovisioned, group created/deleted, webhook signature failures |
-| Rule 4 | All SCIM payloads validated with Zod schemas (strict mode) before handler invocation |
+| Rule 1 | `WORKOS_WEBHOOK_SECRET` fetched from Vault, never hardcoded; HMAC comparison uses `crypto.timingSafeEqual` (timing-safe) |
+| Rule 2 | SCIM tokens validated server-side; tenant derived from `scim_tokens.tenantId` via `directory_id` lookup, never from client input; explicit RLS policies on `groups` and `group_members` |
+| Rule 3 | WORM audit events for all state changes: user deprovisioned, group created/deleted, webhook signature failures; `workos_events` has WORM triggers preventing replay-guard tampering |
+| Rule 4 | All SCIM payloads validated with Zod schemas (strict mode) before handler invocation; all filter operators translated to parameterized SQL (no string concatenation) |
 | Rule 5 | `WORKOS_WEBHOOK_SECRET` in Vault, rotated on schedule |
-| Rule 6 | No PHI in Kafka payloads, no PHI in audit event details; user record retained (not deleted) on deprovisioning |
+| Rule 6 | No PHI in Kafka payloads, no PHI in audit event details; user record retained (not deleted) on deprovisioning — cryptographic erasure for Right to Erasure |
+| Rule 8 | No new runtime dependencies introduced; all existing pinned-version constraints inherited |
 
 ---
 
@@ -268,7 +336,7 @@ All emitted **after** DB transaction commits (best-effort). Consumers include: a
 
 - **Unit tests** (`packages/auth/src/scim/__tests__/`): all 10 handler operations, all 5 filter operators, all 8 WorkOS event normalization paths, all three Drizzle stores CRUD + idempotency
 - **Integration test** (`apps/api/src/__tests__/webhooks-workos.test.ts`): HMAC verification pass/fail, duplicate event guard, event dispatch to normalizer
-- **Coverage target:** 80% line (Rule 5 compliance gate); 100% on deprovisioning cascade and HMAC verification paths (security-sensitive per Rule 5 gate)
+- **Coverage target:** 80% line (Compliance Gate item 5); 100% on deprovisioning cascade and HMAC verification paths (security-sensitive per Compliance Gate item 5)
 - **No PHI in test fixtures** — use synthetic IDs and display names throughout
 
 ---
@@ -280,4 +348,4 @@ All emitted **after** DB transaction commits (best-effort). Consumers include: a
 | WorkOS direct only vs. both paths? | Both — SCIM server for direct IdP integrations; WorkOS webhooks for managed Directory Sync |
 | Drizzle stores or in-memory for Phase 56? | Drizzle stores — Phase 56 is the persistence phase |
 | Delete groups or soft-delete? | Hard delete (CASCADE on group_members) — group membership is transient; audit event provides the trail |
-| Filter: SQL or in-memory? | `eq`/`sw` → SQL; `co`/`ne` → in-memory post-fetch (acceptable at tenant scale) |
+| Filter: SQL or in-memory? | All operators → SQL (ILIKE for `co`/`sw`, `<>` for `ne`, `IS NOT NULL` for `pr`) — required for correct `totalResults` pagination |
