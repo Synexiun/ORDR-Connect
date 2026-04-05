@@ -35,6 +35,7 @@
     "@ordr/observability": "workspace:*",
     "@ordr/realtime": "workspace:*",
     "@ordr/scheduler": "workspace:*",
+    "@ordr/vault": "workspace:*",
     "@ordr/sdk": "workspace:*",
     "@ordr/search": "workspace:*",
     "@ordr/security": "workspace:*",

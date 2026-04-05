@@ -66,7 +66,7 @@ import {
   InMemoryCounterStore,
 } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
-import { and, eq, gte, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
+import { and, eq, gt, gte, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
 import { MetricsRegistry } from '@ordr/observability';
 import { Redis } from 'ioredis';
 import { createApp } from './app.js';
@@ -126,7 +126,30 @@ import { JobScheduler, InMemorySchedulerStore, DrizzleSchedulerStore } from '@or
 import { SalesforceAdapter, HubSpotAdapter } from '@ordr/integrations';
 import type { CRMAdapter } from './routes/integrations.js';
 import { UsageTracker, InMemoryUsageStore, DrizzleUsageStore } from '@ordr/billing';
+import { VaultClient, initSecretStore, secretStore, KeyRotationTracker } from '@ordr/vault';
+import { createKeyRotationCheckDefinition, createKeyRotationCheckHandler } from '@ordr/scheduler';
+import type { KeyRotationCheckDeps } from '@ordr/scheduler';
+import { runKeyRotation } from './jobs/key-rotation.js';
 import type postgres from 'postgres';
+
+// ---- Vault secret keys -----------------------------------------------------
+
+/** Secrets that must be loaded from Vault and hot-reloaded on rotation. */
+const TRACKED_SECRET_KEYS = [
+  'JWT_PRIVATE_KEY',
+  'ENCRYPTION_MASTER_KEY',
+  'STRIPE_SECRET_KEY',
+  'TWILIO_AUTH_TOKEN',
+  'SENDGRID_API_KEY',
+  'OPENAI_API_KEY',
+] as const;
+
+// Module-level — allows JWT config to be hot-swapped on Vault rotation
+let activeJwtConfig: JwtConfig | null = null;
+
+function setJwtConfig(config: JwtConfig): void {
+  activeJwtConfig = config;
+}
 
 // ---- State -----------------------------------------------------------------
 
@@ -196,6 +219,50 @@ async function bootstrap(): Promise<void> {
     console.error('[ORDR:API] FATAL: Configuration validation failed:', error);
     process.exit(1);
   }
+
+  // ── 1.5. Vault secret store ────────────────────────────────────────────
+  const vaultClient = new VaultClient();
+  await vaultClient.authenticate();
+  await initSecretStore(vaultClient, [...TRACKED_SECRET_KEYS]);
+  console.warn('[ORDR:API] Secret store initialized (Vault enabled:', vaultClient.isEnabled, ')');
+
+  // ── 1.6. Hot-reload callbacks ──────────────────────────────────────────
+  secretStore.onRotate('JWT_PRIVATE_KEY', (val: string) => {
+    console.warn('[ORDR:API] JWT_PRIVATE_KEY rotated — reloading key pair');
+    void loadKeyPair(val, config.auth.jwtPublicKey, {
+      issuer: 'ordr-connect',
+      audience: 'ordr-connect',
+    })
+      .then(setJwtConfig)
+      .catch((err: unknown) => {
+        console.error(
+          '[ORDR:API] JWT_PRIVATE_KEY rotation failed:',
+          err instanceof Error ? err.message : err,
+        );
+      });
+  });
+
+  secretStore.onRotate('ENCRYPTION_MASTER_KEY', (_val: string) => {
+    console.warn(
+      '[ORDR:API] ENCRYPTION_MASTER_KEY rotated — pod restart recommended for full re-init',
+    );
+  });
+
+  secretStore.onRotate('STRIPE_SECRET_KEY', (_val: string) => {
+    console.warn('[ORDR:API] STRIPE_SECRET_KEY rotated — pod restart recommended');
+  });
+
+  secretStore.onRotate('TWILIO_AUTH_TOKEN', (_val: string) => {
+    console.warn('[ORDR:API] TWILIO_AUTH_TOKEN rotated — pod restart recommended');
+  });
+
+  secretStore.onRotate('SENDGRID_API_KEY', (_val: string) => {
+    console.warn('[ORDR:API] SENDGRID_API_KEY rotated — pod restart recommended');
+  });
+
+  secretStore.onRotate('OPENAI_API_KEY', (_val: string) => {
+    console.warn('[ORDR:API] OPENAI_API_KEY rotated — pod restart recommended');
+  });
 
   // ── 2. Database connection ─────────────────────────────────────────────
   let db: ReturnType<typeof createDrizzle> | null = null;
@@ -1021,9 +1088,8 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 6. JWT key pair ────────────────────────────────────────────────────
-  let jwtConfig: JwtConfig;
   try {
-    jwtConfig = await loadKeyPair(config.auth.jwtPrivateKey, config.auth.jwtPublicKey, {
+    activeJwtConfig = await loadKeyPair(config.auth.jwtPrivateKey, config.auth.jwtPublicKey, {
       issuer: 'ordr-connect',
       audience: 'ordr-connect',
     });
@@ -1034,7 +1100,7 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 7. Configure middleware ────────────────────────────────────────────
-  configureAuth(jwtConfig);
+  configureAuth(activeJwtConfig);
 
   // Rate limiter -- Redis-backed in production (REDIS_URL set), in-memory otherwise.
   // RedisRateLimiter shares window state across K8s pod replicas (SOC2 CC6.6).
@@ -1051,13 +1117,13 @@ async function bootstrap(): Promise<void> {
     console.warn('[ORDR:API] Rate limiter initialized (InMemory -- set REDIS_URL for production)');
   }
 
-  configureEventsRoute({ jwtConfig });
+  configureEventsRoute({ jwtConfig: activeJwtConfig });
 
   // ── 7.1. Developer portal routes ──────────────────────────────────────
   // db is non-null here — process.exit(1) in step 2 catch ensures it.
   // jwtConfig is available from step 6.
   configureDeveloperRoutes({
-    jwtConfig,
+    jwtConfig: activeJwtConfig,
     auditLogger,
 
     findDeveloperByEmail: async (email) => {
@@ -1612,7 +1678,7 @@ async function bootstrap(): Promise<void> {
   configureRealtimeRoutes({
     channelManager,
     publisher: new EventPublisher(channelManager, realtimeAuditLogger),
-    jwtConfig,
+    jwtConfig: activeJwtConfig,
   });
   console.warn('[ORDR:API] Realtime routes configured');
 
@@ -1714,6 +1780,156 @@ async function bootstrap(): Promise<void> {
   console.warn(
     `[ORDR:API] Scheduler routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
   );
+
+  // ── Key Rotation Check job (Phase 55) ─────────────────────────────────
+  {
+    const tracker = new KeyRotationTracker();
+
+    const keyRotationDeps: KeyRotationCheckDeps = {
+      isKeyApproachingExpiry: (thresholdDays: number) =>
+        tracker.isApproachingExpiry(vaultClient, 'ENCRYPTION_MASTER_KEY', thresholdDays),
+
+      runKeyRotation: async () => {
+        const meta = await vaultClient.getMetadata('ENCRYPTION_MASTER_KEY');
+        const oldVersion = meta.version;
+
+        const { version: newVersion, value: newKekHex } = await tracker.requestNewVersion(
+          vaultClient,
+          'ENCRYPTION_MASTER_KEY',
+        );
+
+        const oldKekHex = await tracker.getVersion(
+          vaultClient,
+          'ENCRYPTION_MASTER_KEY',
+          oldVersion,
+        );
+
+        return runKeyRotation({
+          oldKekHex,
+          newKekHex,
+          oldVersion,
+          newVersion,
+          pageSize: 500,
+
+          findActiveJob: async (keyName) => {
+            const rows = await db
+              .select({ id: schema.keyRotationJobs.id })
+              .from(schema.keyRotationJobs)
+              .where(
+                and(
+                  eq(schema.keyRotationJobs.keyName, keyName),
+                  eq(schema.keyRotationJobs.status, 'running'),
+                ),
+              )
+              .limit(1);
+            return rows[0] ?? null;
+          },
+
+          insertJob: async (params) => {
+            const [row] = await db
+              .insert(schema.keyRotationJobs)
+              .values({
+                keyName: params.keyName,
+                oldVersion: params.oldVersion,
+                newVersion: params.newVersion,
+              })
+              .returning({ id: schema.keyRotationJobs.id });
+            if (row === undefined)
+              throw new Error('[ORDR:VAULT] Failed to insert key_rotation_jobs row');
+            return row.id;
+          },
+
+          updateJobCursor: async (jobId, lastProcessedId, rowsDone) => {
+            await db
+              .update(schema.keyRotationJobs)
+              .set({ lastProcessedId, rowsDone })
+              .where(eq(schema.keyRotationJobs.id, jobId));
+          },
+
+          completeJob: async (jobId) => {
+            await db
+              .update(schema.keyRotationJobs)
+              .set({ status: 'completed', completedAt: new Date() })
+              .where(eq(schema.keyRotationJobs.id, jobId));
+          },
+
+          failJob: async (jobId) => {
+            await db
+              .update(schema.keyRotationJobs)
+              .set({ status: 'failed', completedAt: new Date() })
+              .where(eq(schema.keyRotationJobs.id, jobId));
+          },
+
+          getPage: async (lastProcessedId, limit) => {
+            if (lastProcessedId !== null) {
+              return db
+                .select({
+                  id: schema.encryptedFields.id,
+                  dek_envelope: schema.encryptedFields.dekEnvelope,
+                })
+                .from(schema.encryptedFields)
+                .where(gt(schema.encryptedFields.id, lastProcessedId))
+                .orderBy(schema.encryptedFields.id)
+                .limit(limit);
+            }
+            return db
+              .select({
+                id: schema.encryptedFields.id,
+                dek_envelope: schema.encryptedFields.dekEnvelope,
+              })
+              .from(schema.encryptedFields)
+              .orderBy(schema.encryptedFields.id)
+              .limit(limit);
+          },
+
+          updateRows: async (updates) => {
+            for (const { id, dek_envelope } of updates) {
+              await db
+                .update(schema.encryptedFields)
+                .set({ dekEnvelope: dek_envelope })
+                .where(eq(schema.encryptedFields.id, id));
+            }
+          },
+
+          emitAudit: async (eventType: string, details: Record<string, unknown>): Promise<void> => {
+            await auditLogger.log({
+              tenantId: 'system',
+              eventType: eventType as import('@ordr/audit').AuditEventType,
+              actorType: 'system',
+              actorId: 'scheduler:key-rotation-check',
+              resource: 'encryption_key',
+              resourceId: 'ENCRYPTION_MASTER_KEY',
+              action: eventType,
+              details,
+              timestamp: new Date(),
+            });
+          },
+        });
+      },
+
+      auditLogger: {
+        log: async (event): Promise<void> => {
+          await auditLogger.log({
+            tenantId: event.tenantId,
+            eventType: event.eventType as import('@ordr/audit').AuditEventType,
+            actorType: event.actorType as import('@ordr/audit').ActorType,
+            actorId: event.actorId,
+            resource: event.resource,
+            resourceId: event.resourceId,
+            action: event.action,
+            details: event.details,
+            timestamp: event.timestamp,
+          });
+        },
+      },
+    };
+
+    await jobScheduler.registerJob(
+      createKeyRotationCheckDefinition(),
+      createKeyRotationCheckHandler(keyRotationDeps),
+    );
+    console.warn('[ORDR:API] Key rotation check job registered');
+  }
 
   // ── P6.5b. DSR Routes (GDPR Art. 12, 15, 17, 20) ────────────────────────
   {
