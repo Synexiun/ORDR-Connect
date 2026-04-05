@@ -290,7 +290,7 @@ marketplaceRouter.get('/:agentId', requireAuth(), async (c) => {
 
 // ─── POST / — Publish new agent (developer auth) ────────────────
 
-marketplaceRouter.post('/', requireAuth(), async (c) => {
+marketplaceRouter.post('/', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
   const requestId = c.get('requestId');
@@ -352,7 +352,7 @@ marketplaceRouter.post('/', requireAuth(), async (c) => {
 
 // ─── PUT /:agentId — Update listing (owner only) ────────────────
 
-marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
+marketplaceRouter.put('/:agentId', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
   const requestId = c.get('requestId');

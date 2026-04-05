@@ -457,55 +457,60 @@ customersRouter.patch(
 
 // ---- DELETE /:id — soft delete customer ------------------------------------
 
-customersRouter.delete('/:id', requirePermissionMiddleware('customers', 'delete'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
+customersRouter.delete(
+  '/:id',
+  rateLimit('write'),
+  requirePermissionMiddleware('customers', 'delete'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const customerId = c.req.param('id');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const customerId = c.req.param('id');
 
-  // Check existence (tenant-isolated)
-  const existing = await deps.findCustomerById(ctx.tenantId, customerId);
-  if (!existing) {
-    throw new NotFoundError('Customer not found', requestId);
-  }
+    // Check existence (tenant-isolated)
+    const existing = await deps.findCustomerById(ctx.tenantId, customerId);
+    if (!existing) {
+      throw new NotFoundError('Customer not found', requestId);
+    }
 
-  // Soft delete (set status = inactive)
-  const deleted = await deps.softDeleteCustomer(ctx.tenantId, customerId);
-  if (!deleted) {
-    throw new NotFoundError('Customer not found', requestId);
-  }
+    // Soft delete (set status = inactive)
+    const deleted = await deps.softDeleteCustomer(ctx.tenantId, customerId);
+    if (!deleted) {
+      throw new NotFoundError('Customer not found', requestId);
+    }
 
-  // Audit log
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.deleted',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'customers',
-    resourceId: customerId,
-    action: 'soft_delete',
-    details: {},
-    timestamp: new Date(),
-  });
+    // Audit log
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.deleted',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'customers',
+      resourceId: customerId,
+      action: 'soft_delete',
+      details: {},
+      timestamp: new Date(),
+    });
 
-  // Publish domain event
-  const event = createEventEnvelope(
-    'customer.deleted',
-    ctx.tenantId,
-    { customerId, changes: {} },
-    {
-      correlationId: requestId,
-      userId: ctx.userId,
-      source: 'api',
-    },
-  );
+    // Publish domain event
+    const event = createEventEnvelope(
+      'customer.deleted',
+      ctx.tenantId,
+      { customerId, changes: {} },
+      {
+        correlationId: requestId,
+        userId: ctx.userId,
+        source: 'api',
+      },
+    );
 
-  await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
-    console.error('[ORDR:API] Failed to publish customer.deleted event:', err);
-  });
+    await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
+      console.error('[ORDR:API] Failed to publish customer.deleted event:', err);
+    });
 
-  return c.json({ success: true as const }, 200);
-});
+    return c.json({ success: true as const }, 200);
+  },
+);
 
 export { customersRouter };
