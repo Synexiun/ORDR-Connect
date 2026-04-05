@@ -65,6 +65,9 @@ export interface KeyRotationDeps {
   /** Marks the job as completed */
   completeJob(jobId: string): Promise<void>;
 
+  /** Marks the job as failed */
+  failJob(jobId: string): Promise<void>;
+
   /** Fetch next page of encrypted_fields rows using keyset cursor */
   getPage(
     lastProcessedId: string | null,
@@ -86,7 +89,9 @@ export async function runKeyRotation(deps: KeyRotationDeps): Promise<{ rowsProce
   // 1. Concurrency guard
   const existing = await deps.findActiveJob('ENCRYPTION_MASTER_KEY');
   if (existing !== null) {
-    console.warn('[ORDR:ROTATION] KEY_ROTATION_ALREADY_RUNNING — skipping');
+    await deps.emitAudit('KEY_ROTATION_SKIPPED_CONCURRENT', {
+      key_name: 'ENCRYPTION_MASTER_KEY',
+    });
     return { rowsProcessed: 0 };
   }
 
@@ -97,81 +102,103 @@ export async function runKeyRotation(deps: KeyRotationDeps): Promise<{ rowsProce
     newVersion,
   });
 
-  await deps.emitAudit('KEY_ROTATION_STARTED', {
-    key_name: 'ENCRYPTION_MASTER_KEY',
-    old_version: oldVersion,
-    new_version: newVersion,
-  });
-
-  // 3. Construct re-wrapper ONCE before the loop — validates KEK length upfront.
-  //    The old KEK is needed to unwrap existing DEKs; the new KEK buffer is used
-  //    to re-wrap them. Neither raw key material is ever passed to emitAudit.
-  const rewrapper = new EnvelopeEncryption(Buffer.from(oldKekHex, 'hex'), String(oldVersion));
-  const newKekBuf = Buffer.from(newKekHex, 'hex');
-
-  let lastProcessedId: string | null = null;
   let rowsDone = 0;
-  let pageIndex = 0;
-  const startMs = Date.now();
 
-  // 4. Keyset-paginated re-wrap loop
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  while (true) {
-    const page = await deps.getPage(lastProcessedId, pageSize);
-    if (page.length === 0) break;
-
-    const updates: Array<{ id: string; dek_envelope: EncryptedEnvelope }> = [];
-    let rowsInPage = 0;
-
-    for (const row of page) {
-      // Per-row validation — invalid envelopes are skipped, not crash-aborted
-      if (!isValidEnvelope(row.dek_envelope)) {
-        await deps.emitAudit('KEY_ROTATION_ROW_ERROR', {
-          row_id: row.id,
-          reason: 'invalid_envelope_shape',
-        });
-        continue;
-      }
-
-      const rewrapped = rewrapper.rewrap(row.dek_envelope, newKekBuf, String(newVersion));
-      updates.push({ id: row.id, dek_envelope: rewrapped });
-      rowsInPage++;
-    }
-
-    // Write page + update cursor atomically
-    if (updates.length > 0) {
-      await deps.updateRows(updates);
-    }
-
-    // page.length > 0 is guaranteed (we break on empty pages above), so the
-    // non-null assertion here is safe and avoids the unnecessary-condition lint error.
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    lastProcessedId = page.at(-1)!.id;
-    rowsDone += rowsInPage;
-    await deps.updateJobCursor(jobId, lastProcessedId, rowsDone);
-
-    await deps.emitAudit('KEY_ROTATION_BATCH_COMPLETED', {
-      page_index: pageIndex,
-      rows_in_page: rowsInPage,
-      rows_done: rowsDone,
+  try {
+    await deps.emitAudit('KEY_ROTATION_STARTED', {
+      key_name: 'ENCRYPTION_MASTER_KEY',
+      old_version: oldVersion,
+      new_version: newVersion,
     });
 
-    pageIndex++;
+    // 3. Construct re-wrapper ONCE before the loop — validates KEK length upfront.
+    //    The old KEK is needed to unwrap existing DEKs; the new KEK buffer is used
+    //    to re-wrap them. Neither raw key material is ever passed to emitAudit.
+    const rewrapper = new EnvelopeEncryption(Buffer.from(oldKekHex, 'hex'), String(oldVersion));
+    const newKekBuf = Buffer.from(newKekHex, 'hex');
 
-    // If we got fewer rows than pageSize, we've reached the end
-    if (page.length < pageSize) break;
+    let lastProcessedId: string | null = null;
+    let pageIndex = 0;
+    const startMs = Date.now();
+
+    // 4. Keyset-paginated re-wrap loop
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    while (true) {
+      const page = await deps.getPage(lastProcessedId, pageSize);
+      if (page.length === 0) break;
+
+      const updates: Array<{ id: string; dek_envelope: EncryptedEnvelope }> = [];
+      let rowsInPage = 0;
+
+      for (const row of page) {
+        // Per-row validation — invalid envelopes are skipped, not crash-aborted
+        if (!isValidEnvelope(row.dek_envelope)) {
+          await deps.emitAudit('KEY_ROTATION_ROW_ERROR', {
+            row_id: row.id,
+            reason: 'invalid_envelope_shape',
+          });
+          continue;
+        }
+
+        const rewrapped = rewrapper.rewrap(row.dek_envelope, newKekBuf, String(newVersion));
+        updates.push({ id: row.id, dek_envelope: rewrapped });
+        rowsInPage++;
+      }
+
+      // If a full page returned zero valid rows, abort to prevent a runaway loop
+      if (rowsInPage === 0 && page.length >= pageSize) {
+        throw new Error(
+          `[ORDR:ROTATION] Full page of invalid envelopes at page ${pageIndex} — aborting rotation`,
+        );
+      }
+
+      // Write page + update cursor atomically
+      if (updates.length > 0) {
+        await deps.updateRows(updates);
+      }
+
+      // page.length > 0 is guaranteed (we break on empty pages above), so the
+      // non-null assertion here is safe and avoids the unnecessary-condition lint error.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      lastProcessedId = page.at(-1)!.id;
+      rowsDone += rowsInPage;
+      await deps.updateJobCursor(jobId, lastProcessedId, rowsDone);
+
+      await deps.emitAudit('KEY_ROTATION_BATCH_COMPLETED', {
+        page_index: pageIndex,
+        rows_in_page: rowsInPage,
+        rows_done: rowsDone,
+      });
+
+      pageIndex++;
+
+      // If we got fewer rows than pageSize, we've reached the end
+      if (page.length < pageSize) break;
+    }
+
+    // 5. Complete job
+    await deps.completeJob(jobId);
+
+    await deps.emitAudit('KEY_ROTATION_COMPLETED', {
+      key_name: 'ENCRYPTION_MASTER_KEY',
+      old_version: oldVersion,
+      new_version: newVersion,
+      rows_processed: rowsDone,
+      duration_ms: Date.now() - startMs,
+    });
+
+    return { rowsProcessed: rowsDone };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'unknown error';
+    // Best-effort: don't let failJob/emitAudit throw hide the original error
+    await deps.failJob(jobId).catch(() => undefined);
+    await deps
+      .emitAudit('KEY_ROTATION_FAILED', {
+        key_name: 'ENCRYPTION_MASTER_KEY',
+        rows_done: 0,
+        reason,
+      })
+      .catch(() => undefined);
+    throw err;
   }
-
-  // 5. Complete job
-  await deps.completeJob(jobId);
-
-  await deps.emitAudit('KEY_ROTATION_COMPLETED', {
-    key_name: 'ENCRYPTION_MASTER_KEY',
-    old_version: oldVersion,
-    new_version: newVersion,
-    rows_processed: rowsDone,
-    duration_ms: Date.now() - startMs,
-  });
-
-  return { rowsProcessed: rowsDone };
 }

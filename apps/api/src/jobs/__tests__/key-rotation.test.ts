@@ -74,6 +74,11 @@ function makeTestDeps(rows: Array<{ id: string; dek_envelope: unknown }>) {
       if (job !== undefined) job.status = 'completed';
       return Promise.resolve();
     }),
+    failJob: vi.fn((jobId: string) => {
+      const job = db.jobs.find((j) => j.id === jobId);
+      if (job !== undefined) job.status = 'failed';
+      return Promise.resolve();
+    }),
     getPage: vi.fn((lastId: string | null, limit: number) => {
       const start = lastId !== null ? db.rows.findIndex((r) => r.id === lastId) + 1 : 0;
       return Promise.resolve(db.rows.slice(start, start + limit));
@@ -147,5 +152,34 @@ describe('runKeyRotation — per-row validation', () => {
     expect(result.rowsProcessed).toBe(1);
     expect(deps.auditEvents).toContain('KEY_ROTATION_ROW_ERROR');
     expect(deps.auditEvents).toContain('KEY_ROTATION_COMPLETED');
+  });
+});
+
+describe('runKeyRotation — multi-page', () => {
+  it('paginates correctly across two pages', async () => {
+    // Create 3 rows — with pageSize=2, should produce 2 pages
+    const rows = [
+      { id: 'row-1', dek_envelope: makeValidEnvelope('1') },
+      { id: 'row-2', dek_envelope: makeValidEnvelope('1') },
+      { id: 'row-3', dek_envelope: makeValidEnvelope('1') },
+    ];
+
+    const deps = makeTestDeps(rows);
+    // Override pageSize to 2 so we get 2 pages
+    const result = await runKeyRotation({ ...deps, pageSize: 2 } as never);
+
+    expect(result.rowsProcessed).toBe(3);
+    // getPage called twice (page 1: rows 1-2, page 2: row 3)
+    expect(deps.getPage).toHaveBeenCalledTimes(2);
+    // Cursor updated after each page
+    expect(deps.updateJobCursor).toHaveBeenCalledTimes(2);
+    // Batch completed twice
+    const batchEvents = deps.auditEvents.filter((e) => e === 'KEY_ROTATION_BATCH_COMPLETED');
+    expect(batchEvents).toHaveLength(2);
+    // All rows have new keyVersion
+    for (const row of deps.db.rows) {
+      const env = row.dek_envelope as { keyVersion: string };
+      expect(env.keyVersion).toBe('2');
+    }
   });
 });
