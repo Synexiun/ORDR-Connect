@@ -24,6 +24,7 @@ import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
 import { quotaGate } from '../middleware/plan-gate.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ---- PII fields that require field-level encryption -------------------------
 
@@ -180,90 +181,101 @@ customersRouter.use('*', requireAuth());
 
 // ---- GET / — list customers (paginated, filtered) --------------------------
 
-customersRouter.get('/', requirePermissionMiddleware('customers', 'read'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
+customersRouter.get(
+  '/',
+  rateLimit('read'),
+  requirePermissionMiddleware('customers', 'read'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  // Parse and validate query params
-  const queryParsed = listQuerySchema.safeParse({
-    page: c.req.query('page'),
-    pageSize: c.req.query('pageSize'),
-    status: c.req.query('status'),
-    type: c.req.query('type'),
-    lifecycleStage: c.req.query('lifecycleStage'),
-    search: c.req.query('search'),
-  });
+    // Parse and validate query params
+    const queryParsed = listQuerySchema.safeParse({
+      page: c.req.query('page'),
+      pageSize: c.req.query('pageSize'),
+      status: c.req.query('status'),
+      type: c.req.query('type'),
+      lifecycleStage: c.req.query('lifecycleStage'),
+      search: c.req.query('search'),
+    });
 
-  if (!queryParsed.success) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of queryParsed.error.issues) {
-      const field = issue.path.join('.');
-      const existing = fieldErrors[field];
-      if (existing) {
-        existing.push(issue.message);
-      } else {
-        fieldErrors[field] = [issue.message];
+    if (!queryParsed.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      for (const issue of queryParsed.error.issues) {
+        const field = issue.path.join('.');
+        const existing = fieldErrors[field];
+        if (existing) {
+          existing.push(issue.message);
+        } else {
+          fieldErrors[field] = [issue.message];
+        }
       }
+      throw new ValidationError('Invalid query parameters', fieldErrors, requestId);
     }
-    throw new ValidationError('Invalid query parameters', fieldErrors, requestId);
-  }
 
-  const filters = queryParsed.data;
-  const result = await deps.listCustomers(ctx.tenantId, {
-    page: filters.page,
-    pageSize: filters.pageSize,
-    ...(filters.status !== undefined ? { status: filters.status } : {}),
-    ...(filters.type !== undefined ? { type: filters.type } : {}),
-    ...(filters.lifecycleStage !== undefined ? { lifecycleStage: filters.lifecycleStage } : {}),
-    ...(filters.search !== undefined ? { search: filters.search } : {}),
-  });
-
-  // Decrypt PII fields for authorized users
-
-  const d = deps;
-  const decryptedData = result.data.map((record) => decryptCustomer(record, d.fieldEncryptor));
-
-  return c.json({
-    success: true as const,
-    data: decryptedData,
-    pagination: {
+    const filters = queryParsed.data;
+    const result = await deps.listCustomers(ctx.tenantId, {
       page: filters.page,
       pageSize: filters.pageSize,
-      total: result.total,
-      totalPages: Math.ceil(result.total / filters.pageSize),
-    },
-  });
-});
+      ...(filters.status !== undefined ? { status: filters.status } : {}),
+      ...(filters.type !== undefined ? { type: filters.type } : {}),
+      ...(filters.lifecycleStage !== undefined ? { lifecycleStage: filters.lifecycleStage } : {}),
+      ...(filters.search !== undefined ? { search: filters.search } : {}),
+    });
+
+    // Decrypt PII fields for authorized users
+
+    const d = deps;
+    const decryptedData = result.data.map((record) => decryptCustomer(record, d.fieldEncryptor));
+
+    return c.json({
+      success: true as const,
+      data: decryptedData,
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: result.total,
+        totalPages: Math.ceil(result.total / filters.pageSize),
+      },
+    });
+  },
+);
 
 // ---- GET /:id — get single customer ----------------------------------------
 
-customersRouter.get('/:id', requirePermissionMiddleware('customers', 'read'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
+customersRouter.get(
+  '/:id',
+  rateLimit('read'),
+  requirePermissionMiddleware('customers', 'read'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const customerId = c.req.param('id');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const customerId = c.req.param('id');
 
-  const customer = await deps.findCustomerById(ctx.tenantId, customerId);
-  if (!customer) {
-    throw new NotFoundError('Customer not found', requestId);
-  }
+    const customer = await deps.findCustomerById(ctx.tenantId, customerId);
+    if (!customer) {
+      throw new NotFoundError('Customer not found', requestId);
+    }
 
-  // Decrypt PII
-  const decrypted = decryptCustomer(customer, deps.fieldEncryptor);
+    // Decrypt PII
+    const decrypted = decryptCustomer(customer, deps.fieldEncryptor);
 
-  return c.json({
-    success: true as const,
-    data: decrypted,
-  });
-});
+    return c.json({
+      success: true as const,
+      data: decrypted,
+    });
+  },
+);
 
 // ---- POST / — create customer ----------------------------------------------
 
 customersRouter.post(
   '/',
+  rateLimit('write'),
   requirePermissionMiddleware('customers', 'create'),
   quotaGate('contacts'),
   async (c) => {
@@ -350,93 +362,98 @@ customersRouter.post(
 
 // ---- PATCH /:id — update customer ------------------------------------------
 
-customersRouter.patch('/:id', requirePermissionMiddleware('customers', 'update'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
+customersRouter.patch(
+  '/:id',
+  rateLimit('write'),
+  requirePermissionMiddleware('customers', 'update'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Customer routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const customerId = c.req.param('id');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const customerId = c.req.param('id');
 
-  // Validate input
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = updateCustomerSchema.safeParse(body);
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path.join('.');
-      const existing = fieldErrors[field];
-      if (existing) {
-        existing.push(issue.message);
-      } else {
-        fieldErrors[field] = [issue.message];
+    // Validate input
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateCustomerSchema.safeParse(body);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path.join('.');
+        const existing = fieldErrors[field];
+        if (existing) {
+          existing.push(issue.message);
+        } else {
+          fieldErrors[field] = [issue.message];
+        }
       }
+      throw new ValidationError('Invalid customer data', fieldErrors, requestId);
     }
-    throw new ValidationError('Invalid customer data', fieldErrors, requestId);
-  }
 
-  // Check that customer exists (tenant-isolated)
-  const existing = await deps.findCustomerById(ctx.tenantId, customerId);
-  if (!existing) {
-    throw new NotFoundError('Customer not found', requestId);
-  }
+    // Check that customer exists (tenant-isolated)
+    const existing = await deps.findCustomerById(ctx.tenantId, customerId);
+    if (!existing) {
+      throw new NotFoundError('Customer not found', requestId);
+    }
 
-  // Encrypt changed PII fields
-  const updateData = parsed.data as unknown as Record<string, unknown>;
-  const encryptedData = encryptPiiFields(updateData, deps.fieldEncryptor);
+    // Encrypt changed PII fields
+    const updateData = parsed.data as unknown as Record<string, unknown>;
+    const encryptedData = encryptPiiFields(updateData, deps.fieldEncryptor);
 
-  // Update in database
-  const updated = await deps.updateCustomer(ctx.tenantId, customerId, encryptedData);
-  if (!updated) {
-    throw new NotFoundError('Customer not found', requestId);
-  }
+    // Update in database
+    const updated = await deps.updateCustomer(ctx.tenantId, customerId, encryptedData);
+    if (!updated) {
+      throw new NotFoundError('Customer not found', requestId);
+    }
 
-  // Build change set for audit (field names only, never values — may be PHI)
-  const changedFields = Object.keys(parsed.data);
+    // Build change set for audit (field names only, never values — may be PHI)
+    const changedFields = Object.keys(parsed.data);
 
-  // Audit log
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.updated',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'customers',
-    resourceId: customerId,
-    action: 'update',
-    details: { changedFields },
-    timestamp: new Date(),
-  });
+    // Audit log
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'customers',
+      resourceId: customerId,
+      action: 'update',
+      details: { changedFields },
+      timestamp: new Date(),
+    });
 
-  // Publish domain event
-  const changes: Record<string, { old: unknown; new: unknown }> = {};
-  for (const field of changedFields) {
-    // Only log field names, not values (PHI protection)
-    changes[field] = { old: '[redacted]', new: '[redacted]' };
-  }
+    // Publish domain event
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+    for (const field of changedFields) {
+      // Only log field names, not values (PHI protection)
+      changes[field] = { old: '[redacted]', new: '[redacted]' };
+    }
 
-  const event = createEventEnvelope(
-    EventType.CUSTOMER_UPDATED,
-    ctx.tenantId,
-    { customerId, changes },
-    {
-      correlationId: requestId,
-      userId: ctx.userId,
-      source: 'api',
-    },
-  );
+    const event = createEventEnvelope(
+      EventType.CUSTOMER_UPDATED,
+      ctx.tenantId,
+      { customerId, changes },
+      {
+        correlationId: requestId,
+        userId: ctx.userId,
+        source: 'api',
+      },
+    );
 
-  await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
-    console.error('[ORDR:API] Failed to publish customer.updated event:', err);
-  });
+    await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
+      console.error('[ORDR:API] Failed to publish customer.updated event:', err);
+    });
 
-  // Return decrypted version
-  const decrypted = decryptCustomer(updated, deps.fieldEncryptor);
+    // Return decrypted version
+    const decrypted = decryptCustomer(updated, deps.fieldEncryptor);
 
-  return c.json({
-    success: true as const,
-    data: decrypted,
-  });
-});
+    return c.json({
+      success: true as const,
+      data: decrypted,
+    });
+  },
+);
 
 // ---- DELETE /:id — soft delete customer ------------------------------------
 

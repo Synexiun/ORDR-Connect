@@ -18,6 +18,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ developerAgentsRouter.get('/', requireAuth(), async (c) => {
 });
 
 // POST /submit
-developerAgentsRouter.post('/submit', requireAuth(), async (c) => {
+developerAgentsRouter.post('/submit', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
   const { userId, requestId } = ensureCtx(c);
 

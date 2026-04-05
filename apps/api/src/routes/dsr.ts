@@ -32,6 +32,7 @@ import {
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ── Input Schemas ─────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ dsrRouter.use('*', requireAuth());
 
 // ── POST / — create DSR ───────────────────────────────────────────
 
-dsrRouter.post('/', requirePermissionMiddleware('dsr', 'write'), async (c) => {
+dsrRouter.post('/', rateLimit('bulk'), requirePermissionMiddleware('dsr', 'write'), async (c) => {
   const d = ensureDeps();
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');

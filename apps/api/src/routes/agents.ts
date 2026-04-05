@@ -26,6 +26,7 @@ import { ValidationError, NotFoundError, AuthorizationError, PAGINATION } from '
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import { broadcastEvent } from './events.js';
 
 // ---- Input Schemas ---------------------------------------------------------
@@ -156,166 +157,182 @@ agentsRouter.use('*', requireAuth());
 
 // ---- POST / — trigger an agent session --------------------------------------
 
-agentsRouter.post('/trigger', requirePermissionMiddleware('agents', 'create'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+agentsRouter.post(
+  '/trigger',
+  rateLimit('write'),
+  requirePermissionMiddleware('agents', 'create'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  // Validate input
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = triggerAgentSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      'Invalid agent trigger request',
-      parseValidationErrors(parsed.error.issues),
-      requestId,
-    );
-  }
+    // Validate input
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = triggerAgentSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid agent trigger request',
+        parseValidationErrors(parsed.error.issues),
+        requestId,
+      );
+    }
 
-  const { customerId, agentRole, autonomyLevel } = parsed.data;
-  const sessionId = randomUUID();
-  const now = new Date();
+    const { customerId, agentRole, autonomyLevel } = parsed.data;
+    const sessionId = randomUUID();
+    const now = new Date();
 
-  // Persist session record
-  const session = await deps.createSession({
-    sessionId,
-    tenantId: ctx.tenantId,
-    customerId,
-    agentRole,
-    autonomyLevel: autonomyLevel ?? 'supervised',
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Audit log
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'agent.action',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'agent_session',
-    resourceId: sessionId,
-    action: 'trigger',
-    details: {
-      customerId,
-      agentRole,
-      autonomyLevel: autonomyLevel ?? 'supervised',
-    },
-    timestamp: now,
-  });
-
-  // Publish agent.triggered event — worker picks it up asynchronously
-  const event = createEventEnvelope(
-    'agent.triggered',
-    ctx.tenantId,
-    {
+    // Persist session record
+    const session = await deps.createSession({
       sessionId,
+      tenantId: ctx.tenantId,
       customerId,
       agentRole,
       autonomyLevel: autonomyLevel ?? 'supervised',
-    },
-    {
-      correlationId: requestId,
-      userId: ctx.userId,
-      source: 'api',
-    },
-  );
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
 
-  await deps.eventProducer.publish(TOPICS.AGENT_EVENTS, event).catch((publishErr: unknown) => {
-    console.error('[ORDR:API] Failed to publish agent.triggered event:', publishErr);
-  });
-
-  // Broadcast SSE event so connected dashboard clients update immediately
-  broadcastEvent({
-    type: 'agent.session_started',
-    data: { tenantId: ctx.tenantId, sessionId, agentRole, customerId },
-  });
-
-  return c.json(
-    {
-      success: true as const,
-      data: {
-        sessionId: session.sessionId,
-        status: session.status,
-        agentRole: session.agentRole,
-        customerId: session.customerId,
-        createdAt: session.createdAt.toISOString(),
+    // Audit log
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'agent.action',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'agent_session',
+      resourceId: sessionId,
+      action: 'trigger',
+      details: {
+        customerId,
+        agentRole,
+        autonomyLevel: autonomyLevel ?? 'supervised',
       },
-    },
-    201,
-  );
-});
+      timestamp: now,
+    });
+
+    // Publish agent.triggered event — worker picks it up asynchronously
+    const event = createEventEnvelope(
+      'agent.triggered',
+      ctx.tenantId,
+      {
+        sessionId,
+        customerId,
+        agentRole,
+        autonomyLevel: autonomyLevel ?? 'supervised',
+      },
+      {
+        correlationId: requestId,
+        userId: ctx.userId,
+        source: 'api',
+      },
+    );
+
+    await deps.eventProducer.publish(TOPICS.AGENT_EVENTS, event).catch((publishErr: unknown) => {
+      console.error('[ORDR:API] Failed to publish agent.triggered event:', publishErr);
+    });
+
+    // Broadcast SSE event so connected dashboard clients update immediately
+    broadcastEvent({
+      type: 'agent.session_started',
+      data: { tenantId: ctx.tenantId, sessionId, agentRole, customerId },
+    });
+
+    return c.json(
+      {
+        success: true as const,
+        data: {
+          sessionId: session.sessionId,
+          status: session.status,
+          agentRole: session.agentRole,
+          customerId: session.customerId,
+          createdAt: session.createdAt.toISOString(),
+        },
+      },
+      201,
+    );
+  },
+);
 
 // ---- GET /sessions — list active agent sessions for tenant ------------------
 
-agentsRouter.get('/sessions', requirePermissionMiddleware('agents', 'read'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+agentsRouter.get(
+  '/sessions',
+  rateLimit('read'),
+  requirePermissionMiddleware('agents', 'read'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  const queryParsed = listSessionsQuerySchema.safeParse({
-    page: c.req.query('page'),
-    pageSize: c.req.query('pageSize'),
-    status: c.req.query('status'),
-    agentRole: c.req.query('agentRole'),
-  });
+    const queryParsed = listSessionsQuerySchema.safeParse({
+      page: c.req.query('page'),
+      pageSize: c.req.query('pageSize'),
+      status: c.req.query('status'),
+      agentRole: c.req.query('agentRole'),
+    });
 
-  if (!queryParsed.success) {
-    throw new ValidationError(
-      'Invalid query parameters',
-      parseValidationErrors(queryParsed.error.issues),
-      requestId,
-    );
-  }
+    if (!queryParsed.success) {
+      throw new ValidationError(
+        'Invalid query parameters',
+        parseValidationErrors(queryParsed.error.issues),
+        requestId,
+      );
+    }
 
-  const filters = queryParsed.data;
-  const result = await deps.listSessions(ctx.tenantId, {
-    page: filters.page,
-    pageSize: filters.pageSize,
-    ...(filters.status !== undefined ? { status: filters.status } : {}),
-    ...(filters.agentRole !== undefined ? { agentRole: filters.agentRole } : {}),
-  });
-
-  return c.json({
-    success: true as const,
-    data: result.data,
-    pagination: {
+    const filters = queryParsed.data;
+    const result = await deps.listSessions(ctx.tenantId, {
       page: filters.page,
       pageSize: filters.pageSize,
-      total: result.total,
-      totalPages: Math.ceil(result.total / filters.pageSize),
-    },
-  });
-});
+      ...(filters.status !== undefined ? { status: filters.status } : {}),
+      ...(filters.agentRole !== undefined ? { agentRole: filters.agentRole } : {}),
+    });
+
+    return c.json({
+      success: true as const,
+      data: result.data,
+      pagination: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        total: result.total,
+        totalPages: Math.ceil(result.total / filters.pageSize),
+      },
+    });
+  },
+);
 
 // ---- GET /sessions/:id — get session detail ---------------------------------
 
-agentsRouter.get('/sessions/:id', requirePermissionMiddleware('agents', 'read'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+agentsRouter.get(
+  '/sessions/:id',
+  rateLimit('read'),
+  requirePermissionMiddleware('agents', 'read'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const sessionId = c.req.param('id');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const sessionId = c.req.param('id');
 
-  const session = await deps.findSessionById(ctx.tenantId, sessionId);
-  if (!session) {
-    throw new NotFoundError('Agent session not found', requestId);
-  }
+    const session = await deps.findSessionById(ctx.tenantId, sessionId);
+    if (!session) {
+      throw new NotFoundError('Agent session not found', requestId);
+    }
 
-  return c.json({
-    success: true as const,
-    data: session,
-  });
-});
+    return c.json({
+      success: true as const,
+      data: session,
+    });
+  },
+);
 
 // ---- POST /sessions/:id/kill — kill an active session -----------------------
 
 agentsRouter.post(
   '/sessions/:id/kill',
+  rateLimit('write'),
   requirePermissionMiddleware('agents', 'delete'),
   async (c) => {
     if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
@@ -397,74 +414,79 @@ agentsRouter.post(
 // will be projected into a dedicated table in Phase 8. Until then, returns
 // deterministic seed data per customerId so the UI is always populated.
 
-agentsRouter.get('/routing-decisions', requirePermissionMiddleware('agents', 'read'), (c) => {
-  const ctx = ensureTenantContext(c);
-  const correlationId = c.get('requestId');
+agentsRouter.get(
+  '/routing-decisions',
+  rateLimit('read'),
+  requirePermissionMiddleware('agents', 'read'),
+  (c) => {
+    const ctx = ensureTenantContext(c);
+    const correlationId = c.get('requestId');
 
-  const customerId = new URL(c.req.url).searchParams.get('customerId');
-  if (customerId === null || customerId === '') {
-    throw new ValidationError(
-      'customerId query parameter is required',
-      { customerId: ['Required'] },
-      correlationId,
-    );
-  }
+    const customerId = new URL(c.req.url).searchParams.get('customerId');
+    if (customerId === null || customerId === '') {
+      throw new ValidationError(
+        'customerId query parameter is required',
+        { customerId: ['Required'] },
+        correlationId,
+      );
+    }
 
-  // Deterministic seed per customerId — stable results per entity
-  const seed = `${ctx.tenantId}:${customerId}`;
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
-  const rng = (): number => {
-    h = (Math.imul(1664525, h) + 1013904223) | 0;
-    return (h >>> 0) / 0x100000000;
-  };
+    // Deterministic seed per customerId — stable results per entity
+    const seed = `${ctx.tenantId}:${customerId}`;
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
+    const rng = (): number => {
+      h = (Math.imul(1664525, h) + 1013904223) | 0;
+      return (h >>> 0) / 0x100000000;
+    };
 
-  const agentRoles = [
-    'lead_qualifier',
-    'follow_up',
-    'support_triage',
-    'churn_detection',
-    'escalation',
-    'collections',
-  ];
-  const channels = ['sms', 'email', 'voice', 'chat'];
-  const reasons = [
-    'High engagement score — fast-path qualifier selected',
-    'Sentiment below threshold — escalation route triggered',
-    'Consent status valid for SMS — preferred channel routed',
-    'Prior session unresolved — collections agent assigned',
-    'Customer request for human — escalation initiated',
-    'Low churn risk score — follow-up cadence assigned',
-  ];
+    const agentRoles = [
+      'lead_qualifier',
+      'follow_up',
+      'support_triage',
+      'churn_detection',
+      'escalation',
+      'collections',
+    ];
+    const channels = ['sms', 'email', 'voice', 'chat'];
+    const reasons = [
+      'High engagement score — fast-path qualifier selected',
+      'Sentiment below threshold — escalation route triggered',
+      'Consent status valid for SMS — preferred channel routed',
+      'Prior session unresolved — collections agent assigned',
+      'Customer request for human — escalation initiated',
+      'Low churn risk score — follow-up cadence assigned',
+    ];
 
-  const count = 6 + Math.floor(rng() * 5);
-  const baseMs = Date.now() - 30 * 86_400_000;
+    const count = 6 + Math.floor(rng() * 5);
+    const baseMs = Date.now() - 30 * 86_400_000;
 
-  const decisions = Array.from({ length: count }, (_, i) => ({
-    id: `rd-${customerId.slice(-8)}-${String(i).padStart(3, '0')}`,
-    entityId: customerId,
-    entityType: 'customer' as const,
-    selectedRoute: agentRoles[Math.floor(rng() * agentRoles.length)] as string,
-    channel: channels[Math.floor(rng() * channels.length)] as string,
-    confidence: Math.round((0.65 + rng() * 0.34) * 100) / 100,
-    reasoning: reasons[Math.floor(rng() * reasons.length)] as string,
-    sessionId: `sess-${Math.floor(rng() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')}`,
-    modelUsed: 'claude-sonnet-4-6',
-    timestamp: new Date(baseMs + i * Math.floor(rng() * 5 * 86_400_000)).toISOString(),
-  })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const decisions = Array.from({ length: count }, (_, i) => ({
+      id: `rd-${customerId.slice(-8)}-${String(i).padStart(3, '0')}`,
+      entityId: customerId,
+      entityType: 'customer' as const,
+      selectedRoute: agentRoles[Math.floor(rng() * agentRoles.length)] as string,
+      channel: channels[Math.floor(rng() * channels.length)] as string,
+      confidence: Math.round((0.65 + rng() * 0.34) * 100) / 100,
+      reasoning: reasons[Math.floor(rng() * reasons.length)] as string,
+      sessionId: `sess-${Math.floor(rng() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0')}`,
+      modelUsed: 'claude-sonnet-4-6',
+      timestamp: new Date(baseMs + i * Math.floor(rng() * 5 * 86_400_000)).toISOString(),
+    })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  return c.json({
-    success: true as const,
-    data: decisions,
-    total: decisions.length,
-  });
-});
+    return c.json({
+      success: true as const,
+      data: decisions,
+      total: decisions.length,
+    });
+  },
+);
 
 // ---- GET /hitl — get pending HITL items for tenant --------------------------
 
-agentsRouter.get('/hitl', requirePermissionMiddleware('agents', 'read'), (c) => {
+agentsRouter.get('/hitl', rateLimit('read'), requirePermissionMiddleware('agents', 'read'), (c) => {
   if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -494,6 +516,7 @@ agentsRouter.get('/hitl', requirePermissionMiddleware('agents', 'read'), (c) => 
 
 agentsRouter.post(
   '/hitl/:id/approve',
+  rateLimit('write'),
   requirePermissionMiddleware('agents', 'update'),
   async (c) => {
     if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
@@ -569,6 +592,7 @@ agentsRouter.post(
 
 agentsRouter.post(
   '/hitl/:id/reject',
+  rateLimit('write'),
   requirePermissionMiddleware('agents', 'update'),
   async (c) => {
     if (!deps) throw new Error('[ORDR:API] Agent routes not configured');

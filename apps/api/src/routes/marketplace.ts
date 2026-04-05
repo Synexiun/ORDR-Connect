@@ -30,6 +30,7 @@ import { ValidationError, NotFoundError, AuthorizationError, ConflictError } fro
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { featureGate, FEATURES } from '../middleware/plan-gate.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ──────────────────────────────────────────────
 
@@ -416,7 +417,8 @@ marketplaceRouter.put('/:agentId', requireAuth(), async (c) => {
 marketplaceRouter.post(
   '/:agentId/install',
   requireAuth(),
-  featureGate(FEATURES.MARKETPLACE), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+  rateLimit('write'),
+  featureGate(FEATURES.MARKETPLACE),
   async (c) => {
     if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
