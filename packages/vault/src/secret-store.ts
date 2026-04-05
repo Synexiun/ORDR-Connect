@@ -32,14 +32,16 @@ class SecretStoreImpl {
     this.trackedKeys = keys;
 
     for (const key of keys) {
-      const vaultValue = await client.get(key);
-      const value = vaultValue ?? process.env[key] ?? '';
-      let version = 0;
       if (client.isEnabled) {
+        const vaultValue = await client.get(key);
         const meta = await client.getMetadata(key).catch(() => ({ version: 0 }));
-        version = meta.version;
+        this.snapshots.set(key, {
+          value: vaultValue ?? process.env[key] ?? '',
+          version: meta.version,
+        });
+      } else {
+        this.snapshots.set(key, { value: process.env[key] ?? '', version: 0 });
       }
-      this.snapshots.set(key, { value, version });
     }
 
     if (client.isEnabled) {

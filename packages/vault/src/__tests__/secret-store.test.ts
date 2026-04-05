@@ -74,7 +74,8 @@ describe('initSecretStore + get()', () => {
     await initSecretStore(client as never, ['MY_KEY']);
     secretStore.destroy();
 
-    // getMetadata should not be called after init (no poll scheduled)
+    // get and getMetadata should not be called when client is disabled
+    expect(client.get).not.toHaveBeenCalled();
     expect(client.getMetadata).not.toHaveBeenCalled();
   });
 });
