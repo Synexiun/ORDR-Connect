@@ -41,7 +41,7 @@
     "@ordr/workflow": "workspace:*",
     "drizzle-orm": "^0.36.0",
     "hono": "^4.6.0",
-    "ioredis": "^5.10.1",
+    "ioredis": "5.10.1",
     "postgres": "^3.4.0",
     "zod": "^3.23.0"
   },

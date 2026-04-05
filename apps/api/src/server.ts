@@ -1038,9 +1038,13 @@ async function bootstrap(): Promise<void> {
 
   // Rate limiter -- Redis-backed in production (REDIS_URL set), in-memory otherwise.
   // RedisRateLimiter shares window state across K8s pod replicas (SOC2 CC6.6).
-  const redisUrl = process.env['REDIS_URL'];
+  const redisUrl = process.env['REDIS_URL']?.trim();
   if (redisUrl !== undefined && redisUrl !== '') {
-    configureRateLimit(new RedisRateLimiter(new Redis(redisUrl)));
+    const redisClient = new Redis(redisUrl, { lazyConnect: true });
+    redisClient.on('error', (err: Error) => {
+      console.error('[ORDR:API] Redis connection error:', err.message);
+    });
+    configureRateLimit(new RedisRateLimiter(redisClient));
     console.warn('[ORDR:API] Rate limiter initialized (Redis sliding window)');
   } else {
     configureRateLimit(new InMemoryRateLimiter());
