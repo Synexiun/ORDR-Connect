@@ -34,11 +34,17 @@ export class KeyRotationTracker {
   /**
    * Generates a fresh 256-bit (32-byte) random KEK, stores it in Vault as
    * the next version, and returns the version number and hex-encoded value.
+   *
+   * SECURITY: The returned `value` is live key material. The caller MUST NOT
+   * log, serialize, or persist this value. Use it immediately for re-wrap
+   * and allow it to be garbage-collected. Rule 1 — encryption keys must
+   * never appear in logs or audit records.
    */
   async requestNewVersion(
     client: VaultClient,
     key: string,
   ): Promise<{ version: number; value: string }> {
+    if (!client.isEnabled) return { version: 0, value: '' };
     const newValue = randomBytes(32).toString('hex');
     await client.put(key, newValue);
     const meta = await client.getMetadata(key);

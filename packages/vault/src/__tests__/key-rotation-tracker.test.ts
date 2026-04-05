@@ -73,6 +73,27 @@ describe('KeyRotationTracker.requestNewVersion()', () => {
     expect(result.version).toBe(2);
     expect(client.put).toHaveBeenCalledWith('ENCRYPTION_MASTER_KEY', result.value);
   });
+
+  it('propagates put errors and does not call getMetadata', async () => {
+    const tracker = new KeyRotationTracker();
+    const client = makeMockClient(true);
+    client.put.mockRejectedValue(new Error('Vault 503'));
+
+    await expect(
+      tracker.requestNewVersion(client as never, 'ENCRYPTION_MASTER_KEY'),
+    ).rejects.toThrow('Vault 503');
+    expect(client.getMetadata).not.toHaveBeenCalled();
+  });
+
+  it('returns early when client is disabled', async () => {
+    const tracker = new KeyRotationTracker();
+    const client = makeMockClient(false);
+
+    const result = await tracker.requestNewVersion(client as never, 'ENCRYPTION_MASTER_KEY');
+    expect(result).toEqual({ version: 0, value: '' });
+    expect(client.put).not.toHaveBeenCalled();
+    expect(client.getMetadata).not.toHaveBeenCalled();
+  });
 });
 
 describe('KeyRotationTracker.getVersion()', () => {
