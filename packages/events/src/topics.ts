@@ -35,6 +35,9 @@ export const TOPICS = {
 
   /** CRM integration sync events — webhooks received, outbound syncs, conflicts */
   INTEGRATION_EVENTS: 'ordr.integration.events',
+
+  /** Identity lifecycle events — SCIM provisioning, WorkOS webhooks, group changes */
+  IDENTITY_EVENTS: 'ordr.identity.events',
 } as const;
 
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];
@@ -130,6 +133,14 @@ export const DEFAULT_TOPIC_CONFIGS: Record<TopicName, TopicConfig> = {
     partitions: 6,
     replicationFactor: 3,
     retentionMs: 14 * 24 * 60 * 60 * 1000, // 14 days
+    cleanupPolicy: 'delete',
+    minInsyncReplicas: 2,
+  },
+  [TOPICS.IDENTITY_EVENTS]: {
+    name: TOPICS.IDENTITY_EVENTS,
+    partitions: 6,
+    replicationFactor: 3,
+    retentionMs: 90 * 24 * 60 * 60 * 1000, // 90 days — identity audit retention
     cleanupPolicy: 'delete',
     minInsyncReplicas: 2,
   },

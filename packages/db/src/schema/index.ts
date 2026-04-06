@@ -194,3 +194,10 @@ export {
 // Encrypted Fields + Key Rotation Jobs (Phase 55)
 export { encryptedFields } from './encrypted-fields.js';
 export { keyRotationJobs } from './key-rotation-jobs.js';
+
+// SCIM Groups + Group Members (Phase 56)
+export { groups } from './groups.js';
+export { groupMembers } from './group-members.js';
+
+// WorkOS Webhook Events (Phase 56)
+export { workosEvents } from './workos-events.js';

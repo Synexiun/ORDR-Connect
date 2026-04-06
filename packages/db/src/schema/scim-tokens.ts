@@ -1,11 +1,4 @@
-import {
-  pgTable,
-  uuid,
-  varchar,
-  timestamp,
-  uniqueIndex,
-  index,
-} from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core';
 import { tenants } from './tenants.js';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +25,8 @@ export const scimTokens = pgTable(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+
+    directoryId: text('directory_id'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

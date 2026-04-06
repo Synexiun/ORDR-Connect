@@ -40,6 +40,7 @@ const RLS_TABLES = [
   'custom_roles',
   'user_custom_roles',
   'scim_tokens',
+  'groups',
 ] as const;
 
 /**

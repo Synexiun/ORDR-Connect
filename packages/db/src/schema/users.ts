@@ -24,11 +24,7 @@ export const userRoleEnum = pgEnum('user_role', [
   'viewer',
 ]);
 
-export const userStatusEnum = pgEnum('user_status', [
-  'active',
-  'suspended',
-  'deactivated',
-]);
+export const userStatusEnum = pgEnum('user_status', ['active', 'suspended', 'deactivated']);
 
 // ---------------------------------------------------------------------------
 // Table
@@ -68,6 +64,10 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+
+    scimExternalId: text('scim_external_id'),
+
+    scimSource: text('scim_source'),
   },
   (table) => [
     uniqueIndex('users_tenant_email_uniq').on(table.tenantId, table.email),
