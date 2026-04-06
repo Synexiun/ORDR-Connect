@@ -10,8 +10,10 @@
  *
  * Security:
  * - HMAC-SHA256 verification (timing-safe) before any processing
- * - Idempotency check on workos_id to prevent replay
- * - WORM insert to workos_events BEFORE dispatching to handler
+ * - Idempotency check on workos_id to prevent replay (before dispatch)
+ * - WORM insert to workos_events AFTER successful dispatch (not before —
+ *   inserting before would permanently suppress events if the normaliser
+ *   throws, since retries would idempotency-skip the event forever)
  * - Tenant resolution via directory_id → tokenStore.findByDirectoryId
  * - Rule 4: raw body read as text, then JSON.parse — prevents header spoofing
  */
@@ -45,14 +47,12 @@ export function createWorkOSWebhookRouter(deps: WorkOSWebhookDeps): Hono {
     }
 
     const expectedBuf = createHmac('sha256', deps.webhookSecret).update(rawBody).digest();
-    let actualBuf: Buffer;
-    try {
-      actualBuf = Buffer.from(sigHeader, 'hex');
-    } catch {
-      return c.json({ error: 'Invalid signature format' }, 401);
-    }
+    // Buffer.from(str, 'hex') never throws — invalid hex is silently truncated to a
+    // shorter buffer. The length guard catches that: a valid SHA-256 hex string is
+    // always 64 chars → 32 bytes; anything else fails the length equality check.
+    const actualBuf = Buffer.from(sigHeader, 'hex');
 
-    // timingSafeEqual requires same length — check first to avoid exception
+    // timingSafeEqual requires same-length buffers — length guard must come first.
     if (expectedBuf.length !== actualBuf.length || !timingSafeEqual(expectedBuf, actualBuf)) {
       return c.json({ error: 'Invalid signature' }, 401);
     }
@@ -94,15 +94,10 @@ export function createWorkOSWebhookRouter(deps: WorkOSWebhookDeps): Hono {
       return c.json({ error: 'Unknown directory' }, 422);
     }
 
-    // ── 6. WORM insert (before handler dispatch — Rule 3) ──────────────────
-    await deps.db.insert(workosEvents).values({
-      workosId: event.id,
-      eventType: event.event,
-      directoryId: directoryId ?? null,
-      payload: event as Record<string, unknown>,
-    });
-
-    // ── 7. Normalise event → SCIMHandler calls ─────────────────────────────
+    // ── 6. Normalise event → SCIMHandler calls ─────────────────────────────
+    // WORM insert happens AFTER successful dispatch (see comment at top of file).
+    // If normaliseWorkOSEvent throws, we return 500 so WorkOS retries — the
+    // idempotency row has not been written yet, so the retry processes correctly.
     // Cast: normaliseWorkOSEvent accepts a typed WorkOSEvent; we've already
     // validated the payload shape via JSON.parse and the HMAC signature check.
     await normaliseWorkOSEvent(
@@ -110,6 +105,16 @@ export function createWorkOSWebhookRouter(deps: WorkOSWebhookDeps): Hono {
       event as Parameters<typeof normaliseWorkOSEvent>[1],
       deps.handler,
     );
+
+    // ── 7. WORM insert — only after handler dispatch succeeds (Rule 3) ──────
+    // Inserting here ensures idempotency guard is only set for fully-processed
+    // events. A transient normaliser error returns 500 to WorkOS for retry.
+    await deps.db.insert(workosEvents).values({
+      workosId: event.id,
+      eventType: event.event,
+      directoryId: directoryId ?? null,
+      payload: event as Record<string, unknown>,
+    });
 
     return c.json({ ok: true }, 200);
   });
