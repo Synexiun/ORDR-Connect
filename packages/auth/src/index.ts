@@ -89,35 +89,30 @@ export type {
 export { SSOManager, InMemorySSOClient, InMemorySSOConnectionStore } from './sso.js';
 
 // ─── SCIM ─────────────────────────────────────────────────────────
+export {
+  SCIMHandler,
+  DrizzleUserStore,
+  DrizzleGroupStore,
+  DrizzleTokenStore,
+  normaliseWorkOSEvent,
+  parseSCIMFilter,
+} from './scim/index.js';
+
 export type {
-  SCIMUser,
-  SCIMUserName,
-  SCIMUserEmail,
-  SCIMUserResponse,
-  SCIMUserMeta,
-  SCIMGroup,
-  SCIMGroupMember,
-  SCIMGroupResponse,
-  SCIMGroupMeta,
-  SCIMListResponse,
+  SCIMHandlerDeps,
+  SCIMEmail,
   SCIMUserRecord,
   SCIMGroupRecord,
-  UserStore,
-  GroupStore,
-  SessionRevoker,
-  SCIMTokenRecord,
+  SCIMGroupMember,
+  SCIMPatchOp,
+  SCIMPatchRequest,
+  SCIMFilter,
+  SCIMListParams,
+  SCIMListResponse,
+  SCIMUserStore,
+  SCIMGroupStore,
   SCIMTokenStore,
-  SCIMHandlerDeps,
-} from './scim.js';
-
-export {
-  SCIM_SCHEMAS,
-  SCIMHandler,
-  verifySCIMToken,
-  InMemoryUserStore,
-  InMemoryGroupStore,
-  InMemorySCIMTokenStore,
-} from './scim.js';
+} from './scim/index.js';
 
 // ─── Organization ─────────────────────────────────────────────────
 export type { Organization, OrgTree, CreateOrgInput, OrgStore } from './organization.js';
