@@ -98,7 +98,7 @@ describe('WorkOS Event Normaliser', () => {
       data: {
         id: 'group-workos-456',
         display_name: 'Engineering',
-        member_ids: ['user-123', 'user-456'],
+        users: [{ id: 'user-123' }, { id: 'user-456' }],
       },
     };
 
@@ -122,7 +122,7 @@ describe('WorkOS Event Normaliser', () => {
       data: {
         id: 'group-workos-456',
         display_name: 'Engineering Team',
-        member_ids: ['user-123', 'user-789'],
+        users: [{ id: 'user-123' }, { id: 'user-789' }],
       },
     };
 

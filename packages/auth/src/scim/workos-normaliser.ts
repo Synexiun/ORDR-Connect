@@ -171,7 +171,7 @@ async function handleGroupCreated(
 ): Promise<void> {
   const workosId = data['id'] as string;
   const displayName = data['display_name'] as string;
-  const memberIds = (data['member_ids'] as string[] | undefined) ?? [];
+  const memberIds = (data['users'] as Array<{ id: string }> | undefined)?.map((u) => u.id) ?? [];
 
   await handler.createGroup(
     tenantId,
@@ -191,7 +191,7 @@ async function handleGroupUpdated(
 ): Promise<void> {
   const workosId = data['id'] as string;
   const displayName = data['display_name'] as string;
-  const memberIds = (data['member_ids'] as string[] | undefined) ?? [];
+  const memberIds = (data['users'] as Array<{ id: string }> | undefined)?.map((u) => u.id) ?? [];
 
   await handler.updateGroup(
     tenantId,
