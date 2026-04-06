@@ -13,6 +13,7 @@ export function parseSCIMFilter(filterStr: string): SCIMFilter | null {
   }
 
   const [, field, operator, value] = match;
+  if (field === undefined || field === '' || operator === undefined || operator === '') return null;
   return {
     field,
     operator: operator as 'eq' | 'ne' | 'co' | 'sw' | 'pr',
@@ -78,4 +79,5 @@ export function buildFilterSQL(
       return result;
     }
   }
+  return null;
 }

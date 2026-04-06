@@ -10,7 +10,7 @@ export class DrizzleTokenStore implements SCIMTokenStore {
     hashedToken: string,
   ): Promise<{ tenantId: string; directoryId: string | null } | null> {
     const rows = await this.db
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
       .select({ tenantId: scimTokens.tenantId, directoryId: scimTokens.directoryId })
       .from(scimTokens)
       .where(eq(scimTokens.tokenHash, hashedToken));
@@ -19,7 +19,7 @@ export class DrizzleTokenStore implements SCIMTokenStore {
       return null;
     }
 
-    return rows[0];
+    return rows[0] ?? null;
   }
 
   /** Used by WorkOS webhook handler to resolve directory_id → tenantId */
@@ -33,6 +33,6 @@ export class DrizzleTokenStore implements SCIMTokenStore {
       return null;
     }
 
-    return rows[0];
+    return rows[0] ?? null;
   }
 }
