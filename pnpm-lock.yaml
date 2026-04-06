@@ -159,6 +159,9 @@ importers:
       '@ordr/security':
         specifier: workspace:*
         version: link:../../packages/security
+      '@ordr/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
       '@ordr/workflow':
         specifier: workspace:*
         version: link:../../packages/workflow
@@ -169,7 +172,7 @@ importers:
         specifier: ^4.6.0
         version: 4.12.9
       ioredis:
-        specifier: ^5.10.1
+        specifier: 5.10.1
         version: 5.10.1
       postgres:
         specifier: ^3.4.0
@@ -399,6 +402,12 @@ importers:
       '@ordr/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@ordr/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: ^0.36.0
+        version: 0.36.4(@opentelemetry/api@1.9.0)(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)
       jose:
         specifier: ^5.9.0
         version: 5.10.0
@@ -802,6 +811,18 @@ importers:
         specifier: workspace:*
         version: link:../crypto
     devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)
+
+  packages/vault:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
