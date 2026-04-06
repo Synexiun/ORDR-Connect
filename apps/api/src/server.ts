@@ -101,6 +101,9 @@ import { configureAgentRoutes } from './routes/agents.js';
 import { configureMarketplaceRoutes } from './routes/marketplace.js';
 import { configureOrgRoutes } from './routes/organizations.js';
 import { configureSSORoutes } from './routes/sso.js';
+import { configureSCIMRoutes } from './routes/scim.js';
+import { createWorkOSWebhookRouter } from './routes/webhooks-workos.js';
+import { SCIMHandler, DrizzleUserStore, DrizzleGroupStore, DrizzleTokenStore } from '@ordr/auth';
 import { configureMessageRoutes } from './routes/messages.js';
 import { configureBillingRoutes } from './routes/billing.js';
 import { configureRealtimeRoutes } from './routes/realtime.js';
@@ -2519,6 +2522,28 @@ async function bootstrap(): Promise<void> {
   });
   console.warn('[ORDR:API] Tenant routes configured');
 
+  // ── 8.9. SCIM stores + handler (Phase 56) ─────────────────────────────
+  // Wires the DrizzleUserStore, DrizzleGroupStore, and DrizzleTokenStore into
+  // the SCIMHandler and configures the module-level deps for scimRouter.
+  // Also registers the WorkOS webhook route on the Hono app when
+  // WORKOS_WEBHOOK_SECRET is set (optional — not all deployments use WorkOS).
+  const scimDb = createDrizzle(
+    dbConnection,
+    schema,
+  ) as unknown as import('drizzle-orm/node-postgres').NodePgDatabase;
+  const scimUserStore = new DrizzleUserStore(scimDb);
+  const scimGroupStore = new DrizzleGroupStore(scimDb);
+  const scimTokenStore = new DrizzleTokenStore(scimDb);
+  const scimHandler = new SCIMHandler({
+    userStore: scimUserStore,
+    groupStore: scimGroupStore,
+    db: scimDb,
+    eventProducer: new EventProducer(kafkaProducer),
+    auditLogger,
+  });
+  configureSCIMRoutes({ scimHandler, tokenStore: scimTokenStore });
+  console.warn('[ORDR:API] SCIM routes configured');
+
   // ── 9. Create and start Hono app ───────────────────────────────────────
   // MetricsRegistry collects Node.js runtime defaults + ORDR-specific metrics.
   // /metrics is network-restricted — NOT behind the public load balancer.
@@ -2529,6 +2554,24 @@ async function bootstrap(): Promise<void> {
     nodeEnv: config.nodeEnv,
     metrics: metricsRegistry,
   });
+
+  // ── 9.1. WorkOS webhook route (optional — requires WORKOS_WEBHOOK_SECRET) ─
+  // Mounted on the Hono app after createApp() so it shares all middleware.
+  // Only active when WORKOS_WEBHOOK_SECRET is configured (Rule 5: optional
+  // integration, never required in all deployments).
+  const workosSecret = config.workosWebhookSecret ?? process.env['WORKOS_WEBHOOK_SECRET'];
+  if (workosSecret !== undefined && workosSecret.length >= 32) {
+    app.route(
+      '/',
+      createWorkOSWebhookRouter({
+        webhookSecret: workosSecret,
+        handler: scimHandler,
+        tokenStore: scimTokenStore,
+        db: scimDb,
+      }),
+    );
+    console.warn('[ORDR:API] WorkOS webhook route configured — POST /webhooks/workos');
+  }
 
   server = serve(
     {

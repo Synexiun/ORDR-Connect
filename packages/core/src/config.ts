@@ -65,6 +65,9 @@ export const envSchema = z
     OTEL_EXPORTER_ENDPOINT: z.string().optional(),
     OTEL_SERVICE_NAME: z.string().default('ordr-connect'),
 
+    // ── WorkOS Directory Sync (optional — only when using WorkOS SCIM) ─
+    WORKOS_WEBHOOK_SECRET: z.string().min(32).optional(),
+
     // ── Vault (Secret Management — optional; no-op when absent) ─────
     VAULT_ADDR: z.string().url().optional(),
     VAULT_ROLE: z.string().min(1).optional(),
@@ -154,6 +157,7 @@ export interface ParsedConfig {
   readonly ai: AIConfig;
   readonly monitoring: MonitoringConfig;
   readonly vault: VaultConfig;
+  readonly workosWebhookSecret?: string;
 }
 
 // ─── Loader ───────────────────────────────────────────────────────
@@ -215,5 +219,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       pollIntervalMs: parsed.VAULT_POLL_INTERVAL_MS,
       keyRotationCheckCron: parsed.KEY_ROTATION_CHECK_CRON,
     },
+    ...(parsed.WORKOS_WEBHOOK_SECRET !== undefined
+      ? { workosWebhookSecret: parsed.WORKOS_WEBHOOK_SECRET }
+      : {}),
   };
 }
