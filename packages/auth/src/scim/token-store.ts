@@ -1,7 +1,7 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import { scimTokens } from '@ordr/db';
-import type { SCIMTokenStore } from './types';
+import type { SCIMTokenStore } from './types.js';
 
 export class DrizzleTokenStore implements SCIMTokenStore {
   constructor(private readonly db: NodePgDatabase) {}
