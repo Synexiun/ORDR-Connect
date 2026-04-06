@@ -173,9 +173,11 @@ scimRouter.get('/Users', async (c): Promise<Response> => {
   const tenantId = getScimTenantId(c);
   const filterStr = c.req.query('filter');
   const startIndexRaw = c.req.query('startIndex');
-  const startIndex = startIndexRaw !== undefined ? parseInt(startIndexRaw, 10) : 1;
+  const startIndexParsed = startIndexRaw !== undefined ? parseInt(startIndexRaw, 10) : 1;
+  const startIndex = isNaN(startIndexParsed) ? 1 : startIndexParsed;
   const countRaw = c.req.query('count');
-  const count = countRaw !== undefined ? parseInt(countRaw, 10) : 100;
+  const countParsed = countRaw !== undefined ? parseInt(countRaw, 10) : 100;
+  const count = isNaN(countParsed) ? 100 : countParsed;
 
   const filter = filterStr !== undefined ? (parseSCIMFilter(filterStr) ?? undefined) : undefined;
 
@@ -341,6 +343,12 @@ scimRouter.delete('/Users/:id', async (c): Promise<Response> => {
   const tenantId = getScimTenantId(c);
   const userId = c.req.param('id');
 
+  // RFC 7644 §3.6: DELETE on non-existent resource MUST return 404
+  const existing = await deps.scimHandler.getUserById(tenantId, userId);
+  if (existing === null) {
+    return scimError(c, 404, `User ${userId} not found`);
+  }
+
   await deps.scimHandler.deleteUser(tenantId, userId);
 
   // SCIM spec: 204 No Content on successful DELETE
@@ -356,9 +364,11 @@ scimRouter.get('/Groups', async (c): Promise<Response> => {
 
   const tenantId = getScimTenantId(c);
   const startIndexRaw = c.req.query('startIndex');
-  const startIndex = startIndexRaw !== undefined ? parseInt(startIndexRaw, 10) : 1;
+  const startIndexParsed = startIndexRaw !== undefined ? parseInt(startIndexRaw, 10) : 1;
+  const startIndex = isNaN(startIndexParsed) ? 1 : startIndexParsed;
   const countRaw = c.req.query('count');
-  const count = countRaw !== undefined ? parseInt(countRaw, 10) : 100;
+  const countParsed = countRaw !== undefined ? parseInt(countRaw, 10) : 100;
+  const count = isNaN(countParsed) ? 100 : countParsed;
 
   const { records, total } = await deps.scimHandler.listGroups(tenantId, { startIndex, count });
 
@@ -476,6 +486,10 @@ scimRouter.patch('/Groups/:id', async (c): Promise<Response> => {
     return scimError(c, 400, 'Invalid JSON body');
   }
 
+  const raw2 = body as Record<string, unknown>;
+  if (!Array.isArray(raw2['Operations'])) {
+    return scimError(c, 400, 'Operations array is required');
+  }
   const patchBody = body as SCIMPatchRequest;
 
   const group = await deps.scimHandler.patchGroup(tenantId, groupId, patchBody);
