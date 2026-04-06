@@ -273,6 +273,8 @@ scimRouter.post('/Users', async (c): Promise<Response> => {
 });
 
 // ─── PATCH /Users/:id ─────────────────────────────────────────────
+// RFC 7644 §3.5.2: PATCH body MUST be a PatchOp with an Operations array.
+// Flat-object PATCH is not spec-compliant and is silently ignored by real IdPs.
 
 scimRouter.patch('/Users/:id', async (c): Promise<Response> => {
   if (!deps) {
@@ -289,39 +291,35 @@ scimRouter.patch('/Users/:id', async (c): Promise<Response> => {
 
   const raw = body as Record<string, unknown>;
 
+  // RFC 7644 §3.5.2 — Operations array is required
+  if (!Array.isArray(raw['Operations'])) {
+    return scimError(c, 400, 'Operations array is required');
+  }
+
+  const patchBody = body as SCIMPatchRequest;
   const patch: Partial<SCIMUserRecord> = {};
 
-  if (typeof raw['userName'] === 'string') {
-    patch.userName = raw['userName'];
-  }
-  if (typeof raw['active'] === 'boolean') {
-    patch.active = raw['active'];
-  }
-  if (typeof raw['externalId'] === 'string') {
-    patch.externalId = raw['externalId'];
-  }
-  if (typeof raw['displayName'] === 'string') {
-    patch.displayName = raw['displayName'];
-  } else if (raw['name'] !== null && typeof raw['name'] === 'object') {
-    const name = raw['name'] as Record<string, unknown>;
-    if (typeof name['formatted'] === 'string') {
-      patch.displayName = name['formatted'];
-    } else {
-      const given = typeof name['givenName'] === 'string' ? name['givenName'] : '';
-      const family = typeof name['familyName'] === 'string' ? name['familyName'] : '';
-      const combined = `${given} ${family}`.trim();
-      if (combined.length > 0) {
-        patch.displayName = combined;
+  for (const op of patchBody.Operations) {
+    if (op.op === 'replace' || op.op === 'add') {
+      if (op.path === 'userName' && typeof op.value === 'string') {
+        patch.userName = op.value;
+      } else if (op.path === 'active' && typeof op.value === 'boolean') {
+        patch.active = op.value;
+      } else if (op.path === 'displayName' && typeof op.value === 'string') {
+        patch.displayName = op.value;
+      } else if (op.path === 'externalId' && typeof op.value === 'string') {
+        patch.externalId = op.value;
+      } else if (op.path === 'name.formatted' && typeof op.value === 'string') {
+        patch.displayName = op.value;
+      } else if (op.path === 'emails' && Array.isArray(op.value)) {
+        patch.emails = (op.value as Array<Record<string, unknown>>)
+          .filter((e) => typeof e['value'] === 'string')
+          .map((e) => ({
+            value: e['value'] as string,
+            primary: typeof e['primary'] === 'boolean' ? e['primary'] : false,
+          }));
       }
     }
-  }
-  if (Array.isArray(raw['emails'])) {
-    patch.emails = (raw['emails'] as Array<Record<string, unknown>>)
-      .filter((e) => typeof e['value'] === 'string')
-      .map((e) => ({
-        value: e['value'] as string,
-        primary: typeof e['primary'] === 'boolean' ? e['primary'] : false,
-      }));
   }
 
   const user = await deps.scimHandler.updateUser(tenantId, userId, patch);
@@ -510,6 +508,12 @@ scimRouter.delete('/Groups/:id', async (c): Promise<Response> => {
 
   const tenantId = getScimTenantId(c);
   const groupId = c.req.param('id');
+
+  // RFC 7644 §3.6: DELETE on non-existent resource MUST return 404
+  const existing = await deps.scimHandler.getGroupById(tenantId, groupId);
+  if (existing === null) {
+    return scimError(c, 404, `Group ${groupId} not found`);
+  }
 
   await deps.scimHandler.deleteGroup(tenantId, groupId);
 

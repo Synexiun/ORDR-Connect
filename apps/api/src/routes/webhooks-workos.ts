@@ -65,6 +65,14 @@ export function createWorkOSWebhookRouter(deps: WorkOSWebhookDeps): Hono {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
+    // Validate required string fields — Rule 4: type-check all external input
+    if (typeof event.id !== 'string' || event.id.length === 0) {
+      return c.json({ error: 'Invalid event: missing id' }, 400);
+    }
+    if (typeof event.event !== 'string' || event.event.length === 0) {
+      return c.json({ error: 'Invalid event: missing event type' }, 400);
+    }
+
     // ── 4. Idempotency guard ───────────────────────────────────────────────
     const existing = await deps.db
       .select({ workosId: workosEvents.workosId })

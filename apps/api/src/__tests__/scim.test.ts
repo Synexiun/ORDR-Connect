@@ -433,7 +433,7 @@ describe('SCIM Users CRUD', () => {
     expect(body.userName).toBe('bob@corp.test');
   });
 
-  it('PATCH /Users/:id updates a user', async () => {
+  it('PATCH /Users/:id updates a user (RFC 7644 PatchOps format)', async () => {
     const app = createTestApp();
 
     const createRes = await app.request('/api/v1/scim/Users', {
@@ -453,6 +453,7 @@ describe('SCIM Users CRUD', () => {
     });
     const created = (await createRes.json()) as { id: string };
 
+    // RFC 7644 §3.5.2 — SCIM PATCH requires Operations array
     const res = await app.request(`/api/v1/scim/Users/${created.id}`, {
       method: 'PATCH',
       headers: {
@@ -460,18 +461,30 @@ describe('SCIM Users CRUD', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        schemas: [SCIM_SCHEMA_USER],
-        userName: 'alice-updated@corp.test',
-        name: { givenName: 'Alice', familyName: 'Johnson' },
-        emails: [{ value: 'alice-updated@corp.test', primary: true }],
-        active: true,
-        externalId: 'ext-003',
+        schemas: [SCIM_SCHEMA_PATCH],
+        Operations: [
+          { op: 'replace', path: 'userName', value: 'alice-updated@corp.test' },
+          { op: 'replace', path: 'active', value: true },
+        ],
       }),
     });
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { userName: string };
     expect(body.userName).toBe('alice-updated@corp.test');
+  });
+
+  it('PATCH /Users/:id returns 400 when Operations array is missing', async () => {
+    const app = createTestApp();
+    const res = await app.request('/api/v1/scim/Users/any-id', {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${TEST_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ schemas: [SCIM_SCHEMA_USER], userName: 'flat@corp.test' }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it('DELETE /Users/:id deactivates a user', async () => {

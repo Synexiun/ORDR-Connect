@@ -12,6 +12,36 @@
 import type { SCIMHandler } from './handler.js';
 import type { SCIMPatchRequest, SCIMEmail } from './types.js';
 
+// ── Safe field extractors (Rule 4) ────────────────────────────────────────
+// Throw on missing/wrong-type required fields so the webhook handler returns
+// 500 and WorkOS retries, rather than silently propagating undefined into DB.
+
+function requireString(data: Record<string, unknown>, key: string): string {
+  const val = data[key];
+  if (typeof val !== 'string' || val.length === 0) {
+    throw new Error(`WorkOS event missing required string field: ${key}`);
+  }
+  return val;
+}
+
+function optionalBoolean(data: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const val = data[key];
+  return typeof val === 'boolean' ? val : fallback;
+}
+
+function optionalString(data: Record<string, unknown>, key: string): string {
+  const val = data[key];
+  return typeof val === 'string' ? val : '';
+}
+
+function requireObject(data: Record<string, unknown>, key: string): Record<string, unknown> {
+  const val = data[key];
+  if (val === null || typeof val !== 'object' || Array.isArray(val)) {
+    throw new Error(`WorkOS event missing required object field: ${key}`);
+  }
+  return val as Record<string, unknown>;
+}
+
 /**
  * WorkOS event types we care about.
  */
@@ -93,9 +123,9 @@ async function handleUserCreated(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const workosId = data['id'] as string;
-  const displayName = data['display_name'] as string;
-  const active = data['active'] as boolean;
+  const workosId = requireString(data, 'id');
+  const displayName = optionalString(data, 'display_name');
+  const active = optionalBoolean(data, 'active', true);
   const workosEmails =
     (data['emails'] as Array<{ value: string; primary?: boolean }> | undefined) ?? [];
 
@@ -132,9 +162,9 @@ async function handleUserUpdated(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const workosId = data['id'] as string;
-  const displayName = data['display_name'] as string;
-  const active = data['active'] as boolean;
+  const workosId = requireString(data, 'id');
+  const displayName = optionalString(data, 'display_name');
+  const active = optionalBoolean(data, 'active', true);
   const workosEmails =
     (data['emails'] as Array<{ value: string; primary?: boolean }> | undefined) ?? [];
 
@@ -156,7 +186,7 @@ async function handleUserDeleted(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const workosId = data['id'] as string;
+  const workosId = requireString(data, 'id');
   await handler.deleteUser(tenantId, workosId);
 }
 
@@ -169,8 +199,8 @@ async function handleGroupCreated(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const workosId = data['id'] as string;
-  const displayName = data['display_name'] as string;
+  const workosId = requireString(data, 'id');
+  const displayName = requireString(data, 'display_name');
   const memberIds = (data['users'] as Array<{ id: string }> | undefined)?.map((u) => u.id) ?? [];
 
   await handler.createGroup(
@@ -189,8 +219,8 @@ async function handleGroupUpdated(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const workosId = data['id'] as string;
-  const displayName = data['display_name'] as string;
+  const workosId = requireString(data, 'id');
+  const displayName = requireString(data, 'display_name');
   const memberIds = (data['users'] as Array<{ id: string }> | undefined)?.map((u) => u.id) ?? [];
 
   await handler.updateGroup(
@@ -209,7 +239,7 @@ async function handleGroupDeleted(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const workosId = data['id'] as string;
+  const workosId = requireString(data, 'id');
   await handler.deleteGroup(tenantId, workosId);
 }
 
@@ -218,10 +248,10 @@ async function handleGroupUserAdded(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const groupData = data['group'] as { id: string };
-  const userData = data['user'] as { id: string };
-  const groupId = groupData.id;
-  const userId = userData.id;
+  const groupData = requireObject(data, 'group');
+  const userData = requireObject(data, 'user');
+  const groupId = requireString(groupData, 'id');
+  const userId = requireString(userData, 'id');
 
   const patch: SCIMPatchRequest = {
     schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
@@ -242,10 +272,10 @@ async function handleGroupUserRemoved(
   data: Record<string, unknown>,
   handler: SCIMHandler,
 ): Promise<void> {
-  const groupData = data['group'] as { id: string };
-  const userData = data['user'] as { id: string };
-  const groupId = groupData.id;
-  const userId = userData.id;
+  const groupData = requireObject(data, 'group');
+  const userData = requireObject(data, 'user');
+  const groupId = requireString(groupData, 'id');
+  const userId = requireString(userData, 'id');
 
   const patch: SCIMPatchRequest = {
     schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
