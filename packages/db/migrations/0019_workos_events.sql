@@ -32,3 +32,14 @@ $$;
 CREATE TRIGGER workos_events_no_delete
   BEFORE DELETE ON workos_events
   FOR EACH ROW EXECUTE FUNCTION block_workos_events_delete();
+
+-- WORM: block TRUNCATE
+CREATE OR REPLACE FUNCTION block_workos_events_truncate()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'workos_events rows are immutable (WORM)';
+END;
+$$;
+CREATE TRIGGER workos_events_no_truncate
+  BEFORE TRUNCATE ON workos_events
+  FOR EACH STATEMENT EXECUTE FUNCTION block_workos_events_truncate();

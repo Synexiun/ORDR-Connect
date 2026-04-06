@@ -23,13 +23,24 @@ CREATE TABLE IF NOT EXISTS group_members (
 
 -- RLS on groups (tenant-scoped)
 ALTER TABLE groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE groups FORCE ROW LEVEL SECURITY;
 CREATE POLICY groups_tenant_isolation ON groups
-  USING (tenant_id = current_setting('app.current_tenant')::uuid);
+  FOR ALL
+  USING  (tenant_id = current_setting('app.current_tenant')::uuid)
+  WITH CHECK (tenant_id = current_setting('app.current_tenant')::uuid);
 
 -- RLS on group_members (no tenant_id column — subquery through groups)
 ALTER TABLE group_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE group_members FORCE ROW LEVEL SECURITY;
 CREATE POLICY group_members_tenant_isolation ON group_members
+  FOR ALL
   USING (
+    group_id IN (
+      SELECT id FROM groups
+      WHERE tenant_id = current_setting('app.current_tenant')::uuid
+    )
+  )
+  WITH CHECK (
     group_id IN (
       SELECT id FROM groups
       WHERE tenant_id = current_setting('app.current_tenant')::uuid
