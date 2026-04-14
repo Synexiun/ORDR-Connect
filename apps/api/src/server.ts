@@ -113,6 +113,7 @@ import { configureEventsRoute } from './routes/events.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureAuditLogsRoute } from './routes/audit-logs.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
+import { configureFhirRoutes } from './routes/fhir.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
 import { configureWebhookRoutes } from './routes/developer-webhooks.js';
 // NOTE: renamed to avoid collision with the existing `configureAgentRoutes` import at line ~95
@@ -476,6 +477,17 @@ async function bootstrap(): Promise<void> {
   // ── 4.7. Healthcare routes ─────────────────────────────────────────────
   configureHealthcareRoutes(db);
   console.warn('[ORDR:API] Healthcare routes configured');
+
+  // ── 4.7b. FHIR R4 routes ──────────────────────────────────────────────
+  // Mounted at /api/v1/fhir/r4 — Patient import/export + Communication
+  // FHIR_BASE_URL env var should match the public API URL for self-links.
+  configureFhirRoutes({
+    db,
+    auditLogger,
+    baseUrl:
+      process.env['FHIR_BASE_URL'] ?? process.env['API_BASE_URL'] ?? 'http://localhost:3000/api/v1',
+  });
+  console.warn('[ORDR:API] FHIR R4 routes configured — /api/v1/fhir/r4');
 
   // ── 4.8. Developer usage route ─────────────────────────────────────────
   configureDevUsageRoute(db);

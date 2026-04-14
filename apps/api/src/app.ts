@@ -64,6 +64,7 @@ import { complianceDashboardRouter } from './routes/compliance-dashboard.js';
 import { eventsRouter } from './routes/events.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { healthcareRouter } from './routes/healthcare.js';
+import { fhirRouter } from './routes/fhir.js';
 import { devUsageRouter } from './routes/developer-usage.js';
 import { developerWebhooksRouter } from './routes/developer-webhooks.js';
 import { developerAgentsRouter } from './routes/developer-agents.js';
@@ -289,6 +290,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Healthcare dashboard — patient queue, appointments, care plans, compliance
   app.route('/api/v1/healthcare', healthcareRouter);
+
+  // FHIR R4 — HL7 FHIR interoperability (Patient, Communication, Bundle)
+  app.route('/api/v1/fhir/r4', fhirRouter);
 
   // SLA routes — breach status and manual trigger
   app.route('/api/v1/sla', slaRouter);
