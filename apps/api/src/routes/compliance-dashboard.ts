@@ -11,22 +11,92 @@
  * ISO 27001 A.5.36 — Compliance with information security policies.
  * HIPAA §164.308(a)(1) — Risk analysis and management.
  *
- * IMPLEMENTATION NOTE: Violations and consent data are currently returned as
- * deterministic seed data per tenantId while persistent audit storage
- * (violations table + consent records) is being wired up in the DB layer.
- * The API contract is stable — callers should not rely on the mock values.
+ * SECURITY:
+ * - tenantId ALWAYS from JWT, never client input (Rule 2)
+ * - All resolve actions are audit-logged (Rule 3)
+ * - customerName is NOT returned — name field is encrypted (Rule 6)
+ * - Violation core fields are immutable at DB layer (WORM — Rule 3)
  */
 
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { ComplianceEngine, ALL_RULES } from '@ordr/compliance';
+import type { AuditLogger } from '@ordr/audit';
 import { ValidationError, AuthorizationError, NotFoundError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
 import { featureGate, FEATURES } from '../middleware/plan-gate.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
-// ─── Input Schemas ───────────────────────────────────────────────
+// ── Violation domain types ────────────────────────────────────────────────────
+
+export type ViolationRegulation = 'HIPAA' | 'FDCPA' | 'TCPA' | 'GDPR' | 'SOC2' | 'ISO27001';
+export type ViolationSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface ViolationRecord {
+  readonly id: string;
+  readonly rule: string;
+  readonly regulation: ViolationRegulation;
+  readonly severity: ViolationSeverity;
+  readonly description: string;
+  readonly customerId: string | null;
+  /** Always null — customer name is encrypted, fetch from /v1/customers/:id if needed. */
+  readonly customerName: null;
+  readonly timestamp: string;
+  readonly resolved: boolean;
+  readonly resolvedAt: string | null;
+  readonly resolvedBy: string | null;
+  readonly resolutionNote: string | null;
+}
+
+export interface ViolationCounts {
+  readonly [regulation: string]: {
+    readonly open: number;
+    readonly resolved: number;
+  };
+}
+
+export interface ConsentRate {
+  readonly channel: string;
+  readonly consented: number;
+  readonly total: number;
+  readonly percentage: number;
+}
+
+// ── Dependency Types ──────────────────────────────────────────────────────────
+
+export interface ComplianceDashboardDeps {
+  readonly auditLogger: AuditLogger;
+  readonly listViolations: (
+    tenantId: string,
+    opts: {
+      regulation?: ViolationRegulation;
+      resolved?: boolean;
+      page: number;
+      pageSize: number;
+    },
+  ) => Promise<{ readonly items: readonly ViolationRecord[]; readonly total: number }>;
+  readonly getViolation: (tenantId: string, id: string) => Promise<ViolationRecord | null>;
+  readonly resolveViolation: (
+    tenantId: string,
+    id: string,
+    data: { readonly resolvedBy: string; readonly resolutionNote: string | null },
+  ) => Promise<ViolationRecord | null>;
+  readonly getViolationCounts: (tenantId: string) => Promise<ViolationCounts>;
+  readonly getConsentRates: (tenantId: string) => Promise<readonly ConsentRate[]>;
+  readonly getLastAuditTime: (tenantId: string) => Promise<Date | null>;
+}
+
+// ── Module-level deps ─────────────────────────────────────────────────────────
+
+let deps: ComplianceDashboardDeps | null = null;
+
+export function configureComplianceDashboardRoutes(d: ComplianceDashboardDeps): void {
+  deps = d;
+}
+
+// ── Input Schemas ─────────────────────────────────────────────────────────────
 
 const violationQuerySchema = z.object({
   regulation: z.enum(['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'SOC2', 'ISO27001'] as const).optional(),
@@ -42,140 +112,31 @@ const violationQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-// ─── Types ───────────────────────────────────────────────────────
+const resolveBodySchema = z.object({
+  note: z.string().max(500).nullable().optional(),
+});
 
-interface ViolationRecord {
-  readonly id: string;
-  readonly rule: string;
-  readonly regulation: 'HIPAA' | 'FDCPA' | 'TCPA' | 'GDPR' | 'SOC2' | 'ISO27001';
-  readonly severity: 'critical' | 'high' | 'medium' | 'low';
-  readonly description: string;
-  readonly customerId: string;
-  readonly customerName: string;
-  readonly timestamp: string;
-  readonly resolved: boolean;
-  readonly resolvedAt: string | null;
-  readonly resolvedBy: string | null;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function ensureTenantContext(c: {
   get(key: 'tenantContext'): TenantContext | undefined;
 }): TenantContext {
   const ctx = c.get('tenantContext');
-  if (ctx === undefined) {
-    throw new AuthorizationError('Tenant context required');
-  }
+  if (ctx === undefined) throw new AuthorizationError('Tenant context required');
   return ctx;
 }
 
+function getDeps(): ComplianceDashboardDeps {
+  if (!deps) throw new Error('[ORDR:API] Compliance dashboard routes not configured');
+  return deps;
+}
+
 /**
- * Deterministic pseudo-random seeded by tenantId for consistent results.
- * Replaced by real DB queries once violations table is wired.
+ * Compute compliance score by running ALL_RULES against a neutral test context.
+ * This reflects rule-configuration health, not violation history.
+ * Score 0–100; 100 = all rules pass against nominal data.
  */
-function seedRng(seed: string): () => number {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) {
-    h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
-  }
-  return () => {
-    h = (Math.imul(1664525, h) + 1013904223) | 0;
-    return (h >>> 0) / 0x100000000;
-  };
-}
-
-const VIOLATION_TEMPLATES: ReadonlyArray<
-  Omit<ViolationRecord, 'id' | 'timestamp' | 'resolved' | 'resolvedAt' | 'resolvedBy'>
-> = [
-  {
-    rule: 'TCPA-quiet-hours',
-    regulation: 'TCPA',
-    severity: 'high',
-    description: 'Outbound call attempted during quiet hours (9PM–8AM local)',
-    customerId: 'cust-0012',
-    customerName: 'Oscorp',
-  },
-  {
-    rule: 'HIPAA-phi-logging',
-    regulation: 'HIPAA',
-    severity: 'critical',
-    description: 'PHI field detected in structured log output — automatically redacted',
-    customerId: 'cust-0005',
-    customerName: 'Stark Industries',
-  },
-  {
-    rule: 'FDCPA-frequency',
-    regulation: 'FDCPA',
-    severity: 'medium',
-    description: 'Contact frequency exceeded 7-day limit for collection communications',
-    customerId: 'cust-0008',
-    customerName: 'Pied Piper',
-  },
-  {
-    rule: 'GDPR-consent-expired',
-    regulation: 'GDPR',
-    severity: 'medium',
-    description: 'Marketing consent expired — communication blocked automatically',
-    customerId: 'cust-0003',
-    customerName: 'Initech',
-  },
-  {
-    rule: 'SOC2-access-anomaly',
-    regulation: 'SOC2',
-    severity: 'low',
-    description: 'Unusual access pattern detected — additional verification triggered',
-    customerId: 'cust-0015',
-    customerName: 'Massive Dynamic',
-  },
-  {
-    rule: 'TCPA-do-not-call',
-    regulation: 'TCPA',
-    severity: 'high',
-    description: 'Number on DNC registry — outbound call blocked',
-    customerId: 'cust-0007',
-    customerName: 'LexCorp',
-  },
-  {
-    rule: 'ISO27001-key-rotation',
-    regulation: 'ISO27001',
-    severity: 'low',
-    description: 'Encryption key approaching 75-day rotation threshold — scheduled for rotation',
-    customerId: 'cust-0000',
-    customerName: 'System',
-  },
-  {
-    rule: 'HIPAA-min-necessary',
-    regulation: 'HIPAA',
-    severity: 'medium',
-    description: 'Agent requested data beyond minimum necessary scope — request denied',
-    customerId: 'cust-0002',
-    customerName: 'Globex Inc',
-  },
-];
-
-function buildViolations(tenantId: string): ViolationRecord[] {
-  const rng = seedRng(tenantId);
-  const baseMs = Date.now() - 86_400_000; // 24h ago baseline
-
-  return VIOLATION_TEMPLATES.map((tmpl, i) => {
-    const resolvedChance = rng();
-    const resolved = resolvedChance > 0.45;
-    const offsetMs = Math.floor(rng() * 86_400_000);
-
-    return {
-      ...tmpl,
-      id: `v-${tenantId.slice(0, 8)}-${String(i).padStart(3, '0')}`,
-      timestamp: new Date(baseMs - offsetMs).toISOString(),
-      resolved,
-      resolvedAt: resolved ? new Date(baseMs - offsetMs + 3_600_000).toISOString() : null,
-      resolvedBy: resolved ? 'operator' : null,
-    };
-  });
-}
-
-/** Compute a compliance score by running ALL_RULES against a neutral test context. */
-function computeComplianceScore(tenantId: string): {
+function computeComplianceScore(): {
   score: number;
   totalChecks: number;
   passingChecks: number;
@@ -183,44 +144,82 @@ function computeComplianceScore(tenantId: string): {
 } {
   const engine = new ComplianceEngine();
   engine.registerRules(ALL_RULES);
-
-  const ctx = {
-    tenantId,
+  const result = engine.evaluate({
+    tenantId: 'health-check',
     action: 'send_message',
     channel: 'sms',
     data: {
-      localHour: 14, // 2PM — compliant hour
-      contactCount7Days: 2, // within FDCPA limit
+      localHour: 14, // 2PM — within quiet-hour rules
+      contactCount7Days: 2, // within FDCPA frequency limit
       hasConsent: true,
       dncListed: false,
     },
     timestamp: new Date(),
+  });
+  const total = result.results.length;
+  const passing = result.results.filter((r) => r.passed).length;
+  return {
+    score: total > 0 ? Math.round((passing / total) * 100) : 100,
+    totalChecks: total,
+    passingChecks: passing,
+    failingChecks: total - passing,
   };
-
-  const gateResult = engine.evaluate(ctx);
-  const totalChecks = gateResult.results.length;
-  const passingChecks = gateResult.results.filter((r) => r.passed).length;
-  const failingChecks = totalChecks - passingChecks;
-  const score = totalChecks > 0 ? Math.round((passingChecks / totalChecks) * 100) : 100;
-
-  return { score, totalChecks, passingChecks, failingChecks };
 }
 
-// ─── Router ──────────────────────────────────────────────────────
+// ── Router ────────────────────────────────────────────────────────────────────
 
 const complianceDashboardRouter = new Hono<Env>();
 
-// All compliance routes require auth + compliance:read permission + compliance_dashboard plan feature
 complianceDashboardRouter.use('*', requireAuth());
 complianceDashboardRouter.use('*', requirePermissionMiddleware('compliance', 'read'));
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+
 complianceDashboardRouter.use('*', featureGate(FEATURES.COMPLIANCE_DASHBOARD));
+complianceDashboardRouter.use('*', rateLimit('read'));
 
-// ─── GET /summary ────────────────────────────────────────────────
+// ── GET /summary ──────────────────────────────────────────────────────────────
 
-complianceDashboardRouter.get('/summary', (c): Response => {
+complianceDashboardRouter.get('/summary', async (c): Promise<Response> => {
+  const d = getDeps();
   const ctx = ensureTenantContext(c);
-  const { score, totalChecks, passingChecks, failingChecks } = computeComplianceScore(ctx.tenantId);
+
+  const { score, totalChecks, passingChecks, failingChecks } = computeComplianceScore();
+
+  const [violationCounts, lastAuditTime] = await Promise.all([
+    d.getViolationCounts(ctx.tenantId),
+    d.getLastAuditTime(ctx.tenantId),
+  ]);
+
+  // Build per-regulation breakdown using real violation counts
+  const REGULATIONS: ViolationRegulation[] = ['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'SOC2', 'ISO27001'];
+  const RULE_COUNTS: Record<ViolationRegulation, number> = {
+    HIPAA: 12,
+    FDCPA: 8,
+    TCPA: 10,
+    GDPR: 15,
+    SOC2: 28,
+    ISO27001: 19,
+  };
+
+  const regulations = REGULATIONS.map((regulation) => {
+    const counts = violationCounts[regulation] ?? { open: 0, resolved: 0 };
+    const total = counts.open + counts.resolved;
+    const ruleCount = RULE_COUNTS[regulation];
+    // Regulation score penalises open violations: each open violation = -5 points, floor 0
+    const regScore = Math.max(0, Math.min(100, score - counts.open * 5));
+    return {
+      regulation,
+      score: regScore,
+      ruleCount,
+      openViolations: counts.open,
+      totalViolations: total,
+    };
+  });
+
+  const totalOpen = REGULATIONS.reduce((sum, r) => sum + (violationCounts[r]?.open ?? 0), 0);
+  const totalResolved = REGULATIONS.reduce(
+    (sum, r) => sum + (violationCounts[r]?.resolved ?? 0),
+    0,
+  );
 
   return c.json({
     success: true as const,
@@ -229,24 +228,20 @@ complianceDashboardRouter.get('/summary', (c): Response => {
       totalChecks,
       passingChecks,
       failingChecks,
-      lastAudit: new Date().toISOString(),
-      regulations: [
-        { regulation: 'HIPAA' as const, score: Math.max(85, score - 3), ruleCount: 12 },
-        { regulation: 'FDCPA' as const, score: Math.min(100, score + 2), ruleCount: 8 },
-        { regulation: 'TCPA' as const, score: Math.max(80, score - 6), ruleCount: 10 },
-        { regulation: 'GDPR' as const, score: Math.min(100, score + 1), ruleCount: 15 },
-        { regulation: 'SOC2' as const, score: Math.min(100, score + 3), ruleCount: 28 },
-        { regulation: 'ISO27001' as const, score: score, ruleCount: 19 },
-      ],
+      openViolations: totalOpen,
+      resolvedViolations: totalResolved,
+      lastAudit: (lastAuditTime ?? new Date()).toISOString(),
+      regulations,
     },
   });
 });
 
-// ─── GET /violations ─────────────────────────────────────────────
+// ── GET /violations ───────────────────────────────────────────────────────────
 
-complianceDashboardRouter.get('/violations', (c): Response => {
+complianceDashboardRouter.get('/violations', async (c): Promise<Response> => {
+  const d = getDeps();
   const ctx = ensureTenantContext(c);
-  const correlationId = c.get('requestId');
+  const requestId = c.get('requestId');
 
   const queryParsed = violationQuerySchema.safeParse(
     Object.fromEntries(new URL(c.req.url).searchParams),
@@ -255,27 +250,19 @@ complianceDashboardRouter.get('/violations', (c): Response => {
     throw new ValidationError(
       'Invalid query parameters',
       queryParsed.error.flatten().fieldErrors as Record<string, string[]>,
-      correlationId,
+      requestId,
     );
   }
 
   const { regulation, resolved, page, pageSize } = queryParsed.data;
 
-  let violations = buildViolations(ctx.tenantId);
-
-  if (regulation !== undefined) {
-    violations = violations.filter((v) => v.regulation === regulation);
-  }
-  if (resolved !== undefined) {
-    violations = violations.filter((v) => v.resolved === resolved);
-  }
-
-  // Sort by timestamp desc (most recent first)
-  violations.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  const total = violations.length;
-  const offset = (page - 1) * pageSize;
-  const items = violations.slice(offset, offset + pageSize);
+  // exactOptionalPropertyTypes: only spread defined values so absent fields are truly absent
+  const { items, total } = await d.listViolations(ctx.tenantId, {
+    page,
+    pageSize,
+    ...(regulation !== undefined && { regulation }),
+    ...(resolved !== undefined && { resolved }),
+  });
 
   return c.json({
     success: true as const,
@@ -286,68 +273,75 @@ complianceDashboardRouter.get('/violations', (c): Response => {
   });
 });
 
-// ─── POST /violations/:id/resolve ────────────────────────────────
+// ── POST /violations/:id/resolve ──────────────────────────────────────────────
 
 complianceDashboardRouter.post('/violations/:id/resolve', async (c): Promise<Response> => {
+  const d = getDeps();
   const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
   const violationId = c.req.param('id');
-  const correlationId = c.get('requestId');
 
-  // Validate the violation belongs to this tenant
-  const tenantPrefix = `v-${ctx.tenantId.slice(0, 8)}-`;
-  if (!violationId.startsWith(tenantPrefix)) {
-    throw new NotFoundError(`Violation not found: ${violationId}`, correlationId);
+  const body: unknown = await c.req.json().catch(() => ({}));
+  const parsed = resolveBodySchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(
+      'Invalid resolve payload',
+      parsed.error.flatten().fieldErrors as Record<string, string[]>,
+      requestId,
+    );
   }
 
-  // Parse optional resolution note
-  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const note = typeof body['note'] === 'string' ? body['note'].slice(0, 500) : null;
+  // Verify violation exists and belongs to this tenant before update
+  const existing = await d.getViolation(ctx.tenantId, violationId);
+  if (!existing) {
+    throw new NotFoundError(`Violation not found: ${violationId}`, requestId);
+  }
+  if (existing.resolved) {
+    throw new ValidationError(
+      'Violation is already resolved',
+      { id: ['Already resolved'] },
+      requestId,
+    );
+  }
 
-  return c.json({
-    success: true as const,
-    data: {
-      id: violationId,
-      resolved: true,
-      resolvedAt: new Date().toISOString(),
-      resolvedBy: ctx.userId,
-      note,
-    },
+  const updated = await d.resolveViolation(ctx.tenantId, violationId, {
+    resolvedBy: ctx.userId,
+    resolutionNote: parsed.data.note ?? null,
   });
+
+  if (!updated) {
+    throw new NotFoundError(`Violation not found: ${violationId}`, requestId);
+  }
+
+  await d.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'compliance.violation',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'compliance_violations',
+    resourceId: violationId,
+    action: 'resolve_violation',
+    details: {
+      rule: existing.rule,
+      regulation: existing.regulation,
+      severity: existing.severity,
+      resolutionNote: updated.resolutionNote,
+    },
+    timestamp: new Date(),
+  });
+
+  return c.json({ success: true as const, data: updated });
 });
 
-// ─── GET /consent-status ─────────────────────────────────────────
+// ── GET /consent-status ───────────────────────────────────────────────────────
 
-complianceDashboardRouter.get('/consent-status', (c): Response => {
+complianceDashboardRouter.get('/consent-status', async (c): Promise<Response> => {
+  const d = getDeps();
   const ctx = ensureTenantContext(c);
-  const rng = seedRng(`${ctx.tenantId}:consent`);
 
-  const baseTotal = 2847;
-  const channels = [
-    { channel: 'SMS', baseRate: 0.822 },
-    { channel: 'Email', baseRate: 0.945 },
-    { channel: 'Voice', baseRate: 0.675 },
-    { channel: 'Chat', baseRate: 0.757 },
-  ];
+  const rates = await d.getConsentRates(ctx.tenantId);
 
-  const data = channels.map(({ channel, baseRate }) => {
-    // ±5% jitter seeded per tenant so results are stable per tenant
-    const jitter = (rng() - 0.5) * 0.1;
-    const percentage = Math.max(0, Math.min(100, (baseRate + jitter) * 100));
-    const total = baseTotal + Math.floor(rng() * 200);
-    const consented = Math.round((percentage / 100) * total);
-
-    return {
-      channel,
-      consented,
-      total,
-      percentage: Math.round(percentage * 10) / 10,
-    };
-  });
-
-  return c.json({
-    success: true as const,
-    data,
-  });
+  return c.json({ success: true as const, data: rates });
 });
 
 export { complianceDashboardRouter };

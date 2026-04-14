@@ -74,7 +74,21 @@ import {
 } from '@ordr/analytics';
 import type { AnalyticsStore } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
-import { and, eq, gt, gte, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gt,
+  gte,
+  sum,
+  count,
+  max,
+  sql,
+  desc,
+  ilike,
+  or,
+  asc,
+  type SQL,
+} from 'drizzle-orm';
 import { MetricsRegistry } from '@ordr/observability';
 import { Redis } from 'ioredis';
 import { createApp } from './app.js';
@@ -122,6 +136,10 @@ import { configureSearchRoutes } from './routes/search.js';
 import { configureSchedulerRoutes } from './routes/scheduler.js';
 import { configureIntegrationRoutes } from './routes/integrations.js';
 import { configureDsrRoutes } from './routes/dsr.js';
+import {
+  configureComplianceDashboardRoutes,
+  type ViolationRegulation,
+} from './routes/compliance-dashboard.js';
 import { configureTenantRoutes } from './routes/tenants.js';
 import { ChannelManager } from '@ordr/realtime';
 import { EventPublisher } from '@ordr/realtime';
@@ -2298,6 +2316,139 @@ async function bootstrap(): Promise<void> {
       auditLogger,
     });
     console.warn('[ORDR:API] DSR routes configured');
+  }
+
+  // ── P6.5c. Compliance dashboard routes (Phase 58) ────────────────────────
+  {
+    const mapViolation = (row: typeof schema.complianceViolations.$inferSelect) => ({
+      id: row.id,
+      rule: row.ruleName,
+      regulation: row.regulation as ViolationRegulation,
+      severity: row.severity,
+      description: row.description,
+      customerId: row.customerId ?? null,
+      customerName: null,
+      timestamp: row.detectedAt.toISOString(),
+      resolved: row.resolved,
+      resolvedAt: row.resolvedAt?.toISOString() ?? null,
+      resolvedBy: row.resolvedBy ?? null,
+      resolutionNote: row.resolutionNote ?? null,
+    });
+
+    configureComplianceDashboardRoutes({
+      auditLogger,
+
+      listViolations: async (tenantId, opts) => {
+        const conditions: SQL[] = [eq(schema.complianceViolations.tenantId, tenantId)];
+        if (opts.regulation !== undefined) {
+          conditions.push(eq(schema.complianceViolations.regulation, opts.regulation as never));
+        }
+        if (opts.resolved !== undefined) {
+          conditions.push(eq(schema.complianceViolations.resolved, opts.resolved));
+        }
+        const offset = (opts.page - 1) * opts.pageSize;
+        const [rows, countRows] = await Promise.all([
+          db
+            .select()
+            .from(schema.complianceViolations)
+            .where(and(...conditions))
+            .orderBy(desc(schema.complianceViolations.detectedAt))
+            .limit(opts.pageSize)
+            .offset(offset),
+          db
+            .select({ n: count() })
+            .from(schema.complianceViolations)
+            .where(and(...conditions)),
+        ]);
+        return {
+          items: rows.map(mapViolation),
+          total: countRows[0]?.n ?? 0,
+        };
+      },
+
+      getViolation: async (tenantId, id) => {
+        const rows = await db
+          .select()
+          .from(schema.complianceViolations)
+          .where(
+            and(
+              eq(schema.complianceViolations.tenantId, tenantId),
+              eq(schema.complianceViolations.id, id),
+            ),
+          )
+          .limit(1);
+        return rows[0] ? mapViolation(rows[0]) : null;
+      },
+
+      resolveViolation: async (tenantId, id, data) => {
+        const rows = await db
+          .update(schema.complianceViolations)
+          .set({
+            resolved: true,
+            resolvedAt: new Date(),
+            resolvedBy: data.resolvedBy,
+            resolutionNote: data.resolutionNote,
+          })
+          .where(
+            and(
+              eq(schema.complianceViolations.tenantId, tenantId),
+              eq(schema.complianceViolations.id, id),
+              eq(schema.complianceViolations.resolved, false),
+            ),
+          )
+          .returning();
+        return rows[0] ? mapViolation(rows[0]) : null;
+      },
+
+      getViolationCounts: async (tenantId) => {
+        const rows = await db
+          .select({
+            regulation: schema.complianceViolations.regulation,
+            resolved: schema.complianceViolations.resolved,
+            n: count(),
+          })
+          .from(schema.complianceViolations)
+          .where(eq(schema.complianceViolations.tenantId, tenantId))
+          .groupBy(schema.complianceViolations.regulation, schema.complianceViolations.resolved);
+
+        const result: Record<string, { open: number; resolved: number }> = {};
+        for (const row of rows) {
+          const reg = row.regulation;
+          if (!result[reg]) result[reg] = { open: 0, resolved: 0 };
+          if (row.resolved) result[reg].resolved += row.n;
+          else result[reg].open += row.n;
+        }
+        return result;
+      },
+
+      getConsentRates: async (tenantId) => {
+        const rows = await db
+          .select({
+            channel: schema.contacts.channel,
+            total: count(),
+            consented: sql<number>`COUNT(*) FILTER (WHERE ${schema.contacts.consentStatus} = 'opted_in')`,
+          })
+          .from(schema.contacts)
+          .where(eq(schema.contacts.tenantId, tenantId))
+          .groupBy(schema.contacts.channel);
+
+        return rows.map((row) => ({
+          channel: row.channel,
+          total: row.total,
+          consented: row.consented,
+          percentage: row.total > 0 ? Math.round((row.consented / row.total) * 1000) / 10 : 0,
+        }));
+      },
+
+      getLastAuditTime: async (tenantId) => {
+        const rows = await db
+          .select({ ts: max(schema.complianceRecords.enforcedAt) })
+          .from(schema.complianceRecords)
+          .where(eq(schema.complianceRecords.tenantId, tenantId));
+        return rows[0]?.ts ?? null;
+      },
+    });
+    console.warn('[ORDR:API] Compliance dashboard routes configured');
   }
 
   // ── P6.6. CRM integration routes ────────────────────────────────────────

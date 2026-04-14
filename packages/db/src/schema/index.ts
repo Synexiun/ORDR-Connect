@@ -204,3 +204,10 @@ export { workosEvents } from './workos-events.js';
 
 // Feature Flags (Phase 57)
 export { featureFlags } from './feature-flags.js';
+
+// Compliance Violations (Phase 58)
+export {
+  complianceViolations,
+  violationRegulationEnum,
+  violationSeverityEnum,
+} from './compliance-violations.js';
