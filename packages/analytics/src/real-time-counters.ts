@@ -33,7 +33,7 @@ export class RealTimeCounters {
   async increment(
     tenantId: string,
     metric: MetricName,
-    dimensions?: Readonly<Record<string, string>> | undefined,
+    dimensions?: Readonly<Record<string, string>>,
   ): Promise<void> {
     if (!tenantId || tenantId.trim().length === 0) {
       throw new Error('tenantId is required for counter operations');
@@ -79,8 +79,9 @@ export class RealTimeCounters {
 
     const output: Partial<Record<MetricName, number>> = {};
     for (let i = 0; i < metrics.length; i++) {
-      const metric = metrics[i]!;
-      const key = keys[i]!;
+      const metric = metrics[i];
+      const key = keys[i];
+      if (metric === undefined || key === undefined) continue;
       output[metric] = results.get(key) ?? 0;
     }
 
@@ -105,9 +106,7 @@ export class RealTimeCounters {
    * Get all standard metric counters for a tenant in a single call.
    * Convenience method for dashboard real-time view.
    */
-  async getAllCounters(
-    tenantId: string,
-  ): Promise<Readonly<Record<MetricName, number>>> {
+  async getAllCounters(tenantId: string): Promise<Readonly<Record<MetricName, number>>> {
     return this.getMultiple(tenantId, METRIC_NAMES);
   }
 }
@@ -133,6 +132,7 @@ export class InMemoryCounterStore implements CounterStore {
     this.ttlMs = ttlMs ?? COUNTER_TTL_SECONDS * 1000;
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- sync impl behind async interface
   async increment(key: string, amount?: number): Promise<void> {
     this.evictExpired();
 
@@ -147,6 +147,7 @@ export class InMemoryCounterStore implements CounterStore {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- sync impl behind async interface
   async get(key: string): Promise<number> {
     this.evictExpired();
 
@@ -162,6 +163,7 @@ export class InMemoryCounterStore implements CounterStore {
     return entry.value;
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- sync impl behind async interface
   async getMultiple(keys: readonly string[]): Promise<ReadonlyMap<string, number>> {
     this.evictExpired();
 
@@ -178,11 +180,12 @@ export class InMemoryCounterStore implements CounterStore {
     return results;
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- sync impl behind async interface
   async reset(keyPattern: string): Promise<void> {
-    // Simple pattern matching: convert glob pattern to regex
-    const regexStr = keyPattern
-      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '.*');
+    // Simple pattern matching: convert glob pattern to regex — safe: input is
+    // always an internally-constructed key prefix from buildCounterKey(), never user input.
+    const regexStr = keyPattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    // eslint-disable-next-line security/detect-non-literal-regexp -- pattern is internally constructed
     const regex = new RegExp(`^${regexStr}$`);
 
     for (const key of this.counters.keys()) {
@@ -211,6 +214,73 @@ export class InMemoryCounterStore implements CounterStore {
         this.counters.delete(key);
       }
     }
+  }
+}
+
+// ─── Redis Counter Store ─────────────────────────────────────────
+
+/**
+ * Minimal Redis client interface required by RedisCounterStore.
+ * Implemented by ioredis.Redis — no direct dependency.
+ */
+export interface RedisCounterClient {
+  incrby(key: string, amount: number): Promise<number>;
+  pexpireat(key: string, timestamp: number): Promise<number>;
+  get(key: string): Promise<string | null>;
+  del(...keys: readonly [string, ...string[]]): Promise<number>;
+  keys(pattern: string): Promise<string[]>;
+}
+
+/**
+ * Redis-backed counter store for production deployments.
+ *
+ * Uses Redis INCRBY + PEXPIREAT for increment-with-TTL.
+ * Suitable for horizontally-scaled deployments where InMemoryCounterStore
+ * would lose state across pod restarts and not share counts across replicas.
+ *
+ * TTL is set to 48 hours per counter key (COUNTER_TTL_SECONDS), aligned with
+ * the daily rotation pattern of counter keys (one key per tenant+metric+date).
+ *
+ * SOC2 CC6.1 — Counter keys are tenant-scoped (tenant isolation enforced by key structure).
+ * ISO 27001 A.12.4.1 — Event logging: shared real-time operational visibility across replicas.
+ */
+export class RedisCounterStore implements CounterStore {
+  private readonly client: RedisCounterClient;
+  private readonly ttlMs: number;
+
+  constructor(client: RedisCounterClient, ttlMs?: number) {
+    this.client = client;
+    this.ttlMs = ttlMs ?? COUNTER_TTL_SECONDS * 1000;
+  }
+
+  async increment(key: string, amount?: number): Promise<void> {
+    await this.client.incrby(key, amount ?? 1);
+    // Reset TTL on every write to slide the expiry window
+    await this.client.pexpireat(key, Date.now() + this.ttlMs);
+  }
+
+  async get(key: string): Promise<number> {
+    const val = await this.client.get(key);
+    return val !== null ? Number(val) : 0;
+  }
+
+  async getMultiple(keys: readonly string[]): Promise<ReadonlyMap<string, number>> {
+    const results = new Map<string, number>();
+    // Fetch in parallel — each key is a separate GET (Redis pipeline would be better
+    // but requires a pipeline interface; parallel awaits still amortise RTT well enough)
+    await Promise.all(
+      keys.map(async (key) => {
+        const val = await this.client.get(key);
+        results.set(key, val !== null ? Number(val) : 0);
+      }),
+    );
+    return results;
+  }
+
+  async reset(keyPattern: string): Promise<void> {
+    const matching = await this.client.keys(keyPattern);
+    if (matching.length === 0) return;
+    await this.client.del(...(matching as [string, ...string[]]));
   }
 }
 

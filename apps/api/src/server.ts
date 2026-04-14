@@ -61,6 +61,8 @@ import {
   SSOManager,
   RedisRateLimiter,
   InMemoryRateLimiter,
+  DrizzleSessionStore,
+  SessionManager,
 } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine, ComplianceGate, ALL_RULES } from '@ordr/compliance';
@@ -88,9 +90,10 @@ import {
   RealTimeCounters,
   InMemoryAnalyticsStore,
   InMemoryCounterStore,
+  RedisCounterStore,
   AnalyticsClient,
 } from '@ordr/analytics';
-import type { AnalyticsStore } from '@ordr/analytics';
+import type { AnalyticsStore, CounterStore } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
 import {
   and,
@@ -124,6 +127,7 @@ import { configureEventsRoute } from './routes/events.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureAuditLogsRoute } from './routes/audit-logs.js';
 import { configureMessagingRoutes } from './routes/messaging.js';
+import { configureAuthRoutes } from './routes/auth.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureFhirRoutes } from './routes/fhir.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
@@ -1004,7 +1008,22 @@ async function bootstrap(): Promise<void> {
       '[ORDR:API] Analytics routes configured — in-memory store (set CLICKHOUSE_URL for production)',
     );
   }
-  const counterStore = new InMemoryCounterStore();
+  // Counter store — Redis in production (shared across pod replicas), in-memory otherwise.
+  // Uses the same REDIS_URL as the rate limiter; a second lazy connection is fine here
+  // because counter key access patterns differ from rate-limit key access patterns.
+  const counterRedisUrl = process.env['REDIS_URL']?.trim();
+  let counterStore: CounterStore;
+  if (counterRedisUrl !== undefined && counterRedisUrl !== '') {
+    const counterRedisClient = new Redis(counterRedisUrl, { lazyConnect: true });
+    counterRedisClient.on('error', (err: Error) => {
+      console.error('[ORDR:API] Redis counter store error:', err.message);
+    });
+    counterStore = new RedisCounterStore(counterRedisClient);
+    console.warn('[ORDR:API] Counter store initialized (Redis)');
+  } else {
+    counterStore = new InMemoryCounterStore();
+    console.warn('[ORDR:API] Counter store initialized (InMemory — set REDIS_URL for production)');
+  }
   configureAnalyticsRoutes({
     queries: new AnalyticsQueries(analyticsStore),
     realTimeCounters: new RealTimeCounters(counterStore),
@@ -1407,17 +1426,82 @@ async function bootstrap(): Promise<void> {
 
   // Rate limiter -- Redis-backed in production (REDIS_URL set), in-memory otherwise.
   // RedisRateLimiter shares window state across K8s pod replicas (SOC2 CC6.6).
+  // The same limiter instance is passed to both the API middleware AND the auth
+  // login route so brute-force state is consistent across all entry points.
   const redisUrl = process.env['REDIS_URL']?.trim();
+  let authRateLimiter: InMemoryRateLimiter | import('@ordr/auth').RedisRateLimiter;
   if (redisUrl !== undefined && redisUrl !== '') {
     const redisClient = new Redis(redisUrl, { lazyConnect: true });
     redisClient.on('error', (err: Error) => {
       console.error('[ORDR:API] Redis connection error:', err.message);
     });
-    configureRateLimit(new RedisRateLimiter(redisClient));
+    authRateLimiter = new RedisRateLimiter(redisClient);
+    configureRateLimit(authRateLimiter);
     console.warn('[ORDR:API] Rate limiter initialized (Redis sliding window)');
   } else {
-    configureRateLimit(new InMemoryRateLimiter());
+    authRateLimiter = new InMemoryRateLimiter();
+    configureRateLimit(authRateLimiter);
     console.warn('[ORDR:API] Rate limiter initialized (InMemory -- set REDIS_URL for production)');
+  }
+
+  // ── 7.0. Auth routes — wire DB lookups + session manager + rate limiter ──
+  // configureAuthRoutes must be called after JWT config and rate limiter are ready.
+  // DrizzleSessionStore persists sessions to PostgreSQL (survives pod restarts).
+  {
+    const sessionStore = new DrizzleSessionStore(db);
+    const sessionManager = new SessionManager(sessionStore, activeJwtConfig);
+
+    configureAuthRoutes({
+      jwtConfig: activeJwtConfig,
+      sessionManager,
+      auditLogger,
+      rateLimiter: authRateLimiter,
+
+      findUserByEmail: async (email) => {
+        const rows = await db
+          .select()
+          .from(schema.users)
+          .where(eq(schema.users.email, email))
+          .limit(1);
+        const row = rows[0];
+        if (!row) return null;
+        return {
+          id: row.id,
+          tenantId: row.tenantId,
+          email: row.email,
+          name: row.name,
+          role: row.role,
+          passwordHash: row.passwordHash,
+          status: row.status,
+          failedLoginAttempts: row.failedLoginAttempts ?? 0,
+          lockedUntil: row.lockedUntil ?? null,
+        };
+      },
+
+      updateLoginAttempts: async (userId, attempts, lockedUntil) => {
+        await db
+          .update(schema.users)
+          .set({
+            failedLoginAttempts: attempts,
+            lockedUntil: lockedUntil ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.users.id, userId));
+      },
+
+      resetLoginAttempts: async (userId) => {
+        await db
+          .update(schema.users)
+          .set({
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            lastLoginAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.users.id, userId));
+      },
+    });
+    console.warn('[ORDR:API] Auth routes configured (DrizzleSessionStore, Redis rate limiter)');
   }
 
   configureEventsRoute({ jwtConfig: activeJwtConfig });

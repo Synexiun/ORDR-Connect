@@ -39,10 +39,7 @@ export {
 // ─── Client ──────────────────────────────────────────────────────
 export type { AnalyticsStore } from './client.js';
 
-export {
-  AnalyticsClient,
-  InMemoryAnalyticsStore,
-} from './client.js';
+export { AnalyticsClient, InMemoryAnalyticsStore } from './client.js';
 
 // ─── Event Sink ──────────────────────────────────────────────────
 export { AnalyticsEventSink } from './event-sink.js';
@@ -51,21 +48,17 @@ export { AnalyticsEventSink } from './event-sink.js';
 export { AnalyticsQueries } from './queries.js';
 
 // ─── Real-Time Counters ──────────────────────────────────────────
+export type { RedisCounterClient } from './real-time-counters.js';
+
 export {
   RealTimeCounters,
   InMemoryCounterStore,
+  RedisCounterStore,
   buildCounterKey,
   getTodayDateString,
 } from './real-time-counters.js';
 
 // ─── Cohorts ─────────────────────────────────────────────────────
-export type {
-  BuiltInCohortField,
-  CohortCustomerRecord,
-  CustomerProvider,
-} from './cohorts.js';
+export type { BuiltInCohortField, CohortCustomerRecord, CustomerProvider } from './cohorts.js';
 
-export {
-  CohortAnalyzer,
-  BUILT_IN_COHORT_FIELDS,
-} from './cohorts.js';
+export { CohortAnalyzer, BUILT_IN_COHORT_FIELDS } from './cohorts.js';

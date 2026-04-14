@@ -17,7 +17,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { JwtConfig } from '@ordr/auth';
 import { createAccessToken, InMemoryRateLimiter, AUTH_RATE_LIMIT } from '@ordr/auth';
-import type { SessionManager } from '@ordr/auth';
+import type { RateLimiter, SessionManager } from '@ordr/auth';
 import type { AuditLogger } from '@ordr/audit';
 import {
   AuthenticationError,
@@ -52,6 +52,8 @@ interface AuthDependencies {
   readonly jwtConfig: JwtConfig;
   readonly sessionManager: SessionManager;
   readonly auditLogger: AuditLogger;
+  /** Redis-backed limiter in production; falls back to InMemoryRateLimiter when omitted. */
+  readonly rateLimiter?: RateLimiter;
   readonly findUserByEmail: (email: string) => Promise<{
     readonly id: string;
     readonly tenantId: string;
@@ -72,10 +74,16 @@ interface AuthDependencies {
 }
 
 let deps: AuthDependencies | null = null;
-const rateLimiter = new InMemoryRateLimiter();
+// Default to in-memory; replaced by configureAuthRoutes when Redis is available.
+// In-memory is acceptable for single-instance dev/test; Redis is required for
+// horizontally-scaled production (brute-force state shared across pod replicas).
+let rateLimiter: RateLimiter = new InMemoryRateLimiter();
 
 export function configureAuthRoutes(dependencies: AuthDependencies): void {
   deps = dependencies;
+  if (dependencies.rateLimiter !== undefined) {
+    rateLimiter = dependencies.rateLimiter;
+  }
 }
 
 // ---- Router ----------------------------------------------------------------

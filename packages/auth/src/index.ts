@@ -31,6 +31,8 @@ export type { StoredSession, SessionMetadata, SessionStore } from './session.js'
 
 export { SessionManager } from './session.js';
 
+export { DrizzleSessionStore } from './drizzle-session-store.js';
+
 // ─── API Key ───────────────────────────────────────────────────────
 export type { ApiKeyCreateResult, ApiKeyRecord } from './api-key.js';
 
