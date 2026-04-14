@@ -80,3 +80,28 @@ export type {
   IntegrationConfigRow,
   CredentialManagerDeps,
 } from './credential-manager.js';
+
+// ─── Field Mapper ───────────────────────────────────────────────
+export { applyFieldMappings, applyTransform, defaultContactMappings } from './field-mapper.js';
+export type { MappingResult } from './field-mapper.js';
+
+// ─── Conflict Resolver ──────────────────────────────────────────
+export { detectConflicts, resolveConflicts } from './conflict-resolver.js';
+export type {
+  FieldConflict,
+  ConflictDetectionResult,
+  ConflictResolutionResult,
+} from './conflict-resolver.js';
+
+// ─── Sync Engine ────────────────────────────────────────────────
+export { SyncEngine } from './sync-engine.js';
+export type {
+  ExternalRecord,
+  ExistingOrdrRecord,
+  OrdrRecord,
+  InboundAction,
+  InboundRecordResult,
+  InboundSyncResult,
+  OutboundRecordResult,
+  OutboundSyncResult,
+} from './sync-engine.js';
