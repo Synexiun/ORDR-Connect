@@ -11,6 +11,7 @@ import { HIPAA_ENHANCED_RULES } from './hipaa-enhanced.js';
 import { FDCPA_RULES } from './fdcpa.js';
 import { TCPA_RULES } from './tcpa.js';
 import { GDPR_RULES } from './gdpr.js';
+import { CCPA_RULES } from './ccpa.js';
 import { PIPEDA_RULES } from './pipeda.js';
 import { LGPD_RULES } from './lgpd.js';
 
@@ -19,6 +20,7 @@ export { HIPAA_ENHANCED_RULES } from './hipaa-enhanced.js';
 export { FDCPA_RULES } from './fdcpa.js';
 export { TCPA_RULES } from './tcpa.js';
 export { GDPR_RULES } from './gdpr.js';
+export { CCPA_RULES } from './ccpa.js';
 export { PIPEDA_RULES } from './pipeda.js';
 export { LGPD_RULES } from './lgpd.js';
 
@@ -29,6 +31,7 @@ export const ALL_RULES: ReadonlyArray<ComplianceRule> = [
   ...FDCPA_RULES,
   ...TCPA_RULES,
   ...GDPR_RULES,
+  ...CCPA_RULES,
   ...PIPEDA_RULES,
   ...LGPD_RULES,
 ];

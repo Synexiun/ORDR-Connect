@@ -31,7 +31,14 @@ import { rateLimit } from '../middleware/rate-limit.js';
 
 // ── Violation domain types ────────────────────────────────────────────────────
 
-export type ViolationRegulation = 'HIPAA' | 'FDCPA' | 'TCPA' | 'GDPR' | 'SOC2' | 'ISO27001';
+export type ViolationRegulation =
+  | 'HIPAA'
+  | 'FDCPA'
+  | 'TCPA'
+  | 'GDPR'
+  | 'CCPA'
+  | 'SOC2'
+  | 'ISO27001';
 export type ViolationSeverity = 'critical' | 'high' | 'medium' | 'low';
 
 export interface ViolationRecord {
@@ -99,7 +106,9 @@ export function configureComplianceDashboardRoutes(d: ComplianceDashboardDeps): 
 // ── Input Schemas ─────────────────────────────────────────────────────────────
 
 const violationQuerySchema = z.object({
-  regulation: z.enum(['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'SOC2', 'ISO27001'] as const).optional(),
+  regulation: z
+    .enum(['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'CCPA', 'SOC2', 'ISO27001'] as const)
+    .optional(),
   resolved: z
     .string()
     .optional()
@@ -190,12 +199,21 @@ complianceDashboardRouter.get('/summary', async (c): Promise<Response> => {
   ]);
 
   // Build per-regulation breakdown using real violation counts
-  const REGULATIONS: ViolationRegulation[] = ['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'SOC2', 'ISO27001'];
+  const REGULATIONS: ViolationRegulation[] = [
+    'HIPAA',
+    'FDCPA',
+    'TCPA',
+    'GDPR',
+    'CCPA',
+    'SOC2',
+    'ISO27001',
+  ];
   const RULE_COUNTS: Record<ViolationRegulation, number> = {
     HIPAA: 12,
     FDCPA: 8,
     TCPA: 10,
     GDPR: 15,
+    CCPA: 12,
     SOC2: 28,
     ISO27001: 19,
   };

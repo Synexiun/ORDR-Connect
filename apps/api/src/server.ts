@@ -1010,6 +1010,7 @@ async function bootstrap(): Promise<void> {
     fdcpa: 'FDCPA',
     tcpa: 'TCPA',
     gdpr: 'GDPR',
+    ccpa: 'CCPA',
     soc2: 'SOC2',
     iso27001: 'ISO27001',
   };
