@@ -1011,6 +1011,8 @@ async function bootstrap(): Promise<void> {
     tcpa: 'TCPA',
     gdpr: 'GDPR',
     ccpa: 'CCPA',
+    fec: 'FEC',
+    respa: 'RESPA',
     soc2: 'SOC2',
     iso27001: 'ISO27001',
   };

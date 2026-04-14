@@ -12,6 +12,8 @@ import { FDCPA_RULES } from './fdcpa.js';
 import { TCPA_RULES } from './tcpa.js';
 import { GDPR_RULES } from './gdpr.js';
 import { CCPA_RULES } from './ccpa.js';
+import { FEC_RULES } from './fec.js';
+import { RESPA_RULES } from './respa.js';
 import { PIPEDA_RULES } from './pipeda.js';
 import { LGPD_RULES } from './lgpd.js';
 
@@ -21,6 +23,8 @@ export { FDCPA_RULES } from './fdcpa.js';
 export { TCPA_RULES } from './tcpa.js';
 export { GDPR_RULES } from './gdpr.js';
 export { CCPA_RULES } from './ccpa.js';
+export { FEC_RULES } from './fec.js';
+export { RESPA_RULES } from './respa.js';
 export { PIPEDA_RULES } from './pipeda.js';
 export { LGPD_RULES } from './lgpd.js';
 
@@ -32,6 +36,8 @@ export const ALL_RULES: ReadonlyArray<ComplianceRule> = [
   ...TCPA_RULES,
   ...GDPR_RULES,
   ...CCPA_RULES,
+  ...FEC_RULES,
+  ...RESPA_RULES,
   ...PIPEDA_RULES,
   ...LGPD_RULES,
 ];

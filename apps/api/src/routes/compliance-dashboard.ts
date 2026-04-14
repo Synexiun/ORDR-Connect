@@ -37,6 +37,8 @@ export type ViolationRegulation =
   | 'TCPA'
   | 'GDPR'
   | 'CCPA'
+  | 'FEC'
+  | 'RESPA'
   | 'SOC2'
   | 'ISO27001';
 export type ViolationSeverity = 'critical' | 'high' | 'medium' | 'low';
@@ -107,7 +109,7 @@ export function configureComplianceDashboardRoutes(d: ComplianceDashboardDeps): 
 
 const violationQuerySchema = z.object({
   regulation: z
-    .enum(['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'CCPA', 'SOC2', 'ISO27001'] as const)
+    .enum(['HIPAA', 'FDCPA', 'TCPA', 'GDPR', 'CCPA', 'FEC', 'RESPA', 'SOC2', 'ISO27001'] as const)
     .optional(),
   resolved: z
     .string()
@@ -205,6 +207,8 @@ complianceDashboardRouter.get('/summary', async (c): Promise<Response> => {
     'TCPA',
     'GDPR',
     'CCPA',
+    'FEC',
+    'RESPA',
     'SOC2',
     'ISO27001',
   ];
@@ -214,6 +218,8 @@ complianceDashboardRouter.get('/summary', async (c): Promise<Response> => {
     TCPA: 10,
     GDPR: 15,
     CCPA: 12,
+    FEC: 6,
+    RESPA: 7,
     SOC2: 28,
     ISO27001: 19,
   };

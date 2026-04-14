@@ -19,6 +19,8 @@ export const violationRegulationEnum = pgEnum('violation_regulation', [
   'TCPA',
   'GDPR',
   'CCPA',
+  'FEC',
+  'RESPA',
   'SOC2',
   'ISO27001',
 ]);
