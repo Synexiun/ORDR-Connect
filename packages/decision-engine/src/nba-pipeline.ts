@@ -15,14 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import {
-  type Result,
-  ok,
-  err,
-  InternalError,
-  ComplianceViolationError,
-  type AppError,
-} from '@ordr/core';
+import { type Result, ok, err, ComplianceViolationError } from '@ordr/core';
 import type {
   DecisionContext,
   Decision,
@@ -70,6 +63,8 @@ export interface NBAPipelineDeps {
   readonly llm: LLMReasoner;
   readonly compliance: ComplianceGateInterface;
   readonly auditLogger: AuditLoggerInterface;
+  /** Optional WORM DB writer for decision_audit table. */
+  readonly writeDecisionAudit?: (entries: readonly DecisionAuditEntry[]) => Promise<void>;
 }
 
 // ─── NBA Pipeline ────────────────────────────────────────────────
@@ -80,6 +75,9 @@ export class NBAPipeline {
   private readonly llm: LLMReasoner;
   private readonly compliance: ComplianceGateInterface;
   private readonly auditLogger: AuditLoggerInterface;
+  private readonly writeDecisionAudit:
+    | ((entries: readonly DecisionAuditEntry[]) => Promise<void>)
+    | undefined;
 
   constructor(deps: NBAPipelineDeps) {
     this.rules = deps.rules;
@@ -87,6 +85,7 @@ export class NBAPipeline {
     this.llm = deps.llm;
     this.compliance = deps.compliance;
     this.auditLogger = deps.auditLogger;
+    this.writeDecisionAudit = deps.writeDecisionAudit;
   }
 
   /**
@@ -101,10 +100,7 @@ export class NBAPipeline {
    * 6. Audit log full decision chain
    * 7. Return winning Decision
    */
-  async evaluate(
-    context: DecisionContext,
-  ): Promise<Result<Decision, AppError>> {
-    const startTime = performance.now();
+  async evaluate(context: DecisionContext): Promise<Result<Decision>> {
     const decisionId = randomUUID();
     const layersUsed: DecisionLayer[] = [];
     const auditEntries: DecisionAuditEntry[] = [];
@@ -121,17 +117,19 @@ export class NBAPipeline {
     layersUsed.push('rules');
 
     const rulesDurationMs = Math.round(performance.now() - rulesStart);
-    auditEntries.push(this.createAuditEntry(
-      decisionId,
-      context,
-      'rules',
-      `Evaluated ${String(ruleResults.length)} rules`,
-      `Matched: ${String(ruleResults.filter((r) => r.matched).length)}`,
-      rulesDurationMs,
-      ruleResults.filter((r) => r.matched).length > 0 ? 1.0 : 0.0,
-      1.0,
-      ruleResults.find((r) => r.matched)?.action?.type ?? 'no_action',
-    ));
+    auditEntries.push(
+      this.createAuditEntry(
+        decisionId,
+        context,
+        'rules',
+        `Evaluated ${String(ruleResults.length)} rules`,
+        `Matched: ${String(ruleResults.filter((r) => r.matched).length)}`,
+        rulesDurationMs,
+        ruleResults.filter((r) => r.matched).length > 0 ? 1.0 : 0.0,
+        1.0,
+        ruleResults.find((r) => r.matched)?.action?.type ?? 'no_action',
+      ),
+    );
 
     // Fast path: terminal rule match
     const terminalResult = await this.rules.findTerminalMatch(context);
@@ -139,7 +137,10 @@ export class NBAPipeline {
       const terminalRule = terminalResult.data;
 
       // Compliance check on terminal action
-      const complianceResult = this.checkCompliance(context, terminalRule.action?.type ?? 'no_action');
+      const complianceResult = this.checkCompliance(
+        context,
+        terminalRule.action?.type ?? 'no_action',
+      );
       if (!complianceResult.success) {
         await this.logAuditEntries(auditEntries);
         return complianceResult;
@@ -173,21 +174,24 @@ export class NBAPipeline {
     }
 
     const mlDurationMs = Math.round(performance.now() - mlStart);
-    const avgMlConfidence = mlScores.length > 0
-      ? mlScores.reduce((sum, s) => sum + s.confidence, 0) / mlScores.length
-      : 0;
+    const avgMlConfidence =
+      mlScores.length > 0
+        ? mlScores.reduce((sum, s) => sum + s.confidence, 0) / mlScores.length
+        : 0;
 
-    auditEntries.push(this.createAuditEntry(
-      decisionId,
-      context,
-      'ml',
-      `Ran ${String(mlScores.length)} models`,
-      mlScores.map((s) => `${s.modelName}=${s.score.toFixed(3)}`).join(', '),
-      mlDurationMs,
-      mlScores.length > 0 ? mlScores.reduce((sum, s) => sum + s.score, 0) / mlScores.length : 0,
-      avgMlConfidence,
-      'no_action',
-    ));
+    auditEntries.push(
+      this.createAuditEntry(
+        decisionId,
+        context,
+        'ml',
+        `Ran ${String(mlScores.length)} models`,
+        mlScores.map((s) => `${s.modelName}=${s.score.toFixed(3)}`).join(', '),
+        mlDurationMs,
+        mlScores.length > 0 ? mlScores.reduce((sum, s) => sum + s.score, 0) / mlScores.length : 0,
+        avgMlConfidence,
+        'no_action',
+      ),
+    );
 
     // ── Layer 3: LLM Reasoning (conditional) ─────────────────
     let llmDecision: Decision | undefined;
@@ -201,30 +205,34 @@ export class NBAPipeline {
         llmDecision = llmResult.data;
         layersUsed.push('llm');
 
-        auditEntries.push(this.createAuditEntry(
-          decisionId,
-          context,
-          'llm',
-          `LLM reasoning invoked (tier: ${context.customerProfile.ltv > 50000 ? 'premium' : 'standard'})`,
-          `action=${llmDecision.action}, confidence=${llmDecision.confidence.toFixed(3)}`,
-          llmDurationMs,
-          llmDecision.score,
-          llmDecision.confidence,
-          llmDecision.action,
-        ));
+        auditEntries.push(
+          this.createAuditEntry(
+            decisionId,
+            context,
+            'llm',
+            `LLM reasoning invoked (tier: ${context.customerProfile.ltv > 50000 ? 'premium' : 'standard'})`,
+            `action=${llmDecision.action}, confidence=${llmDecision.confidence.toFixed(3)}`,
+            llmDurationMs,
+            llmDecision.score,
+            llmDecision.confidence,
+            llmDecision.action,
+          ),
+        );
       } else {
         // LLM failed — continue with rules + ML only
-        auditEntries.push(this.createAuditEntry(
-          decisionId,
-          context,
-          'llm',
-          'LLM reasoning failed — falling back to L1+L2',
-          llmResult.error.message,
-          llmDurationMs,
-          0,
-          0,
-          'no_action',
-        ));
+        auditEntries.push(
+          this.createAuditEntry(
+            decisionId,
+            context,
+            'llm',
+            'LLM reasoning failed — falling back to L1+L2',
+            llmResult.error.message,
+            llmDurationMs,
+            0,
+            0,
+            'no_action',
+          ),
+        );
       }
     }
 
@@ -275,11 +283,13 @@ export class NBAPipeline {
 
     // All candidates blocked by compliance
     await this.logAuditEntries(auditEntries);
-    return err(new ComplianceViolationError(
-      'All NBA candidates blocked by compliance gate',
-      'multi',
-      context.correlationId,
-    ));
+    return err(
+      new ComplianceViolationError(
+        'All NBA candidates blocked by compliance gate',
+        'multi',
+        context.correlationId,
+      ),
+    );
   }
 
   /**
@@ -301,7 +311,11 @@ export class NBAPipeline {
           channel: rule.action.channel,
           score: rule.score,
           confidence: 1.0,
-          constraintsSatisfied: this.checkConstraints(rule.action.type, rule.action.channel, context),
+          constraintsSatisfied: this.checkConstraints(
+            rule.action.type,
+            rule.action.channel,
+            context,
+          ),
           complianceChecked: false,
           estimatedCostCents: ACTION_COST_ESTIMATES[rule.action.type] ?? 0,
           source: 'rules',
@@ -339,7 +353,11 @@ export class NBAPipeline {
         channel: llmDecision.channel,
         score: llmDecision.score,
         confidence: llmDecision.confidence,
-        constraintsSatisfied: this.checkConstraints(llmDecision.action, llmDecision.channel, context),
+        constraintsSatisfied: this.checkConstraints(
+          llmDecision.action,
+          llmDecision.channel,
+          context,
+        ),
         complianceChecked: false,
         estimatedCostCents: ACTION_COST_ESTIMATES[llmDecision.action] ?? 0,
         source: 'llm',
@@ -420,11 +438,13 @@ export class NBAPipeline {
         .filter((v) => !v.passed)
         .map((v) => `${v.regulation}:${v.ruleId}`)
         .join(', ');
-      return err(new ComplianceViolationError(
-        `Action "${action}" blocked by compliance: ${violationSummary}`,
-        'multi',
-        context.correlationId,
-      ));
+      return err(
+        new ComplianceViolationError(
+          `Action "${action}" blocked by compliance: ${violationSummary}`,
+          'multi',
+          context.correlationId,
+        ),
+      );
     }
 
     return ok(true);
@@ -445,7 +465,10 @@ export class NBAPipeline {
 
     // Check budget
     const estimatedCost = ACTION_COST_ESTIMATES[action] ?? 0;
-    if (context.constraints.budgetCents !== undefined && estimatedCost > context.constraints.budgetCents) {
+    if (
+      context.constraints.budgetCents !== undefined &&
+      estimatedCost > context.constraints.budgetCents
+    ) {
       return false;
     }
 
@@ -564,9 +587,10 @@ export class NBAPipeline {
   }
 
   /**
-   * Log all accumulated audit entries via the WORM audit logger.
+   * Log all accumulated audit entries via the WORM audit logger and optional DB writer.
    */
   private async logAuditEntries(entries: readonly DecisionAuditEntry[]): Promise<void> {
+    // Write to generic WORM audit log
     for (const entry of entries) {
       try {
         await this.auditLogger.log({
@@ -591,6 +615,15 @@ export class NBAPipeline {
       } catch {
         // Audit logging failure is logged but does not block the decision.
         // In production, this triggers a P0 alert via monitoring.
+      }
+    }
+
+    // Write to decision_audit table if DB writer is provided
+    if (this.writeDecisionAudit !== undefined && entries.length > 0) {
+      try {
+        await this.writeDecisionAudit(entries);
+      } catch {
+        // DB write failure does not block decision — P1 alert in production.
       }
     }
   }

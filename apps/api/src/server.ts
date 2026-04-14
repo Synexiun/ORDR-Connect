@@ -63,7 +63,19 @@ import {
   InMemoryRateLimiter,
 } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
-import { ComplianceEngine, ComplianceGate } from '@ordr/compliance';
+import { ComplianceEngine, ComplianceGate, ALL_RULES } from '@ordr/compliance';
+import {
+  NBAPipeline,
+  RulesEngine,
+  InMemoryRuleStore,
+  createDefaultMLScorer,
+  LLMReasoner,
+  copyBuiltinRulesForTenant,
+} from '@ordr/decision-engine';
+import type {
+  ComplianceGateInterface as NBAComplianceGateInterface,
+  DecisionAuditEntry,
+} from '@ordr/decision-engine';
 import {
   ConsentManager,
   SmsProvider,
@@ -997,8 +1009,7 @@ async function bootstrap(): Promise<void> {
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();
-  // Rules are registered here at startup.
-  // In production, load rules from @ordr/compliance rule modules.
+  complianceEngine.registerRules(ALL_RULES);
   console.warn(
     `[ORDR:API] Compliance engine initialized — ${String(complianceEngine.getRules().length)} rules loaded`,
   );
@@ -1129,11 +1140,81 @@ async function bootstrap(): Promise<void> {
     };
     const agentEngine = new AgentEngine(agentEngineDeps, hitlQueue);
     const agentEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
+
+    // ── NBA pipeline (3-layer: Rules → ML → LLM) ───────────────────────────
+    const nbaRuleStore = new InMemoryRuleStore();
+    // Load built-in rules for a "global" tenant — these apply to all tenants via
+    // the rules engine's tenant lookup. Per-tenant rules are loaded from the DB
+    // in Phase 68+ when the decision_rules CRUD API is added.
+    nbaRuleStore.seed(copyBuiltinRulesForTenant('global'));
+    const nbaRulesEngine = new RulesEngine(nbaRuleStore);
+    const nbaMLScorer = createDefaultMLScorer();
+    const nbaPromptRegistry = {
+      get: (_id: string) => ({
+        systemPrompt:
+          'You are an expert customer operations decision engine. ' +
+          'Analyze the provided context and recommend the single best next action. ' +
+          'NEVER include customer names, emails, phone numbers, or any PII in your response. ' +
+          'Return valid JSON only.',
+      }),
+    };
+    const nbaLLMReasoner =
+      llmClient !== null
+        ? new LLMReasoner(llmClient, nbaPromptRegistry)
+        : new LLMReasoner(
+            // Null-safe stub — returns a no-action result when LLM is unavailable
+            {
+              complete: async () => ({
+                success: false as const,
+                error: new Error('LLM client not configured') as never,
+              }),
+            } as never,
+            nbaPromptRegistry,
+          );
+    const nbaComplianceAdapter: NBAComplianceGateInterface = {
+      check: (action, context) => {
+        const result = complianceEngine.evaluate({ ...context, action });
+        return { allowed: result.allowed, violations: result.violations };
+      },
+    };
+    const nbaAuditAdapter = {
+      log: async (input: Parameters<(typeof auditLogger)['log']>[0]) => {
+        const event = await auditLogger.log(input);
+        return { id: event.id };
+      },
+    };
+    const nbaPipeline = new NBAPipeline({
+      rules: nbaRulesEngine,
+      ml: nbaMLScorer,
+      llm: nbaLLMReasoner,
+      compliance: nbaComplianceAdapter,
+      auditLogger: nbaAuditAdapter,
+      writeDecisionAudit: async (entries: readonly DecisionAuditEntry[]) => {
+        await db.insert(schema.decisionAudit).values(
+          entries.map((e: DecisionAuditEntry) => ({
+            tenantId: e.tenantId,
+            decisionId: e.decisionId,
+            customerId: e.customerId,
+            layer: e.layer,
+            inputSummary: e.inputSummary,
+            outputSummary: e.outputSummary,
+            durationMs: e.durationMs,
+            score: e.score,
+            confidence: e.confidence,
+            actionSelected: e.actionSelected,
+            metadata: e.metadata,
+            createdAt: e.createdAt,
+          })),
+        );
+      },
+    });
+
     configureAgentRoutes({
       auditLogger,
       eventProducer: agentEventProducer,
       agentEngine,
       hitlQueue,
+      nbaPipeline,
       findSessionById: async (tenantId, sessionId) => {
         const rows = await db
           .select()
@@ -1257,8 +1338,40 @@ async function bootstrap(): Promise<void> {
           updatedAt: r.updatedAt,
         };
       },
+      listRoutingDecisions: async (tenantId, customerId, limit) => {
+        const rows = await db
+          .select({
+            id: schema.agentSessions.id,
+            customerId: schema.agentSessions.customerId,
+            agentRole: schema.agentSessions.agentRole,
+            confidenceAvg: schema.agentSessions.confidenceAvg,
+            outcome: schema.agentSessions.outcome,
+            createdAt: schema.agentSessions.createdAt,
+          })
+          .from(schema.agentSessions)
+          .where(
+            and(
+              eq(schema.agentSessions.tenantId, tenantId),
+              eq(schema.agentSessions.customerId, customerId),
+            ),
+          )
+          .orderBy(desc(schema.agentSessions.createdAt))
+          .limit(limit);
+        return rows.map((r) => ({
+          id: r.id,
+          entityId: r.customerId,
+          entityType: 'customer' as const,
+          selectedRoute: r.agentRole,
+          channel: null,
+          confidence: r.confidenceAvg ?? 0,
+          reasoning: r.outcome ?? 'Agent session initiated',
+          sessionId: r.id,
+          modelUsed: 'claude-sonnet-4-6',
+          timestamp: r.createdAt.toISOString(),
+        }));
+      },
     });
-    console.warn('[ORDR:API] Agent routes configured');
+    console.warn('[ORDR:API] Agent routes configured (NBA pipeline wired)');
   }
 
   // ── 6. JWT key pair ────────────────────────────────────────────────────

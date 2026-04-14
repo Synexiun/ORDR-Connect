@@ -1413,6 +1413,7 @@ integrationsRouter.post(
   requireRoleMiddleware('tenant_admin'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+    const enc = deps.fieldEncryptor; // capture for closure safety (module-level let)
     const ctx = ensureTenantContext(c);
     const requestId = c.get('requestId');
     const provider = c.req.param('provider');
@@ -1484,7 +1485,7 @@ integrationsRouter.post(
       if (rows.length === 0) break;
 
       const ordrRecords = rows.map((row) => {
-        const contact = decryptContactFields(row, deps.fieldEncryptor);
+        const contact = decryptContactFields(row, enc);
         return {
           ordrEntityId: row.id,
           externalId: row.externalId ?? undefined,

@@ -24,6 +24,8 @@ import type { AgentEngine } from '@ordr/agent-runtime';
 import type { HitlQueue } from '@ordr/agent-runtime';
 import { ValidationError, NotFoundError, AuthorizationError, PAGINATION } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
+import type { NBAPipeline } from '@ordr/decision-engine';
+import type { DecisionContext } from '@ordr/decision-engine';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -79,6 +81,43 @@ const listSessionsQuerySchema = z.object({
     .optional(),
 });
 
+// ─── NBA evaluation body schema ──────────────────────────────────
+// Accepts a partial DecisionContext — callers provide what they can;
+// missing profile fields are filled with safe defaults.
+const nbaEvaluateSchema = z.object({
+  customerId: z.string().uuid(),
+  eventType: z.string().min(1).max(100),
+  eventPayload: z.record(z.unknown()).default({}),
+  customerProfile: z
+    .object({
+      ltv: z.number().default(0),
+      healthScore: z.number().min(0).max(100).default(50),
+      lifecycleStage: z
+        .enum(['prospect', 'onboarding', 'active', 'at_risk', 'churned'])
+        .default('active'),
+      segment: z.string().default('standard'),
+      preferredChannel: z.enum(['sms', 'email', 'voice', 'chat', 'in_app']).optional(),
+      outstandingBalance: z.number().default(0),
+      maxBalance: z.number().default(0),
+      daysSinceLastContact: z.number().default(0),
+      sentimentAvg: z.number().min(-1).max(1).default(0),
+      responseRate: z.number().min(0).max(1).default(0.5),
+      totalInteractions30d: z.number().int().default(0),
+    })
+    .default({}),
+  channelPreferences: z.array(z.enum(['sms', 'email', 'voice', 'chat'])).default([]),
+  constraints: z
+    .object({
+      budgetCents: z.number().optional(),
+      timeWindowMinutes: z.number().optional(),
+      blockedChannels: z.array(z.enum(['sms', 'email', 'voice', 'chat'])).default([]),
+      maxContactsPerWeek: z.number().int().default(7),
+      maxSmsPerDay: z.number().int().default(3),
+      maxEmailsPerWeek: z.number().int().default(5),
+    })
+    .default({}),
+});
+
 // ---- Dependencies (injected at startup) ------------------------------------
 
 interface AgentSession {
@@ -92,11 +131,25 @@ interface AgentSession {
   readonly updatedAt: Date;
 }
 
+interface RoutingDecision {
+  readonly id: string;
+  readonly entityId: string;
+  readonly entityType: 'customer';
+  readonly selectedRoute: string;
+  readonly channel: string | null;
+  readonly confidence: number;
+  readonly reasoning: string;
+  readonly sessionId: string;
+  readonly modelUsed: string;
+  readonly timestamp: string;
+}
+
 interface AgentDependencies {
   readonly auditLogger: AuditLogger;
   readonly eventProducer: EventProducer;
   readonly agentEngine: AgentEngine;
   readonly hitlQueue: HitlQueue;
+  readonly nbaPipeline: NBAPipeline;
   readonly findSessionById: (tenantId: string, sessionId: string) => Promise<AgentSession | null>;
   readonly listSessions: (
     tenantId: string,
@@ -113,6 +166,11 @@ interface AgentDependencies {
     sessionId: string,
     status: string,
   ) => Promise<AgentSession | null>;
+  readonly listRoutingDecisions: (
+    tenantId: string,
+    customerId: string,
+    limit: number,
+  ) => Promise<readonly RoutingDecision[]>;
 }
 
 let deps: AgentDependencies | null = null;
@@ -406,19 +464,17 @@ agentsRouter.post(
 
 // ---- GET /routing-decisions — entity routing history for a customer ---------
 //
-// Returns the history of AI routing decisions made for the given customer.
-// Used by the CustomerDetail routing tab for visualization.
-// COMPLIANCE: No PHI returned — IDs, routes, confidence scores, and timestamps only.
+// Returns the history of agent sessions created for the given customer, ordered
+// by most-recent. Backed by the agent_sessions table (real DB, not seed data).
 //
-// IMPLEMENTATION NOTE: Routing decisions are stored in Kafka event logs and
-// will be projected into a dedicated table in Phase 8. Until then, returns
-// deterministic seed data per customerId so the UI is always populated.
+// COMPLIANCE: No PHI returned — IDs, agent roles, confidence scores, timestamps only.
 
 agentsRouter.get(
   '/routing-decisions',
   rateLimit('read'),
   requirePermissionMiddleware('agents', 'read'),
-  (c) => {
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
     const ctx = ensureTenantContext(c);
     const correlationId = c.get('requestId');
 
@@ -431,55 +487,130 @@ agentsRouter.get(
       );
     }
 
-    // Deterministic seed per customerId — stable results per entity
-    const seed = `${ctx.tenantId}:${customerId}`;
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
-    const rng = (): number => {
-      h = (Math.imul(1664525, h) + 1013904223) | 0;
-      return (h >>> 0) / 0x100000000;
-    };
-
-    const agentRoles = [
-      'lead_qualifier',
-      'follow_up',
-      'support_triage',
-      'churn_detection',
-      'escalation',
-      'collections',
-    ];
-    const channels = ['sms', 'email', 'voice', 'chat'];
-    const reasons = [
-      'High engagement score — fast-path qualifier selected',
-      'Sentiment below threshold — escalation route triggered',
-      'Consent status valid for SMS — preferred channel routed',
-      'Prior session unresolved — collections agent assigned',
-      'Customer request for human — escalation initiated',
-      'Low churn risk score — follow-up cadence assigned',
-    ];
-
-    const count = 6 + Math.floor(rng() * 5);
-    const baseMs = Date.now() - 30 * 86_400_000;
-
-    const decisions = Array.from({ length: count }, (_, i) => ({
-      id: `rd-${customerId.slice(-8)}-${String(i).padStart(3, '0')}`,
-      entityId: customerId,
-      entityType: 'customer' as const,
-      selectedRoute: agentRoles[Math.floor(rng() * agentRoles.length)] as string,
-      channel: channels[Math.floor(rng() * channels.length)] as string,
-      confidence: Math.round((0.65 + rng() * 0.34) * 100) / 100,
-      reasoning: reasons[Math.floor(rng() * reasons.length)] as string,
-      sessionId: `sess-${Math.floor(rng() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0')}`,
-      modelUsed: 'claude-sonnet-4-6',
-      timestamp: new Date(baseMs + i * Math.floor(rng() * 5 * 86_400_000)).toISOString(),
-    })).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const decisions = await deps.listRoutingDecisions(ctx.tenantId, customerId, 20);
 
     return c.json({
       success: true as const,
       data: decisions,
       total: decisions.length,
+    });
+  },
+);
+
+// ---- POST /nba/evaluate — run Next-Best-Action pipeline for a customer -------
+//
+// Evaluates the 3-layer decision pipeline (Rules → ML → LLM) and returns
+// the recommended action. Decision audit entries are written to decision_audit.
+//
+// COMPLIANCE: Input context must contain NO raw PHI — only tokenized IDs.
+// SOC2 CC7.2 — AI decision monitoring. Rule 9 — agent safety.
+
+agentsRouter.post(
+  '/nba/evaluate',
+  rateLimit('write'),
+  requirePermissionMiddleware('agents', 'write'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+    const ctx = ensureTenantContext(c);
+    const correlationId = c.get('requestId');
+
+    const body: unknown = await c.req.json().catch(() => ({}));
+    const parsed = nbaEvaluateSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid NBA evaluation parameters',
+        parseValidationErrors(parsed.error.issues),
+        correlationId,
+      );
+    }
+
+    const {
+      customerId,
+      eventType,
+      eventPayload,
+      customerProfile,
+      channelPreferences,
+      constraints,
+    } = parsed.data;
+
+    const decisionContext: DecisionContext = {
+      tenantId: ctx.tenantId,
+      customerId,
+      eventType,
+      eventPayload,
+      customerProfile: {
+        ltv: customerProfile.ltv,
+        healthScore: customerProfile.healthScore,
+        lifecycleStage: customerProfile.lifecycleStage,
+        segment: customerProfile.segment,
+        preferredChannel: customerProfile.preferredChannel,
+        outstandingBalance: customerProfile.outstandingBalance,
+        maxBalance: customerProfile.maxBalance,
+        daysSinceLastContact: customerProfile.daysSinceLastContact,
+        sentimentAvg: customerProfile.sentimentAvg,
+        responseRate: customerProfile.responseRate,
+        totalInteractions30d: customerProfile.totalInteractions30d,
+        paymentHistory: [],
+      },
+      channelPreferences,
+      interactionHistory: [],
+      constraints: {
+        budgetCents: constraints.budgetCents,
+        timeWindowMinutes: constraints.timeWindowMinutes,
+        blockedChannels: constraints.blockedChannels,
+        maxContactsPerWeek: constraints.maxContactsPerWeek,
+        maxSmsPerDay: constraints.maxSmsPerDay,
+        maxEmailsPerWeek: constraints.maxEmailsPerWeek,
+      },
+      timestamp: new Date(),
+      correlationId,
+    };
+
+    const result = await deps.nbaPipeline.evaluate(decisionContext);
+    if (!result.success) {
+      return c.json(
+        {
+          success: false as const,
+          error: { code: result.error.code, message: result.error.message },
+        },
+        422,
+      );
+    }
+
+    const decision = result.data;
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'agent.decision',
+      actorId: ctx.userId,
+      actorType: 'user',
+      resource: 'nba_decision',
+      resourceId: decision.id,
+      action: 'evaluate',
+      details: {
+        customerId,
+        action: decision.action,
+        channel: decision.channel ?? null,
+        confidence: decision.confidence,
+        layersUsed: decision.layersUsed,
+      },
+      timestamp: new Date(),
+    });
+
+    return c.json({
+      success: true as const,
+      data: {
+        id: decision.id,
+        customerId: decision.customerId,
+        action: decision.action,
+        channel: decision.channel ?? null,
+        confidence: decision.confidence,
+        score: decision.score,
+        reasoning: decision.reasoning,
+        layersUsed: decision.layersUsed,
+        evaluatedAt: decision.evaluatedAt.toISOString(),
+        expiresAt: decision.expiresAt.toISOString(),
+      },
     });
   },
 );

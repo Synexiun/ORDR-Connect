@@ -23,6 +23,7 @@
     "@ordr/billing": "workspace:*",
     "@ordr/channels": "workspace:*",
     "@ordr/compliance": "workspace:*",
+    "@ordr/decision-engine": "workspace:*",
     "@ordr/core": "workspace:*",
     "@ordr/crypto": "workspace:*",
     "@ordr/db": "workspace:*",
