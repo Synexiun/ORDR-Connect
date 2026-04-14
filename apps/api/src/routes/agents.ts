@@ -24,8 +24,9 @@ import type { AgentEngine } from '@ordr/agent-runtime';
 import type { HitlQueue } from '@ordr/agent-runtime';
 import { ValidationError, NotFoundError, AuthorizationError, PAGINATION } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
-import type { NBAPipeline } from '@ordr/decision-engine';
-import type { DecisionContext } from '@ordr/decision-engine';
+import type { NBAPipeline, RuleStore } from '@ordr/decision-engine';
+import type { DecisionContext, RuleDefinition } from '@ordr/decision-engine';
+import { ACTION_TYPES, CHANNEL_TYPES, RULE_OPERATORS } from '@ordr/decision-engine';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -118,6 +119,47 @@ const nbaEvaluateSchema = z.object({
     .default({}),
 });
 
+// ─── Decision Rule schemas ───────────────────────────────────────
+
+const ruleConditionSchema = z.object({
+  field: z.string().min(1).max(200),
+  operator: z.enum(RULE_OPERATORS as unknown as [string, ...string[]]),
+  value: z.unknown(),
+});
+
+const ruleActionSchema = z.object({
+  type: z.enum(ACTION_TYPES as unknown as [string, ...string[]]),
+  channel: z
+    .enum(CHANNEL_TYPES as unknown as [string, ...string[]])
+    .nullable()
+    .optional(),
+  parameters: z.record(z.unknown()).default({}),
+});
+
+const createRuleSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(2000).default(''),
+  priority: z.number().int().min(1).max(100).default(50),
+  conditions: z.array(ruleConditionSchema).min(1).max(20),
+  action: ruleActionSchema,
+  regulation: z.string().max(50).optional(),
+  enabled: z.boolean().default(true),
+  terminal: z.boolean().default(false),
+});
+
+const updateRuleSchema = createRuleSchema.partial();
+
+const listRulesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(PAGINATION.DEFAULT_PAGE),
+  pageSize: z.coerce
+    .number()
+    .int()
+    .min(PAGINATION.MIN_PAGE_SIZE)
+    .max(PAGINATION.MAX_PAGE_SIZE)
+    .default(PAGINATION.DEFAULT_PAGE_SIZE),
+  enabled: z.coerce.boolean().optional(),
+});
+
 // ---- Dependencies (injected at startup) ------------------------------------
 
 interface AgentSession {
@@ -150,6 +192,7 @@ interface AgentDependencies {
   readonly agentEngine: AgentEngine;
   readonly hitlQueue: HitlQueue;
   readonly nbaPipeline: NBAPipeline;
+  readonly ruleStore: RuleStore;
   readonly findSessionById: (tenantId: string, sessionId: string) => Promise<AgentSession | null>;
   readonly listSessions: (
     tenantId: string,
@@ -801,6 +844,241 @@ agentsRouter.post(
       }
       throw error;
     }
+  },
+);
+
+// ---- GET /rules — list tenant rules -----------------------------------------
+// Returns both built-in rules (for visibility) and custom DB rules.
+
+agentsRouter.get('/rules', requirePermissionMiddleware('agents', 'read'), async (c) => {
+  if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
+
+  const parsed = listRulesQuerySchema.safeParse(
+    Object.fromEntries(new URL(c.req.url).searchParams),
+  );
+  if (!parsed.success) {
+    throw new ValidationError(
+      'Invalid query parameters',
+      parseValidationErrors(parsed.error.issues),
+      requestId,
+    );
+  }
+
+  const { page, pageSize, enabled } = parsed.data;
+  const allRules = await deps.ruleStore.getRules(ctx.tenantId);
+
+  const filtered = enabled === undefined ? allRules : allRules.filter((r) => r.enabled === enabled);
+  const total = filtered.length;
+  const offset = (page - 1) * pageSize;
+  const data = filtered.slice(offset, offset + pageSize);
+
+  return c.json({
+    success: true as const,
+    data,
+    meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+  });
+});
+
+// ---- POST /rules — create a custom rule for this tenant ---------------------
+
+agentsRouter.post(
+  '/rules',
+  rateLimit('write'),
+  requirePermissionMiddleware('agents', 'create'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = createRuleSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid rule',
+        parseValidationErrors(parsed.error.issues),
+        requestId,
+      );
+    }
+
+    const { name, description, priority, conditions, action, regulation, enabled, terminal } =
+      parsed.data;
+    const ruleId = randomUUID();
+    const now = new Date();
+
+    const rule: RuleDefinition = {
+      id: ruleId,
+      tenantId: ctx.tenantId,
+      name,
+      description,
+      priority,
+      conditions: conditions.map((c) => ({
+        field: c.field,
+        operator: c.operator as RuleDefinition['conditions'][number]['operator'],
+        value: c.value,
+      })),
+      action: {
+        type: action.type as RuleDefinition['action']['type'],
+        channel: (action.channel ?? undefined) as RuleDefinition['action']['channel'],
+        parameters: action.parameters,
+      },
+      regulation,
+      enabled,
+      terminal,
+    };
+
+    await deps.ruleStore.createRule(rule);
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'decision_rule',
+      resourceId: ruleId,
+      action: 'create',
+      details: { name, priority, terminal, regulation },
+      timestamp: now,
+    });
+
+    return c.json({ success: true as const, data: rule }, 201);
+  },
+);
+
+// ---- GET /rules/:id — get single rule ----------------------------------------
+
+agentsRouter.get('/rules/:id', requirePermissionMiddleware('agents', 'read'), async (c) => {
+  if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
+  const ruleId = c.req.param('id');
+
+  const rule = await deps.ruleStore.getRule(ruleId, ctx.tenantId);
+  if (!rule) {
+    throw new NotFoundError('Rule not found', requestId);
+  }
+
+  return c.json({ success: true as const, data: rule });
+});
+
+// ---- PUT /rules/:id — update a custom rule -----------------------------------
+// Built-in rules (id prefixed with tenantId_) can be overridden by creating
+// a DB rule with the same ID via POST /rules. Direct PUT on a built-in that
+// doesn't exist in the DB returns 404.
+
+agentsRouter.put(
+  '/rules/:id',
+  rateLimit('write'),
+  requirePermissionMiddleware('agents', 'update'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const ruleId = c.req.param('id');
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateRuleSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid rule update',
+        parseValidationErrors(parsed.error.issues),
+        requestId,
+      );
+    }
+
+    // Fetch existing (must be a DB rule — built-ins are read-only via PUT)
+    const existing = await deps.ruleStore.getRule(ruleId, ctx.tenantId);
+    if (!existing) {
+      throw new NotFoundError('Rule not found', requestId);
+    }
+
+    const updated: RuleDefinition = {
+      id: ruleId,
+      tenantId: ctx.tenantId,
+      name: parsed.data.name ?? existing.name,
+      description: parsed.data.description ?? existing.description,
+      priority: parsed.data.priority ?? existing.priority,
+      conditions:
+        parsed.data.conditions !== undefined
+          ? parsed.data.conditions.map((c) => ({
+              field: c.field,
+              operator: c.operator as RuleDefinition['conditions'][number]['operator'],
+              value: c.value,
+            }))
+          : existing.conditions,
+      action:
+        parsed.data.action !== undefined
+          ? {
+              type: parsed.data.action.type as RuleDefinition['action']['type'],
+              channel: (parsed.data.action.channel ??
+                undefined) as RuleDefinition['action']['channel'],
+              parameters: parsed.data.action.parameters,
+            }
+          : existing.action,
+      regulation: parsed.data.regulation ?? existing.regulation,
+      enabled: parsed.data.enabled ?? existing.enabled,
+      terminal: parsed.data.terminal ?? existing.terminal,
+    };
+
+    await deps.ruleStore.updateRule(updated);
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'decision_rule',
+      resourceId: ruleId,
+      action: 'update',
+      details: { changes: Object.keys(parsed.data) },
+      timestamp: new Date(),
+    });
+
+    return c.json({ success: true as const, data: updated });
+  },
+);
+
+// ---- DELETE /rules/:id — delete a custom rule --------------------------------
+
+agentsRouter.delete(
+  '/rules/:id',
+  rateLimit('write'),
+  requirePermissionMiddleware('agents', 'delete'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Agent routes not configured');
+
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const ruleId = c.req.param('id');
+
+    // Verify rule exists and belongs to tenant
+    const existing = await deps.ruleStore.getRule(ruleId, ctx.tenantId);
+    if (!existing) {
+      throw new NotFoundError('Rule not found', requestId);
+    }
+
+    await deps.ruleStore.deleteRule(ruleId, ctx.tenantId);
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.deleted',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'decision_rule',
+      resourceId: ruleId,
+      action: 'delete',
+      details: { name: existing.name },
+      timestamp: new Date(),
+    });
+
+    return c.json({ success: true as const, data: { id: ruleId, deleted: true } });
   },
 );
 

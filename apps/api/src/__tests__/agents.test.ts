@@ -55,7 +55,9 @@ function createMockAuditLogger() {
       previousHash: '000',
     }),
     getLastEvent: vi.fn().mockResolvedValue(null),
-    verifyIntegrity: vi.fn().mockResolvedValue({ valid: true, totalEvents: 0, lastSequence: 0, lastHash: '000' }),
+    verifyIntegrity: vi
+      .fn()
+      .mockResolvedValue({ valid: true, totalEvents: 0, lastSequence: 0, lastHash: '000' }),
     generateMerkleRoot: vi.fn(),
     generateProof: vi.fn(),
     verifyProof: vi.fn().mockReturnValue(true),
@@ -82,11 +84,21 @@ function createMockAgentEngine() {
 function createMockHitlQueue() {
   return {
     enqueue: vi.fn().mockReturnValue('hitl-1'),
-    approve: vi.fn().mockReturnValue({ action: 'send_sms', confidence: 0.5, reasoning: 'test', parameters: {}, requiresApproval: true }),
+    approve: vi
+      .fn()
+      .mockReturnValue({
+        action: 'send_sms',
+        confidence: 0.5,
+        reasoning: 'test',
+        parameters: {},
+        requiresApproval: true,
+      }),
     reject: vi.fn(),
     getPending: vi.fn().mockReturnValue([]),
     getItem: vi.fn().mockReturnValue(undefined),
-    get size() { return 0; },
+    get size() {
+      return 0;
+    },
     getPendingCount: vi.fn().mockReturnValue(0),
   };
 }
@@ -157,10 +169,19 @@ describe('Agent Routes', () => {
       eventProducer: mockProducer as never,
       agentEngine: mockEngine as never,
       hitlQueue: mockHitl as never,
+      nbaPipeline: { evaluate: vi.fn() } as never,
+      ruleStore: {
+        getRules: vi.fn().mockResolvedValue([]),
+        getRule: vi.fn().mockResolvedValue(undefined),
+        createRule: vi.fn().mockResolvedValue(undefined),
+        updateRule: vi.fn().mockResolvedValue(undefined),
+        deleteRule: vi.fn().mockResolvedValue(undefined),
+      } as never,
       findSessionById: vi.fn().mockResolvedValue(mockSession),
       listSessions: vi.fn().mockResolvedValue({ data: [mockSession], total: 1 }),
       createSession: vi.fn().mockResolvedValue(mockSession),
       updateSessionStatus: vi.fn().mockResolvedValue(mockSession),
+      listRoutingDecisions: vi.fn().mockResolvedValue([]),
     });
   });
 
@@ -179,7 +200,7 @@ describe('Agent Routes', () => {
       });
 
       expect(res.status).toBe(201);
-      const body = await res.json() as { success: boolean; data: { sessionId: string } };
+      const body = (await res.json()) as { success: boolean; data: { sessionId: string } };
       expect(body.success).toBe(true);
       expect(body.data.sessionId).toBeDefined();
     });
@@ -264,7 +285,11 @@ describe('Agent Routes', () => {
       const res = await app.request('/api/v1/agents/sessions');
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { success: boolean; data: unknown[]; pagination: { total: number } };
+      const body = (await res.json()) as {
+        success: boolean;
+        data: unknown[];
+        pagination: { total: number };
+      };
       expect(body.success).toBe(true);
       expect(body.data.length).toBe(1);
       expect(body.pagination.total).toBe(1);
@@ -286,7 +311,7 @@ describe('Agent Routes', () => {
       const res = await app.request('/api/v1/agents/sessions/00000000-0000-0000-0000-000000000001');
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { success: boolean; data: { sessionId: string } };
+      const body = (await res.json()) as { success: boolean; data: { sessionId: string } };
       expect(body.success).toBe(true);
       expect(body.data.sessionId).toBe(mockSession.sessionId);
     });
@@ -297,10 +322,19 @@ describe('Agent Routes', () => {
         eventProducer: mockProducer as never,
         agentEngine: mockEngine as never,
         hitlQueue: mockHitl as never,
+        nbaPipeline: { evaluate: vi.fn() } as never,
+        ruleStore: {
+          getRules: vi.fn().mockResolvedValue([]),
+          getRule: vi.fn().mockResolvedValue(undefined),
+          createRule: vi.fn().mockResolvedValue(undefined),
+          updateRule: vi.fn().mockResolvedValue(undefined),
+          deleteRule: vi.fn().mockResolvedValue(undefined),
+        } as never,
         findSessionById: vi.fn().mockResolvedValue(null),
         listSessions: vi.fn().mockResolvedValue({ data: [], total: 0 }),
         createSession: vi.fn(),
         updateSessionStatus: vi.fn(),
+        listRoutingDecisions: vi.fn().mockResolvedValue([]),
       });
 
       const app = createTestApp();
@@ -315,11 +349,14 @@ describe('Agent Routes', () => {
   describe('POST /api/v1/agents/sessions/:id/kill', () => {
     it('kills session and returns success', async () => {
       const app = createTestApp();
-      const res = await app.request('/api/v1/agents/sessions/00000000-0000-0000-0000-000000000001/kill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'Safety concern' }),
-      });
+      const res = await app.request(
+        '/api/v1/agents/sessions/00000000-0000-0000-0000-000000000001/kill',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Safety concern' }),
+        },
+      );
 
       expect(res.status).toBe(200);
       expect(mockEngine.killSession).toHaveBeenCalledWith(
@@ -341,11 +378,14 @@ describe('Agent Routes', () => {
 
     it('returns 422 when reason is missing', async () => {
       const app = createTestApp();
-      const res = await app.request('/api/v1/agents/sessions/00000000-0000-0000-0000-000000000001/kill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
+      const res = await app.request(
+        '/api/v1/agents/sessions/00000000-0000-0000-0000-000000000001/kill',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
 
       expect(res.status).toBe(400);
     });
@@ -372,7 +412,7 @@ describe('Agent Routes', () => {
       const res = await app.request('/api/v1/agents/hitl');
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { success: boolean; data: unknown[]; total: number };
+      const body = (await res.json()) as { success: boolean; data: unknown[]; total: number };
       expect(body.success).toBe(true);
       expect(body.data).toEqual([]);
       expect(body.total).toBe(0);
@@ -383,8 +423,19 @@ describe('Agent Routes', () => {
         id: 'hitl-1',
         sessionId: 'session-1',
         tenantId: 'tenant-1',
-        decision: { action: 'send_sms', reasoning: 'test', confidence: 0.5, parameters: {}, requiresApproval: true },
-        context: { sessionId: 'session-1', tenantId: 'tenant-1', customerId: 'cust-1', agentRole: 'collections' },
+        decision: {
+          action: 'send_sms',
+          reasoning: 'test',
+          confidence: 0.5,
+          parameters: {},
+          requiresApproval: true,
+        },
+        context: {
+          sessionId: 'session-1',
+          tenantId: 'tenant-1',
+          customerId: 'cust-1',
+          agentRole: 'collections',
+        },
         createdAt: new Date(),
         status: 'pending' as const,
         reviewedBy: undefined,
@@ -398,7 +449,7 @@ describe('Agent Routes', () => {
       const res = await app.request('/api/v1/agents/hitl');
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { data: unknown[]; total: number };
+      const body = (await res.json()) as { data: unknown[]; total: number };
       expect(body.total).toBe(1);
     });
   });
@@ -411,7 +462,13 @@ describe('Agent Routes', () => {
         id: 'hitl-1',
         tenantId: 'tenant-1',
         sessionId: 'session-1',
-        decision: { action: 'send_sms', confidence: 0.5, reasoning: 'test', parameters: {}, requiresApproval: true },
+        decision: {
+          action: 'send_sms',
+          confidence: 0.5,
+          reasoning: 'test',
+          parameters: {},
+          requiresApproval: true,
+        },
         status: 'pending',
       });
 
@@ -423,7 +480,7 @@ describe('Agent Routes', () => {
       });
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { data: { status: string } };
+      const body = (await res.json()) as { data: { status: string } };
       expect(body.data.status).toBe('approved');
     });
 
@@ -445,7 +502,13 @@ describe('Agent Routes', () => {
         id: 'hitl-1',
         tenantId: 'tenant-1',
         sessionId: 'session-1',
-        decision: { action: 'send_sms', confidence: 0.5, reasoning: 'test', parameters: {}, requiresApproval: true },
+        decision: {
+          action: 'send_sms',
+          confidence: 0.5,
+          reasoning: 'test',
+          parameters: {},
+          requiresApproval: true,
+        },
         status: 'pending',
       });
 
@@ -457,7 +520,7 @@ describe('Agent Routes', () => {
       });
 
       expect(res.status).toBe(200);
-      const body = await res.json() as { data: { status: string; reason: string } };
+      const body = (await res.json()) as { data: { status: string; reason: string } };
       expect(body.data.status).toBe('rejected');
       expect(body.data.reason).toBe('Too risky');
     });
@@ -467,7 +530,13 @@ describe('Agent Routes', () => {
         id: 'hitl-1',
         tenantId: 'tenant-1',
         sessionId: 'session-1',
-        decision: { action: 'send_sms', confidence: 0.5, reasoning: 'test', parameters: {}, requiresApproval: true },
+        decision: {
+          action: 'send_sms',
+          confidence: 0.5,
+          reasoning: 'test',
+          parameters: {},
+          requiresApproval: true,
+        },
         status: 'pending',
       });
 
@@ -486,7 +555,13 @@ describe('Agent Routes', () => {
         id: 'hitl-1',
         tenantId: 'other-tenant',
         sessionId: 'session-1',
-        decision: { action: 'send_sms', confidence: 0.5, reasoning: 'test', parameters: {}, requiresApproval: true },
+        decision: {
+          action: 'send_sms',
+          confidence: 0.5,
+          reasoning: 'test',
+          parameters: {},
+          requiresApproval: true,
+        },
         status: 'pending',
       });
 

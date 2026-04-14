@@ -67,10 +67,8 @@ import { ComplianceEngine, ComplianceGate, ALL_RULES } from '@ordr/compliance';
 import {
   NBAPipeline,
   RulesEngine,
-  InMemoryRuleStore,
   createDefaultMLScorer,
   LLMReasoner,
-  copyBuiltinRulesForTenant,
 } from '@ordr/decision-engine';
 import type {
   ComplianceGateInterface as NBAComplianceGateInterface,
@@ -84,7 +82,7 @@ import {
   createRealSendGridClient,
 } from '@ordr/channels';
 import type { ConsentStore, TwilioClient, SendGridClient } from '@ordr/channels';
-import { LLMClient } from '@ordr/ai';
+import { LLMClient, PromptRegistry } from '@ordr/ai';
 import {
   AnalyticsQueries,
   RealTimeCounters,
@@ -135,6 +133,7 @@ import { configurePartnerStatsRoute } from './routes/partner-stats.js';
 import { configurePartnerRoutes } from './routes/partners.js';
 import { configureDeveloperRoutes } from './routes/developers.js';
 import { SlaChecker, DEFAULT_CHECK_INTERVAL_MS } from './lib/sla-checker.js';
+import { DrizzleRuleStore } from './lib/drizzle-rule-store.js';
 import { configureSlaRoutes } from './routes/sla.js';
 import { configureTeamRoutes } from './routes/team.js';
 import { configureProfileRoutes } from './routes/profile.js';
@@ -1142,22 +1141,33 @@ async function bootstrap(): Promise<void> {
     const agentEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
 
     // ── NBA pipeline (3-layer: Rules → ML → LLM) ───────────────────────────
-    const nbaRuleStore = new InMemoryRuleStore();
-    // Load built-in rules for a "global" tenant — these apply to all tenants via
-    // the rules engine's tenant lookup. Per-tenant rules are loaded from the DB
-    // in Phase 68+ when the decision_rules CRUD API is added.
-    nbaRuleStore.seed(copyBuiltinRulesForTenant('global'));
+    // DrizzleRuleStore merges built-in rules with per-tenant DB rules on every
+    // getRules() call. The CRUD API (GET/POST/PUT/DELETE /agents/rules) manages
+    // custom rules stored in the decision_rules table.
+    const nbaRuleStore = new DrizzleRuleStore(db);
     const nbaRulesEngine = new RulesEngine(nbaRuleStore);
     const nbaMLScorer = createDefaultMLScorer();
-    const nbaPromptRegistry = {
-      get: (_id: string) => ({
-        systemPrompt:
-          'You are an expert customer operations decision engine. ' +
-          'Analyze the provided context and recommend the single best next action. ' +
-          'NEVER include customer names, emails, phone numbers, or any PII in your response. ' +
-          'Return valid JSON only.',
-      }),
-    };
+
+    // PromptRegistry — real registry with built-in collections templates.
+    // NBA-specific system prompt registered under 'nba.decision_engine'.
+    const nbaPromptRegistry = new PromptRegistry();
+    nbaPromptRegistry.register({
+      id: 'nba.decision_engine',
+      name: 'NBA Decision Engine',
+      version: 1,
+      systemPrompt: [
+        'You are an expert customer operations decision engine operating within a HIPAA, SOC2, and ISO 27001 compliant environment.',
+        'RULES YOU MUST FOLLOW:',
+        '- Analyze the provided context and recommend the single best next action.',
+        '- NEVER include customer names, emails, phone numbers, account numbers, or any PII/PHI in your response.',
+        '- Base decisions on scores, lifecycle stage, balance data, and interaction patterns only.',
+        '- If confidence is below 0.5, recommend escalate_to_human.',
+        '- Return valid JSON only — no prose, no markdown, no code blocks.',
+        '- Every decision must include a brief compliance-safe reasoning string.',
+      ].join('\n'),
+      userTemplate: '{{context_summary}}',
+      variables: ['context_summary'],
+    });
     const nbaLLMReasoner =
       llmClient !== null
         ? new LLMReasoner(llmClient, nbaPromptRegistry)
@@ -1215,6 +1225,7 @@ async function bootstrap(): Promise<void> {
       agentEngine,
       hitlQueue,
       nbaPipeline,
+      ruleStore: nbaRuleStore,
       findSessionById: async (tenantId, sessionId) => {
         const rows = await db
           .select()
