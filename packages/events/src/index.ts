@@ -76,3 +76,8 @@ export { DeadLetterHandler } from './dlq.js';
 // ─── Deliverable Events ───────────────────────────────────────────
 export { DELIVERABLE_EVENTS } from './deliverable-events.js';
 export type { DeliverableEvent } from './deliverable-events.js';
+
+// ─── Confluent Schema Registry ────────────────────────────────────
+export type { ConfluentRegistryConfig } from './confluent-registry.js';
+export { ConfluentRegistryClient, SchemaRegistryError } from './confluent-registry.js';
+export { getJsonSchemaForEventType, getAllJsonSchemas } from './json-schemas.js';

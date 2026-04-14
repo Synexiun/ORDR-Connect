@@ -34,7 +34,15 @@ import { loadConfig } from '@ordr/core';
 import type { ParsedConfig } from '@ordr/core';
 import { createConnection, createDrizzle, closeConnection, DrizzleAuditStore } from '@ordr/db';
 import * as schema from '@ordr/db';
-import { createKafkaClient, createProducer, EventProducer, TOPICS, EventType } from '@ordr/events';
+import {
+  createKafkaClient,
+  createProducer,
+  EventProducer,
+  TOPICS,
+  EventType,
+  ConfluentRegistryClient,
+  eventSchemaRegistry,
+} from '@ordr/events';
 import type { Producer } from '@ordr/events';
 import { AuditLogger } from '@ordr/audit';
 import {
@@ -188,6 +196,7 @@ let limbInstance: Limb | null = null;
 let vaultClientInstance: VaultClient | null = null;
 let dbConnection: postgres.Sql | null = null;
 let kafkaProducer: Producer | null = null;
+let confluentRegistry: ConfluentRegistryClient | undefined;
 let llmClient: LLMClient | null = null;
 let slaChecker: SlaChecker | null = null;
 let server: ReturnType<typeof serve> | null = null;
@@ -333,6 +342,44 @@ async function bootstrap(): Promise<void> {
   } catch (error: unknown) {
     console.error('[ORDR:API] FATAL: Kafka connection failed:', error);
     process.exit(1);
+  }
+
+  // ── 3.5. Confluent Schema Registry (optional) ──────────────────────────
+  // Wires an external schema registry for schema versioning + compatibility
+  // enforcement.  No-op when CONFLUENT_SCHEMA_REGISTRY_URL is unset so the
+  // service starts cleanly in local dev without a registry.
+  //
+  // SOC2 CC6.6 / ISO 27001 A.8.9 — Change management: all event schemas are
+  // registered and their compatibility is verified before traffic flows.
+  {
+    const registryUrl = process.env['CONFLUENT_SCHEMA_REGISTRY_URL'];
+    if (registryUrl !== undefined && registryUrl.length > 0) {
+      const schemaRegistryClient = new ConfluentRegistryClient({
+        url: registryUrl,
+        apiKey: process.env['CONFLUENT_SCHEMA_REGISTRY_API_KEY'],
+        apiSecret: process.env['CONFLUENT_SCHEMA_REGISTRY_API_SECRET'],
+      });
+
+      // Eagerly register all schemas and warm the local cache.
+      // Failures are non-fatal: warn and continue — Zod validation is the
+      // hard gate; the registry is additive compliance hardening.
+      const schemaProducer = new EventProducer(
+        kafkaProducer,
+        eventSchemaRegistry,
+        schemaRegistryClient,
+      );
+      await schemaProducer.registerAllSchemas();
+
+      // Expose the registry client for use by all EventProducer instances.
+      // Re-assign the module-level variable so all subsequent constructors
+      // share one client (and one warm cache).
+      confluentRegistry = schemaRegistryClient;
+      console.warn('[ORDR:API] Confluent Schema Registry: all schemas registered');
+    } else {
+      console.warn(
+        '[ORDR:API] Confluent Schema Registry: not configured (CONFLUENT_SCHEMA_REGISTRY_URL unset)',
+      );
+    }
   }
 
   // ── 4. Audit logger ────────────────────────────────────────────────────
@@ -750,7 +797,7 @@ async function bootstrap(): Promise<void> {
   console.warn('[ORDR:API] Marketplace routes configured');
 
   // ── 4.17. Customer routes (CRUD with PII encryption + Kafka events) ─────────
-  const customerEventProducer = new EventProducer(kafkaProducer);
+  const customerEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
   const customerFieldEncryptor = new FieldEncryptor(fieldEncryptionKey);
   configureCustomerRoutes({
     fieldEncryptor: customerFieldEncryptor,
@@ -1064,7 +1111,7 @@ async function bootstrap(): Promise<void> {
       tools: new Map(),
     };
     const agentEngine = new AgentEngine(agentEngineDeps, hitlQueue);
-    const agentEventProducer = new EventProducer(kafkaProducer);
+    const agentEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
     configureAgentRoutes({
       auditLogger,
       eventProducer: agentEventProducer,
@@ -1833,7 +1880,7 @@ async function bootstrap(): Promise<void> {
 
     configureMessageRoutes({
       auditLogger,
-      eventProducer: new EventProducer(kafkaProducer),
+      eventProducer: new EventProducer(kafkaProducer, undefined, confluentRegistry),
       consentManager: new ConsentManager(),
       consentStore: inMemoryConsentStore,
       complianceGate: new ComplianceGate(complianceEngine),
@@ -2209,7 +2256,7 @@ async function bootstrap(): Promise<void> {
 
   // ── P6.5b. DSR Routes (GDPR Art. 12, 15, 17, 20) ────────────────────────
   {
-    const dsrEventProducer = new EventProducer(kafkaProducer);
+    const dsrEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
     configureDsrRoutes({
       createDsr: async (params) => {
         const result = await db
@@ -2549,7 +2596,7 @@ async function bootstrap(): Promise<void> {
     ['hubspot', new HubSpotAdapter(fetchHttpClient) as unknown as CRMAdapter],
   ]);
   const crmFieldEncryptor = new FieldEncryptor(fieldEncryptionKey);
-  const integrationEventProducer = new EventProducer(kafkaProducer);
+  const integrationEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
   configureIntegrationRoutes({
     adapters: crmAdapters,
     lookupTenantByProvider: async ({ provider, instanceUrl, portalId }) => {
@@ -2931,7 +2978,7 @@ async function bootstrap(): Promise<void> {
     userStore: scimUserStore,
     groupStore: scimGroupStore,
     db: scimDb,
-    eventProducer: new EventProducer(kafkaProducer),
+    eventProducer: new EventProducer(kafkaProducer, undefined, confluentRegistry),
     auditLogger,
   });
   configureSCIMRoutes({ scimHandler, tokenStore: scimTokenStore });
