@@ -36,16 +36,30 @@ import {
   InMemoryChannelStore,
   MessageService,
   InMemoryMessageStore,
+  DrizzleChannelStore,
+  DrizzleMessageStore,
   PresenceManager,
 } from '@ordr/messaging';
 import type { ChatChannel, ChatMessage, MessageEvent } from '@ordr/messaging';
+import type { OrdrDatabase } from '@ordr/db';
 
-// ─── Singletons ──────────────────────────────────────────────────────────────
+// ─── Stores — default to in-memory; replaced with Drizzle on configureMessagingRoutes() ─
 
-const channelStore = new InMemoryChannelStore();
-const messageStore = new InMemoryMessageStore();
-const channelManager = new ChannelManager(channelStore);
-const messageService = new MessageService(messageStore);
+let channelManager = new ChannelManager(new InMemoryChannelStore());
+let messageService = new MessageService(new InMemoryMessageStore());
+
+/**
+ * Wire Drizzle-backed stores for production use.
+ * Must be called from server.ts before any requests are served.
+ *
+ * SOC2 CC8.1 — Change management: deterministic startup configuration.
+ */
+export function configureMessagingRoutes(db: OrdrDatabase): void {
+  channelManager = new ChannelManager(new DrizzleChannelStore(db));
+  messageService = new MessageService(new DrizzleMessageStore(db));
+}
+
+// ─── Presence (always in-memory — ephemeral by design) ───────────────────────
 export const presenceManager = new PresenceManager();
 
 // ─── SSE Event Bus ───────────────────────────────────────────────────────────

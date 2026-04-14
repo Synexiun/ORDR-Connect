@@ -211,3 +211,7 @@ export {
   violationRegulationEnum,
   violationSeverityEnum,
 } from './compliance-violations.js';
+
+// Internal Messaging — enterprise chat channels and messages (Phase 70)
+export { chatChannels, channelTypeEnum } from './chat-channels.js';
+export { chatMessages, messageContentTypeEnum } from './chat-messages.js';

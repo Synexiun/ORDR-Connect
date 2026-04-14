@@ -16,13 +16,11 @@
  */
 
 import { eq, and, desc } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { OrdrDatabase } from '@ordr/db';
 import * as schema from '@ordr/db';
 import type { RuleStore } from '@ordr/decision-engine';
 import type { RuleDefinition, RuleCondition, RuleAction } from '@ordr/decision-engine';
 import { copyBuiltinRulesForTenant } from '@ordr/decision-engine';
-
-type Db = PostgresJsDatabase<typeof schema>;
 
 // ─── Row mapper ──────────────────────────────────────────────────
 
@@ -44,7 +42,7 @@ function rowToRuleDefinition(row: typeof schema.decisionRules.$inferSelect): Rul
 // ─── DrizzleRuleStore ────────────────────────────────────────────
 
 export class DrizzleRuleStore implements RuleStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: OrdrDatabase) {}
 
   /**
    * Return all active rules for a tenant.

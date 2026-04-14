@@ -123,6 +123,7 @@ import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureAuditLogsRoute } from './routes/audit-logs.js';
+import { configureMessagingRoutes } from './routes/messaging.js';
 import { configureHealthcareRoutes } from './routes/healthcare.js';
 import { configureFhirRoutes } from './routes/fhir.js';
 import { configureDevUsageRoute } from './routes/developer-usage.js';
@@ -485,6 +486,10 @@ async function bootstrap(): Promise<void> {
   // ── 4.6.1. Audit logs route ────────────────────────────────────────────
   configureAuditLogsRoute(db);
   console.warn('[ORDR:API] Audit logs route configured');
+
+  // ── 4.6.2. Messaging routes — wire Drizzle stores (channel + message persistence) ──
+  configureMessagingRoutes(db);
+  console.warn('[ORDR:API] Messaging routes configured (Drizzle stores active)');
 
   // ── 4.7. Healthcare routes ─────────────────────────────────────────────
   configureHealthcareRoutes(db);
