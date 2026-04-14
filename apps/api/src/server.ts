@@ -87,6 +87,7 @@ import {
   eq,
   gt,
   gte,
+  inArray,
   sum,
   count,
   max,
@@ -2864,6 +2865,120 @@ async function bootstrap(): Promise<void> {
             eq(schema.integrationConfigs.provider, provider as never),
           ),
         );
+    },
+    getEntityMappingsByExternalIds: async ({ tenantId, provider, entityType, externalIds }) => {
+      if (externalIds.length === 0) return [];
+      const rows = await db
+        .select({
+          externalId: schema.integrationEntityMappings.externalId,
+          ordrId: schema.integrationEntityMappings.ordrId,
+          updatedAt: schema.integrationEntityMappings.updatedAt,
+        })
+        .from(schema.integrationEntityMappings)
+        .where(
+          and(
+            eq(schema.integrationEntityMappings.tenantId, tenantId),
+            eq(schema.integrationEntityMappings.provider, provider as never),
+            eq(schema.integrationEntityMappings.entityType, entityType as never),
+            inArray(schema.integrationEntityMappings.externalId, [...externalIds]),
+          ),
+        );
+      return rows.map((r) => ({
+        externalId: r.externalId,
+        ordrId: r.ordrId,
+        lastSyncedAt: r.updatedAt,
+      }));
+    },
+    upsertCustomerFromSync: async ({ tenantId, externalId, ordrEntityId, encryptedFields }) => {
+      if (ordrEntityId !== undefined) {
+        // Update existing customer by ORDR ID
+        await db
+          .update(schema.customers)
+          .set({
+            name: encryptedFields.name,
+            ...(encryptedFields.email !== undefined && { email: encryptedFields.email }),
+            ...(encryptedFields.phone !== undefined && { phone: encryptedFields.phone }),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(eq(schema.customers.id, ordrEntityId), eq(schema.customers.tenantId, tenantId)),
+          );
+        return ordrEntityId;
+      }
+      // Insert or update by externalId (ON CONFLICT on tenant_id + external_id)
+      const rows = await db
+        .insert(schema.customers)
+        .values({
+          tenantId,
+          externalId,
+          type: 'individual' as never,
+          status: 'active' as never,
+          name: encryptedFields.name,
+          email: encryptedFields.email ?? null,
+          phone: encryptedFields.phone ?? null,
+          lifecycleStage: 'lead' as never,
+        })
+        .onConflictDoUpdate({
+          target: [schema.customers.tenantId, schema.customers.externalId],
+          set: {
+            name: encryptedFields.name,
+            ...(encryptedFields.email !== undefined && { email: encryptedFields.email }),
+            ...(encryptedFields.phone !== undefined && { phone: encryptedFields.phone }),
+            updatedAt: new Date(),
+          },
+        })
+        .returning({ id: schema.customers.id });
+      const row = rows[0];
+      if (!row) throw new Error('Failed to upsert customer from sync');
+      return row.id;
+    },
+    insertSyncEvent: async ({
+      tenantId,
+      integrationId,
+      provider,
+      direction,
+      entityType,
+      entityId,
+      externalId,
+      status,
+      conflictResolution,
+      errorSummary,
+    }) => {
+      await db.insert(schema.syncEvents).values({
+        tenantId,
+        integrationId,
+        provider: provider as never,
+        direction: direction as never,
+        entityType: entityType as never,
+        entityId: entityId ?? null,
+        externalId: externalId ?? null,
+        status: status as never,
+        conflictResolution: conflictResolution ?? null,
+        errorSummary: errorSummary ?? null,
+      });
+    },
+    upsertEntityMapping: async ({ tenantId, provider, entityType, ordrId, externalId }) => {
+      await db
+        .insert(schema.integrationEntityMappings)
+        .values({
+          tenantId,
+          provider: provider as never,
+          entityType: entityType as never,
+          ordrId,
+          externalId,
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.integrationEntityMappings.tenantId,
+            schema.integrationEntityMappings.provider,
+            schema.integrationEntityMappings.entityType,
+            schema.integrationEntityMappings.externalId,
+          ],
+          set: {
+            ordrId,
+            updatedAt: new Date(),
+          },
+        });
     },
     eventProducer: integrationEventProducer,
     auditLogger,

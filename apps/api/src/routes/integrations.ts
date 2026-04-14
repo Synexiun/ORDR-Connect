@@ -18,7 +18,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { INTEGRATION_PROVIDERS } from '@ordr/integrations';
+import { INTEGRATION_PROVIDERS, SyncEngine, defaultContactMappings } from '@ordr/integrations';
 import type {
   OAuthCredentials,
   IntegrationHealth,
@@ -27,8 +27,11 @@ import type {
   CredentialManagerDeps,
   CrmActivity,
   PaginatedResult as IntegrationsPaginatedResult,
+  FieldMapping,
+  FieldTransform,
 } from '@ordr/integrations';
 import { ensureFreshCredentials, IntegrationNotConnectedError } from '@ordr/integrations';
+import type { ExternalRecord, ExistingOrdrRecord } from '@ordr/integrations';
 import type { FieldEncryptor } from '@ordr/crypto';
 import type { AuditLogger } from '@ordr/audit';
 import { EventProducer, createEventEnvelope, EventType, TOPICS } from '@ordr/events';
@@ -166,6 +169,15 @@ const listFieldMappingsQuerySchema = z.object({
   direction: z.enum(['inbound', 'outbound', 'both']).optional(),
 });
 
+const syncBodySchema = z.object({
+  entityType: z.enum(['contact']).default('contact'),
+  modifiedAfter: z.string().datetime().optional(),
+  conflictResolution: z
+    .enum(['source_wins', 'target_wins', 'most_recent', 'manual'])
+    .default('source_wins'),
+  maxPages: z.coerce.number().int().min(1).max(50).default(10),
+});
+
 // ─── Dependencies (injected at startup) ───────────────────────────
 
 interface IntegrationDeps {
@@ -229,6 +241,41 @@ interface IntegrationDeps {
     targetField: string;
   }>;
   readonly disconnectIntegration: (params: { tenantId: string; provider: string }) => Promise<void>;
+  readonly getEntityMappingsByExternalIds: (params: {
+    tenantId: string;
+    provider: string;
+    entityType: 'contact' | 'deal' | 'activity';
+    externalIds: readonly string[];
+  }) => Promise<Array<{ externalId: string; ordrId: string; lastSyncedAt: Date }>>;
+  readonly upsertCustomerFromSync: (params: {
+    tenantId: string;
+    externalId: string;
+    ordrEntityId?: string | undefined;
+    encryptedFields: {
+      readonly name: string;
+      readonly email?: string | undefined;
+      readonly phone?: string | undefined;
+    };
+  }) => Promise<string>;
+  readonly insertSyncEvent: (params: {
+    tenantId: string;
+    integrationId: string;
+    provider: string;
+    direction: 'inbound' | 'outbound';
+    entityType: 'contact' | 'deal' | 'activity';
+    entityId?: string | undefined;
+    externalId?: string | undefined;
+    status: 'success' | 'failed' | 'conflict' | 'skipped';
+    conflictResolution?: string | undefined;
+    errorSummary?: string | undefined;
+  }) => Promise<void>;
+  readonly upsertEntityMapping: (params: {
+    tenantId: string;
+    provider: string;
+    entityType: 'contact' | 'deal' | 'activity';
+    ordrId: string;
+    externalId: string;
+  }) => Promise<void>;
 }
 
 let deps: IntegrationDeps | null = null;
@@ -276,6 +323,82 @@ function resolveAdapter(providerKey: string, adapters: Map<string, CRMAdapter>):
     throw new NotFoundError(`Integration provider not found: ${providerKey}`);
   }
   return adapter;
+}
+
+// ─── Sync helpers ─────────────────────────────────────────────────
+
+/**
+ * ORDR fields that contain PHI — used when converting stored DB field mappings
+ * (which have no isPhi column) back to FieldMapping objects for the sync engine.
+ */
+const ORDR_PHI_FIELDS = new Set(['firstName', 'lastName', 'name', 'email', 'phone']);
+
+/**
+ * Convert stored integration_field_mappings rows to the FieldMapping[] format
+ * expected by applyFieldMappings / SyncEngine.processInbound.
+ *
+ * Only inbound and bidirectional mappings are returned; outbound-only rows are
+ * irrelevant for inbound sync and are filtered out.
+ */
+function convertFieldMappings(
+  stored: Array<{
+    entityType: string;
+    direction: string;
+    sourceField: string;
+    targetField: string;
+    transform: unknown;
+  }>,
+): readonly FieldMapping[] {
+  return stored
+    .filter(
+      (m) => m.entityType === 'contact' && (m.direction === 'inbound' || m.direction === 'both'),
+    )
+    .map(
+      (m): FieldMapping => ({
+        externalField: m.sourceField,
+        ordrField: m.targetField,
+        direction: m.direction === 'both' ? 'bidirectional' : 'inbound',
+        isPhi: ORDR_PHI_FIELDS.has(m.targetField),
+        ...(m.transform !== null &&
+          m.transform !== undefined && { transform: m.transform as FieldTransform }),
+      }),
+    );
+}
+
+/**
+ * Build the encrypted customer fields for a DB insert from a mapped inbound record.
+ *
+ * Combines `firstName` + `lastName` → `name` BEFORE encryption (the DB stores a
+ * single combined name field).  All other PHI fields are encrypted individually.
+ *
+ * HIPAA §164.312(a)(2)(iv) — PHI encrypted at application layer before DB write.
+ */
+function buildEncryptedContactFields(
+  record: Readonly<Record<string, unknown>>,
+  phiFields: readonly string[],
+  enc: FieldEncryptor,
+): {
+  readonly name: string;
+  readonly email?: string;
+  readonly phone?: string;
+} {
+  const phiSet = new Set(phiFields);
+  const firstName =
+    phiSet.has('firstName') && typeof record['firstName'] === 'string' ? record['firstName'] : '';
+  const lastName =
+    phiSet.has('lastName') && typeof record['lastName'] === 'string' ? record['lastName'] : '';
+  const nameRaw = `${firstName} ${lastName}`.trim() || 'Unknown';
+
+  const emailRaw =
+    phiSet.has('email') && typeof record['email'] === 'string' ? record['email'] : undefined;
+  const phoneRaw =
+    phiSet.has('phone') && typeof record['phone'] === 'string' ? record['phone'] : undefined;
+
+  return {
+    name: enc.encryptField('name', nameRaw),
+    ...(emailRaw !== undefined && { email: enc.encryptField('email', emailRaw) }),
+    ...(phoneRaw !== undefined && { phone: enc.encryptField('phone', phoneRaw) }),
+  };
 }
 
 // ─── Router ───────────────────────────────────────────────────────
@@ -923,6 +1046,226 @@ integrationsRouter.put(
     });
 
     return c.json({ success: true as const, provider });
+  },
+);
+
+// ─── POST /:provider/sync — Trigger a full inbound batch sync ────────────────
+//
+// Pulls contacts from the CRM (optionally filtered to `modifiedAfter`), runs
+// the SyncEngine to compute create/update/skip/conflict actions, encrypts PHI,
+// upserts ORDR customers, writes sync_events, and returns a summary.
+//
+// HIPAA §164.312(a)(2)(iv) — PHI encrypted via FieldEncryptor before any DB write.
+// SOC2 CC6.1  — tenant-scoped; integration must be connected before sync is allowed.
+// ISO 27001 A.8.2.3 — all sync outcomes written to sync_events for audit trail.
+
+integrationsRouter.post(
+  '/:provider/sync',
+  requireRoleMiddleware('tenant_admin'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const provider = c.req.param('provider');
+    const adapter = resolveAdapter(provider, deps.adapters);
+
+    const body: unknown = await c.req.json().catch(() => ({}));
+    const parsed = syncBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid sync parameters', parseZodErrors(parsed.error), requestId);
+    }
+    const { entityType, modifiedAfter, conflictResolution, maxPages } = parsed.data;
+
+    // Verify the integration is connected (also retrieves the integration_id for sync_events)
+    const integrationConfig = await deps.credManagerDeps.getIntegrationConfig({
+      tenantId: ctx.tenantId,
+      provider,
+    });
+    if (!integrationConfig) {
+      throw new NotFoundError(`Integration not connected: ${provider}`);
+    }
+
+    // Resolve field mappings: stored tenant config → adapter defaults → package defaults
+    const storedMappings = await deps.listFieldMappings({ tenantId: ctx.tenantId, provider });
+    const contactMappings: readonly FieldMapping[] =
+      storedMappings.length > 0 ? convertFieldMappings(storedMappings) : defaultContactMappings();
+
+    // ── Step 1: Fetch contacts from CRM with pagination ────────────────────────
+    const externalRecords: ExternalRecord[] = [];
+    const PAGE_SIZE = 200;
+    for (let page = 0; page < maxPages; page++) {
+      const result = await adapter.listContacts(
+        modifiedAfter !== undefined ? `modifiedAfter:${modifiedAfter}` : '',
+        { limit: PAGE_SIZE, offset: page * PAGE_SIZE },
+      );
+      for (const item of result.items) {
+        const rawId = item['id'] ?? item['externalId'];
+        const externalId =
+          typeof rawId === 'string'
+            ? rawId
+            : typeof rawId === 'number'
+              ? rawId.toString()
+              : `unknown_${page}_${externalRecords.length}`;
+        const updatedAtRaw = item['updatedAt'] ?? item['lastModified'] ?? item['updated_at'];
+        const externalUpdatedAt =
+          typeof updatedAtRaw === 'string'
+            ? new Date(updatedAtRaw)
+            : updatedAtRaw instanceof Date
+              ? updatedAtRaw
+              : new Date();
+        externalRecords.push({ externalId, rawRecord: item, externalUpdatedAt });
+      }
+      if (result.items.length < PAGE_SIZE) break;
+    }
+
+    // ── Step 2: Load existing entity mappings ──────────────────────────────────
+    // We pass record:{} (no plaintext PHI comparison) and use entity-mapping
+    // timestamps only. This means existing records are always treated as 'update'
+    // rather than 'skip', which is safe and PHI-compliant.
+    const externalIds = externalRecords.map((r) => r.externalId);
+    const existingMappings =
+      externalIds.length > 0
+        ? await deps.getEntityMappingsByExternalIds({
+            tenantId: ctx.tenantId,
+            provider,
+            entityType,
+            externalIds,
+          })
+        : [];
+
+    const existingByExtId = new Map<string, ExistingOrdrRecord>();
+    for (const m of existingMappings) {
+      existingByExtId.set(m.externalId, {
+        ordrEntityId: m.ordrId,
+        record: {},
+        updatedAt: m.lastSyncedAt,
+        lastSyncedAt: m.lastSyncedAt,
+      });
+    }
+
+    // ── Step 3: Run sync engine ────────────────────────────────────────────────
+    const syncEngine = new SyncEngine();
+    const syncResult = syncEngine.processInbound(
+      externalRecords,
+      existingByExtId,
+      contactMappings,
+      conflictResolution,
+    );
+
+    // ── Step 4: Process each result — encrypt PHI, upsert, write events ────────
+    let errors = 0;
+    for (const record of syncResult.records) {
+      if (record.action === 'skip') {
+        await deps.insertSyncEvent({
+          tenantId: ctx.tenantId,
+          integrationId: integrationConfig.id,
+          provider,
+          direction: 'inbound',
+          entityType,
+          entityId: record.ordrEntityId ?? undefined,
+          externalId: record.externalId,
+          status: 'skipped',
+        });
+        continue;
+      }
+
+      if (record.record === null) continue;
+
+      try {
+        // Encrypt PHI fields before any DB write (HIPAA §164.312(a)(2)(iv))
+        const encryptedFields = buildEncryptedContactFields(
+          record.record,
+          record.phiFields,
+          deps.fieldEncryptor,
+        );
+
+        const ordrId = await deps.upsertCustomerFromSync({
+          tenantId: ctx.tenantId,
+          externalId: record.externalId,
+          ordrEntityId: record.ordrEntityId ?? undefined,
+          encryptedFields,
+        });
+
+        await deps.upsertEntityMapping({
+          tenantId: ctx.tenantId,
+          provider,
+          entityType,
+          ordrId,
+          externalId: record.externalId,
+        });
+
+        await deps.insertSyncEvent({
+          tenantId: ctx.tenantId,
+          integrationId: integrationConfig.id,
+          provider,
+          direction: 'inbound',
+          entityType,
+          entityId: ordrId,
+          externalId: record.externalId,
+          status: record.action === 'conflict' ? 'conflict' : 'success',
+          conflictResolution: record.action === 'conflict' ? conflictResolution : undefined,
+          errorSummary:
+            record.manualFields.length > 0
+              ? `Manual review required: ${record.manualFields.join(', ')}`
+              : undefined,
+        });
+      } catch (err) {
+        errors++;
+        await deps
+          .insertSyncEvent({
+            tenantId: ctx.tenantId,
+            integrationId: integrationConfig.id,
+            provider,
+            direction: 'inbound',
+            entityType,
+            externalId: record.externalId,
+            status: 'failed',
+            errorSummary:
+              err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    // ── Step 5: Audit log the sync batch ───────────────────────────────────────
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: errors > 0 ? 'integration.sync_failed' : 'integration.sync_completed',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'customers',
+      resourceId: `${ctx.tenantId}:${provider}`,
+      action: 'inbound_sync',
+      details: {
+        provider,
+        entityType,
+        fetched: externalRecords.length,
+        created: syncResult.created,
+        updated: syncResult.updated,
+        skipped: syncResult.skipped,
+        conflictsDetected: syncResult.conflictsDetected,
+        conflictsResolved: syncResult.conflictsResolved,
+        conflictsQueued: syncResult.conflictsQueued,
+        errors,
+      },
+      timestamp: new Date(),
+    });
+
+    return c.json({
+      success: true as const,
+      data: {
+        provider,
+        entityType,
+        fetched: externalRecords.length,
+        created: syncResult.created,
+        updated: syncResult.updated,
+        skipped: syncResult.skipped,
+        conflictsDetected: syncResult.conflictsDetected,
+        conflictsResolved: syncResult.conflictsResolved,
+        conflictsQueued: syncResult.conflictsQueued,
+        errors,
+      },
+    });
   },
 );
 
