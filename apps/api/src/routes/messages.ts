@@ -123,6 +123,18 @@ interface MessageDependencies {
     customerId: string,
     channel: string,
   ) => Promise<{ readonly contact: string; readonly contentBody: string } | null>;
+  /**
+   * Write a compliance violation to the operator dashboard.
+   * Optional — fire-and-forget; audit log is always the authoritative record.
+   */
+  readonly insertViolation?: (v: {
+    readonly tenantId: string;
+    readonly ruleName: string;
+    readonly regulation: string;
+    readonly severity: string;
+    readonly description: string;
+    readonly customerId: string | null;
+  }) => Promise<void>;
 }
 
 let deps: MessageDependencies | null = null;
@@ -331,6 +343,23 @@ messagesRouter.post(
         details: { customerId, channel, violations: violationMessages },
         timestamp: new Date(),
       });
+
+      // Persist each violation to the operator dashboard (fire-and-forget per violation)
+      const insertViolation = deps.insertViolation;
+      if (insertViolation !== undefined) {
+        await Promise.allSettled(
+          complianceResult.violations.map((v) =>
+            insertViolation({
+              tenantId: ctx.tenantId,
+              ruleName: v.ruleId,
+              regulation: v.regulation,
+              severity: v.violation?.severity ?? 'medium',
+              description: v.violation?.message ?? v.ruleId,
+              customerId,
+            }),
+          ),
+        );
+      }
 
       throw new ComplianceViolationError(
         `Message blocked by compliance gate: ${violationMessages}`,

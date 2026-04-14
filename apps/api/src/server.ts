@@ -942,6 +942,41 @@ async function bootstrap(): Promise<void> {
     `[ORDR:API] Compliance engine initialized — ${String(complianceEngine.getRules().length)} rules loaded`,
   );
 
+  // Map lowercase engine regulation → uppercase DB enum value.
+  // Regulations not in the DB enum (ccpa, fec, respa, pipeda, lgpd) return null
+  // and are skipped for violation persistence — audit log is still written.
+  const DB_REGULATION: Record<string, string | undefined> = {
+    hipaa: 'HIPAA',
+    fdcpa: 'FDCPA',
+    tcpa: 'TCPA',
+    gdpr: 'GDPR',
+    soc2: 'SOC2',
+    iso27001: 'ISO27001',
+  };
+  const DB_SEVERITY = new Set(['critical', 'high', 'medium', 'low']);
+
+  /** Insert a single compliance violation into the operator dashboard table. */
+  const insertComplianceViolation = async (v: {
+    readonly tenantId: string;
+    readonly ruleName: string;
+    readonly regulation: string;
+    readonly severity: string;
+    readonly description: string;
+    readonly customerId: string | null;
+  }): Promise<void> => {
+    const dbReg = DB_REGULATION[v.regulation.toLowerCase()];
+    if (dbReg === undefined) return; // regulation not tracked in violations table
+    const dbSev = DB_SEVERITY.has(v.severity) ? v.severity : 'medium';
+    await db.insert(schema.complianceViolations).values({
+      tenantId: v.tenantId,
+      ruleName: v.ruleName,
+      regulation: dbReg as never,
+      severity: dbSev as never,
+      description: v.description,
+      customerId: v.customerId ?? null,
+    });
+  };
+
   // ── 5.5 LLM Client (Anthropic) ────────────────────────────────────────
   // Required for all AI agent sessions. Skipped in test environments where
   // ANTHROPIC_API_KEY is not set (agents will fail gracefully with a logged error).
@@ -994,6 +1029,21 @@ async function bootstrap(): Promise<void> {
         context: Parameters<ConstructorParameters<typeof AgentEngine>[0]['complianceCheck']>[1],
       ) => {
         const result = complianceEngine.evaluate({ ...context, action });
+        // Persist violations to operator dashboard (fire-and-forget)
+        if (!result.allowed) {
+          void Promise.allSettled(
+            result.violations.map((v) =>
+              insertComplianceViolation({
+                tenantId: context.tenantId,
+                ruleName: v.ruleId,
+                regulation: v.regulation,
+                severity: v.violation?.severity ?? 'medium',
+                description: v.violation?.message ?? v.ruleId,
+                customerId: context.customerId ?? null,
+              }),
+            ),
+          );
+        }
         return { allowed: result.allowed, violations: result.violations };
       },
       auditLog: async (
@@ -1863,6 +1913,8 @@ async function bootstrap(): Promise<void> {
         const decrypted = new FieldEncryptor(fieldEncryptionKey).decryptField(channel, contact);
         return { contact: decrypted, contentBody: '' };
       },
+
+      insertViolation: insertComplianceViolation,
     });
     console.warn('[ORDR:API] Message routes configured');
   }
