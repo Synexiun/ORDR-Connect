@@ -2980,6 +2980,80 @@ async function bootstrap(): Promise<void> {
           },
         });
     },
+    updateLastSyncAt: async ({ tenantId, provider, syncedAt }) => {
+      await db
+        .update(schema.integrationConfigs)
+        .set({ lastSyncAt: syncedAt, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.integrationConfigs.tenantId, tenantId),
+            eq(schema.integrationConfigs.provider, provider as never),
+          ),
+        );
+    },
+    listOrdrContactsForOutbound: async ({ tenantId, limit, offset }) => {
+      return db
+        .select({
+          id: schema.customers.id,
+          externalId: schema.customers.externalId,
+          name: schema.customers.name,
+          email: schema.customers.email,
+          phone: schema.customers.phone,
+          updatedAt: schema.customers.updatedAt,
+        })
+        .from(schema.customers)
+        .where(eq(schema.customers.tenantId, tenantId))
+        .orderBy(asc(schema.customers.updatedAt))
+        .limit(limit)
+        .offset(offset);
+    },
+    getSyncHistory: async ({
+      tenantId,
+      provider,
+      entityType,
+      status,
+      direction,
+      limit,
+      offset,
+    }) => {
+      const conditions = [
+        eq(schema.syncEvents.tenantId, tenantId),
+        eq(schema.syncEvents.provider, provider as never),
+      ];
+      if (entityType !== undefined)
+        conditions.push(eq(schema.syncEvents.entityType, entityType as never));
+      if (status !== undefined) conditions.push(eq(schema.syncEvents.status, status as never));
+      if (direction !== undefined)
+        conditions.push(eq(schema.syncEvents.direction, direction as never));
+      const [rows, countRows] = await Promise.all([
+        db
+          .select()
+          .from(schema.syncEvents)
+          .where(and(...conditions))
+          .orderBy(desc(schema.syncEvents.syncedAt))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ total: count() })
+          .from(schema.syncEvents)
+          .where(and(...conditions)),
+      ]);
+      return {
+        items: rows.map((r) => ({
+          id: r.id,
+          provider: r.provider,
+          direction: r.direction,
+          entityType: r.entityType,
+          entityId: r.entityId ?? null,
+          externalId: r.externalId ?? null,
+          status: r.status,
+          conflictResolution: r.conflictResolution ?? null,
+          errorSummary: r.errorSummary ?? null,
+          syncedAt: r.syncedAt.toISOString(),
+        })),
+        total: countRows[0]?.total ?? 0,
+      };
+    },
     eventProducer: integrationEventProducer,
     auditLogger,
   });

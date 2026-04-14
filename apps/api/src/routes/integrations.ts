@@ -26,6 +26,7 @@ import type {
   OAuthConfig,
   CredentialManagerDeps,
   CrmActivity,
+  CrmContact,
   PaginatedResult as IntegrationsPaginatedResult,
   FieldMapping,
   FieldTransform,
@@ -88,6 +89,11 @@ export interface CRMAdapter {
     pagination: { limit: number; offset: number },
   ): Promise<IntegrationsPaginatedResult<CrmActivity>>;
   pushActivity(credentials: OAuthCredentials, activity: CrmActivity): Promise<string>;
+  pushContact(
+    credentials: OAuthCredentials,
+    contact: CrmContact,
+    existingExternalId?: string,
+  ): Promise<string>;
   /** Optional credentials — required in Phase 52 Tasks 15-16 */
   getHealth(credentials?: OAuthCredentials): Promise<IntegrationHealth>;
   /**
@@ -176,6 +182,19 @@ const syncBodySchema = z.object({
     .enum(['source_wins', 'target_wins', 'most_recent', 'manual'])
     .default('source_wins'),
   maxPages: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+const syncOutboundBodySchema = z.object({
+  entityType: z.enum(['contact']).default('contact'),
+  maxPages: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+const syncHistoryQuerySchema = z.object({
+  entityType: z.enum(['contact', 'deal', 'activity']).optional(),
+  status: z.enum(['success', 'failed', 'conflict', 'skipped']).optional(),
+  direction: z.enum(['inbound', 'outbound']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 // ─── Dependencies (injected at startup) ───────────────────────────
@@ -276,6 +295,48 @@ interface IntegrationDeps {
     ordrId: string;
     externalId: string;
   }) => Promise<void>;
+  readonly updateLastSyncAt: (params: {
+    tenantId: string;
+    provider: string;
+    syncedAt: Date;
+  }) => Promise<void>;
+  readonly listOrdrContactsForOutbound: (params: {
+    tenantId: string;
+    limit: number;
+    offset: number;
+  }) => Promise<
+    Array<{
+      id: string;
+      externalId: string | null;
+      name: string;
+      email: string | null;
+      phone: string | null;
+      updatedAt: Date;
+    }>
+  >;
+  readonly getSyncHistory: (params: {
+    tenantId: string;
+    provider: string;
+    entityType?: string | undefined;
+    status?: string | undefined;
+    direction?: string | undefined;
+    limit: number;
+    offset: number;
+  }) => Promise<{
+    items: Array<{
+      id: string;
+      provider: string;
+      direction: string;
+      entityType: string;
+      entityId: string | null;
+      externalId: string | null;
+      status: string;
+      conflictResolution: string | null;
+      errorSummary: string | null;
+      syncedAt: string;
+    }>;
+    total: number;
+  }>;
 }
 
 let deps: IntegrationDeps | null = null;
@@ -398,6 +459,71 @@ function buildEncryptedContactFields(
     name: enc.encryptField('name', nameRaw),
     ...(emailRaw !== undefined && { email: enc.encryptField('email', emailRaw) }),
     ...(phoneRaw !== undefined && { phone: enc.encryptField('phone', phoneRaw) }),
+  };
+}
+
+/**
+ * Decrypt ORDR customer PHI fields and build a CrmContact for outbound push.
+ *
+ * Splits `name` (combined) back into `firstName` / `lastName` on the first space.
+ * Silently passes through non-string fields (already-null email/phone).
+ *
+ * HIPAA §164.312(a)(2)(iv) — PHI decrypted only at application layer, in memory,
+ * immediately before transmission. Never logged.
+ */
+function decryptContactFields(
+  row: {
+    id: string;
+    externalId: string | null;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  },
+  enc: FieldEncryptor,
+): CrmContact {
+  let firstName = '';
+  let lastName = '';
+  try {
+    const fullName = enc.decryptField('name', row.name);
+    const spaceIdx = fullName.indexOf(' ');
+    if (spaceIdx === -1) {
+      firstName = fullName;
+    } else {
+      firstName = fullName.slice(0, spaceIdx);
+      lastName = fullName.slice(spaceIdx + 1);
+    }
+  } catch {
+    firstName = 'Unknown';
+  }
+
+  let email: string | null = null;
+  if (row.email !== null) {
+    try {
+      email = enc.decryptField('email', row.email);
+    } catch {
+      email = null;
+    }
+  }
+
+  let phone: string | null = null;
+  if (row.phone !== null) {
+    try {
+      phone = enc.decryptField('phone', row.phone);
+    } catch {
+      phone = null;
+    }
+  }
+
+  return {
+    externalId: row.externalId ?? '',
+    firstName,
+    lastName,
+    email,
+    phone,
+    company: null,
+    title: null,
+    lastModified: new Date(),
+    metadata: {},
   };
 }
 
@@ -1227,7 +1353,10 @@ integrationsRouter.post(
       }
     }
 
-    // ── Step 5: Audit log the sync batch ───────────────────────────────────────
+    // ── Step 5: Update lastSyncAt + audit log ─────────────────────────────────
+    const syncedAt = new Date();
+    await deps.updateLastSyncAt({ tenantId: ctx.tenantId, provider, syncedAt });
+
     await deps.auditLogger.log({
       tenantId: ctx.tenantId,
       eventType: errors > 0 ? 'integration.sync_failed' : 'integration.sync_completed',
@@ -1248,7 +1377,7 @@ integrationsRouter.post(
         conflictsQueued: syncResult.conflictsQueued,
         errors,
       },
-      timestamp: new Date(),
+      timestamp: syncedAt,
     });
 
     return c.json({
@@ -1268,6 +1397,235 @@ integrationsRouter.post(
     });
   },
 );
+
+// ─── POST /:provider/sync/outbound — Trigger outbound batch sync ──────────────
+//
+// Fetches all ORDR customers (paginated), decrypts PHI fields, applies outbound
+// field mappings via SyncEngine.processOutbound(), and pushes each contact to the
+// CRM via adapter.pushContact().  Uses entity mappings to route create vs update.
+//
+// HIPAA §164.312(a)(2)(iv) — PHI decrypted in memory only; never logged.
+// SOC2 CC6.1  — tenant-scoped; integration must be connected.
+// ISO 27001 A.8.2.3 — all push outcomes written to sync_events.
+
+integrationsRouter.post(
+  '/:provider/sync/outbound',
+  requireRoleMiddleware('tenant_admin'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const provider = c.req.param('provider');
+    const adapter = resolveAdapter(provider, deps.adapters);
+
+    const body: unknown = await c.req.json().catch(() => ({}));
+    const parsed = syncOutboundBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid sync parameters', parseZodErrors(parsed.error), requestId);
+    }
+    const { entityType, maxPages } = parsed.data;
+
+    // Verify integration is connected and get credentials
+    const integrationConfig = await deps.credManagerDeps.getIntegrationConfig({
+      tenantId: ctx.tenantId,
+      provider,
+    });
+    if (!integrationConfig) {
+      throw new NotFoundError(`Integration not connected: ${provider}`);
+    }
+    const oauthConfig = deps.oauthConfigs.get(provider);
+    if (!oauthConfig) {
+      throw new NotFoundError(`OAuth config not found: ${provider}`);
+    }
+    const credentials = await ensureFreshCredentials(
+      deps.credManagerDeps,
+      ctx.tenantId,
+      provider,
+      adapter,
+      oauthConfig,
+      deps.fieldEncryptor,
+    );
+
+    // Resolve outbound field mappings
+    const storedMappings = await deps.listFieldMappings({ tenantId: ctx.tenantId, provider });
+    const outboundMappings: readonly FieldMapping[] =
+      storedMappings.length > 0
+        ? storedMappings
+            .filter(
+              (m) =>
+                m.entityType === 'contact' &&
+                (m.direction === 'outbound' || m.direction === 'both'),
+            )
+            .map(
+              (m): FieldMapping => ({
+                externalField: m.targetField,
+                ordrField: m.sourceField,
+                direction: m.direction === 'both' ? 'bidirectional' : 'outbound',
+                isPhi: ORDR_PHI_FIELDS.has(m.sourceField),
+                ...(m.transform !== null &&
+                  m.transform !== undefined && { transform: m.transform as FieldTransform }),
+              }),
+            )
+        : defaultContactMappings().filter(
+            (m) => m.direction === 'outbound' || m.direction === 'bidirectional',
+          );
+
+    // Fetch ORDR customers, decrypt PHI, build OrdrRecord[]
+    const PAGE_SIZE = 200;
+    let pushed = 0;
+    let pushErrors = 0;
+
+    for (let page = 0; page < maxPages; page++) {
+      const rows = await deps.listOrdrContactsForOutbound({
+        tenantId: ctx.tenantId,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      });
+      if (rows.length === 0) break;
+
+      const ordrRecords = rows.map((row) => {
+        const contact = decryptContactFields(row, deps.fieldEncryptor);
+        return {
+          ordrEntityId: row.id,
+          externalId: row.externalId ?? undefined,
+          record: {
+            firstName: contact.firstName,
+            lastName: contact.lastName,
+            email: contact.email,
+            phone: contact.phone,
+            updatedAt: row.updatedAt.toISOString(),
+          } as Record<string, unknown>,
+        };
+      });
+
+      const syncEngine = new SyncEngine();
+      const outboundResult = syncEngine.processOutbound(ordrRecords, outboundMappings);
+
+      for (const result of outboundResult.records) {
+        try {
+          const contact: CrmContact = {
+            externalId: result.externalId ?? '',
+            firstName:
+              typeof result.crmRecord['firstName'] === 'string'
+                ? result.crmRecord['firstName']
+                : '',
+            lastName:
+              typeof result.crmRecord['lastName'] === 'string' ? result.crmRecord['lastName'] : '',
+            email: typeof result.crmRecord['email'] === 'string' ? result.crmRecord['email'] : null,
+            phone: typeof result.crmRecord['phone'] === 'string' ? result.crmRecord['phone'] : null,
+            company: null,
+            title: null,
+            lastModified: new Date(),
+            metadata: {},
+          };
+
+          const externalId = await adapter.pushContact(credentials, contact, result.externalId);
+
+          await deps.upsertEntityMapping({
+            tenantId: ctx.tenantId,
+            provider,
+            entityType,
+            ordrId: result.ordrEntityId,
+            externalId,
+          });
+
+          await deps.insertSyncEvent({
+            tenantId: ctx.tenantId,
+            integrationId: integrationConfig.id,
+            provider,
+            direction: 'outbound',
+            entityType,
+            entityId: result.ordrEntityId,
+            externalId,
+            status: 'success',
+          });
+          pushed++;
+        } catch (err) {
+          pushErrors++;
+          await deps
+            .insertSyncEvent({
+              tenantId: ctx.tenantId,
+              integrationId: integrationConfig.id,
+              provider,
+              direction: 'outbound',
+              entityType,
+              entityId: result.ordrEntityId,
+              externalId: result.externalId,
+              status: 'failed',
+              errorSummary:
+                err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
+            })
+            .catch(() => undefined);
+        }
+      }
+
+      if (rows.length < PAGE_SIZE) break;
+    }
+
+    const syncedAt = new Date();
+    await deps.updateLastSyncAt({ tenantId: ctx.tenantId, provider, syncedAt });
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: pushErrors > 0 ? 'integration.sync_failed' : 'integration.sync_completed',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'customers',
+      resourceId: `${ctx.tenantId}:${provider}`,
+      action: 'outbound_sync',
+      details: { provider, entityType, pushed, errors: pushErrors },
+      timestamp: syncedAt,
+    });
+
+    return c.json({
+      success: true as const,
+      data: { provider, entityType, pushed, errors: pushErrors },
+    });
+  },
+);
+
+// ─── GET /:provider/sync/history — Paginated sync event history ───────────────
+//
+// Queries sync_events for a given provider with optional filters.
+// Useful for debugging sync issues, monitoring conflict rates, and SOC 2 evidence.
+//
+// SOC2 CC7.2 — Monitoring: surfacing sync event history for operators.
+// ISO 27001 A.8.2.3 — Auditable: all sync outcomes queryable.
+
+integrationsRouter.get('/:provider/sync/history', async (c): Promise<Response> => {
+  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+  const ctx = ensureTenantContext(c);
+  const requestId = c.get('requestId');
+  const provider = c.req.param('provider');
+
+  const parsed = syncHistoryQuerySchema.safeParse({
+    entityType: c.req.query('entityType'),
+    status: c.req.query('status'),
+    direction: c.req.query('direction'),
+    limit: c.req.query('limit'),
+    offset: c.req.query('offset'),
+  });
+  if (!parsed.success) {
+    throw new ValidationError('Invalid query parameters', parseZodErrors(parsed.error), requestId);
+  }
+  const { entityType, status, direction, limit, offset } = parsed.data;
+
+  const history = await deps.getSyncHistory({
+    tenantId: ctx.tenantId,
+    provider,
+    entityType,
+    status,
+    direction,
+    limit,
+    offset,
+  });
+
+  return c.json({
+    success: true as const,
+    data: history.items,
+    meta: { total: history.total, limit, offset, provider },
+  });
+});
 
 // ─── DELETE /:provider — Disconnect integration ───────────────────
 
