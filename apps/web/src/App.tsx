@@ -5,6 +5,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { Layout } from './components/Layout';
 import { Landing } from './pages/Landing';
 import { Login } from './pages/Login';
+import { Onboarding } from './pages/Onboarding';
 import { Spinner } from './components/ui/Spinner';
 
 const OpsCenter = lazy(() => import('./pages/OpsCenter').then((m) => ({ default: m.OpsCenter })));
@@ -145,6 +146,15 @@ export function App(): ReactNode {
               />
 
               {/* Protected — full-screen (no Layout shell) */}
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute>
+                    <Onboarding />
+                  </ProtectedRoute>
+                }
+              />
+
               <Route
                 path="/ops"
                 element={

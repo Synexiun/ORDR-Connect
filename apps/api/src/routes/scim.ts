@@ -184,7 +184,7 @@ scimRouter.get('/Users', async (c): Promise<Response> => {
   const { records, total } = await deps.scimHandler.listUsers(tenantId, {
     startIndex,
     count,
-    filter,
+    ...(filter !== undefined && { filter }),
   });
 
   return c.json(scimListResponse(records.map(userToSCIM), total, startIndex, count));

@@ -131,6 +131,10 @@ export const apiClient = {
     return request<T>('POST', path, body, options);
   },
 
+  put<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    return request<T>('PUT', path, body, options);
+  },
+
   patch<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
     return request<T>('PATCH', path, body, options);
   },

@@ -84,6 +84,8 @@ import { configureRateLimit } from './middleware/rate-limit.js';
 import { configureBillingGate } from './middleware/plan-gate.js';
 import { configureHealthChecks } from './routes/health.js';
 import { configureBrandingRoutes } from './routes/branding.js';
+import { configureOnboardingRoutes } from './routes/onboarding.js';
+import { configureFeatureFlagRoutes } from './routes/feature-flags.js';
 import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
@@ -1540,6 +1542,150 @@ async function bootstrap(): Promise<void> {
     });
 
     console.warn('[ORDR:API] Branding routes configured');
+  }
+
+  // ── 8.1a Onboarding wizard ────────────────────────────────────────────────
+  {
+    const db = createDrizzle(dbConnection, schema);
+
+    configureOnboardingRoutes({
+      auditLogger,
+
+      getOnboardingState: async (tenantId: string) => {
+        const rows = await db
+          .select({
+            onboardingComplete: schema.tenants.onboardingComplete,
+            onboardingStep: schema.tenants.onboardingStep,
+            onboardingCompletedAt: schema.tenants.onboardingCompletedAt,
+          })
+          .from(schema.tenants)
+          .where(eq(schema.tenants.id, tenantId))
+          .limit(1);
+        const row = rows[0];
+        return {
+          tenantId,
+          complete: row?.onboardingComplete ?? false,
+          step: row?.onboardingStep ?? 0,
+          completedAt: row?.onboardingCompletedAt ?? null,
+        };
+      },
+
+      setOnboardingStep: async (tenantId: string, step: number) => {
+        await db
+          .update(schema.tenants)
+          .set({ onboardingStep: step, updatedAt: new Date() })
+          .where(eq(schema.tenants.id, tenantId));
+        return {
+          tenantId,
+          complete: false,
+          step,
+          completedAt: null,
+        };
+      },
+
+      completeOnboarding: async (tenantId: string) => {
+        const completedAt = new Date();
+        await db
+          .update(schema.tenants)
+          .set({
+            onboardingComplete: true,
+            onboardingStep: 4,
+            onboardingCompletedAt: completedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.tenants.id, tenantId));
+        return {
+          tenantId,
+          complete: true,
+          step: 4,
+          completedAt,
+        };
+      },
+    });
+
+    console.warn('[ORDR:API] Onboarding routes configured');
+  }
+
+  // ── 8.1b Feature flags ────────────────────────────────────────────────────
+  {
+    const db = createDrizzle(dbConnection, schema);
+
+    configureFeatureFlagRoutes({
+      auditLogger,
+
+      listFlags: async (tenantId: string) => {
+        const rows = await db
+          .select()
+          .from(schema.featureFlags)
+          .where(eq(schema.featureFlags.tenantId, tenantId))
+          .orderBy(schema.featureFlags.flagName);
+        // Cast JSONB metadata: Drizzle types jsonb as unknown; metadata is always an object
+        return rows.map((r) => ({ ...r, metadata: (r.metadata ?? {}) as Record<string, unknown> }));
+      },
+
+      getFlag: async (tenantId: string, flagName: string) => {
+        const rows = await db
+          .select()
+          .from(schema.featureFlags)
+          .where(
+            and(
+              eq(schema.featureFlags.tenantId, tenantId),
+              eq(schema.featureFlags.flagName, flagName),
+            ),
+          )
+          .limit(1);
+        const row = rows[0];
+        if (!row) return null;
+        return { ...row, metadata: (row.metadata ?? {}) as Record<string, unknown> };
+      },
+
+      createFlag: async (tenantId: string, data) => {
+        const inserted = await db
+          .insert(schema.featureFlags)
+          .values({
+            tenantId,
+            flagName: data.flagName,
+            enabled: data.enabled,
+            rolloutPct: data.rolloutPct,
+            description: data.description ?? null,
+            metadata: data.metadata,
+          })
+          .returning();
+        const row = inserted[0]!;
+        return { ...row, metadata: (row.metadata ?? {}) as Record<string, unknown> };
+      },
+
+      updateFlag: async (tenantId: string, flagName: string, data) => {
+        const updated = await db
+          .update(schema.featureFlags)
+          .set({ ...data, updatedAt: new Date() })
+          .where(
+            and(
+              eq(schema.featureFlags.tenantId, tenantId),
+              eq(schema.featureFlags.flagName, flagName),
+            ),
+          )
+          .returning();
+        const row = updated[0];
+        if (!row) return null;
+        return { ...row, metadata: (row.metadata ?? {}) as Record<string, unknown> };
+      },
+
+      deleteFlag: async (tenantId: string, flagName: string) => {
+        const deleted = await db
+          .delete(schema.featureFlags)
+          .where(
+            and(
+              eq(schema.featureFlags.tenantId, tenantId),
+              eq(schema.featureFlags.flagName, flagName),
+            ),
+          )
+          .returning();
+        return deleted.length > 0;
+      },
+    });
+
+    console.warn('[ORDR:API] Feature flag routes configured');
   }
 
   // ── 8.1 Organizations ──────────────────────────────────────────────────

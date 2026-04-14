@@ -3,6 +3,8 @@ import {
   pgEnum,
   uuid,
   varchar,
+  smallint,
+  boolean,
   jsonb,
   timestamp,
 } from 'drizzle-orm/pg-core';
@@ -11,24 +13,11 @@ import {
 // Enums
 // ---------------------------------------------------------------------------
 
-export const planEnum = pgEnum('plan', [
-  'free',
-  'starter',
-  'professional',
-  'enterprise',
-]);
+export const planEnum = pgEnum('plan', ['free', 'starter', 'professional', 'enterprise']);
 
-export const tenantStatusEnum = pgEnum('tenant_status', [
-  'active',
-  'suspended',
-  'deactivated',
-]);
+export const tenantStatusEnum = pgEnum('tenant_status', ['active', 'suspended', 'deactivated']);
 
-export const isolationTierEnum = pgEnum('isolation_tier', [
-  'shared',
-  'schema',
-  'dedicated',
-]);
+export const isolationTierEnum = pgEnum('isolation_tier', ['shared', 'schema', 'dedicated']);
 
 // ---------------------------------------------------------------------------
 // Table
@@ -48,6 +37,11 @@ export const tenants = pgTable('tenants', {
   isolationTier: isolationTierEnum('isolation_tier').notNull().default('shared'),
 
   settings: jsonb('settings').default('{}'),
+
+  /** Phase 57 — first-run wizard state */
+  onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+  onboardingStep: smallint('onboarding_step').notNull().default(0),
+  onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),
 
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 

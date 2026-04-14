@@ -201,3 +201,6 @@ export { groupMembers } from './group-members.js';
 
 // WorkOS Webhook Events (Phase 56)
 export { workosEvents } from './workos-events.js';
+
+// Feature Flags (Phase 57)
+export { featureFlags } from './feature-flags.js';

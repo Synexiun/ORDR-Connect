@@ -55,6 +55,22 @@ import {
   updateNotificationPref,
   updateSecurityConfig,
 } from '../lib/settings-api';
+import {
+  DEFAULT_BRAND_CONFIG,
+  fetchBrandConfig,
+  updateBrandConfig,
+  fetchCustomDomain,
+  registerCustomDomain,
+  removeCustomDomain,
+  type CustomDomainStatus,
+} from '../lib/branding-api';
+import {
+  type FeatureFlag,
+  fetchFeatureFlags,
+  createFeatureFlag,
+  updateFeatureFlag,
+  deleteFeatureFlag,
+} from '../lib/feature-flags-api';
 
 // --- Tab definitions ---
 
@@ -67,6 +83,7 @@ const SETTING_TABS = [
   { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
   { id: 'security', label: 'Security', icon: <Lock className="h-4 w-4" /> },
   { id: 'branding', label: 'Branding', icon: <Palette className="h-4 w-4" /> },
+  { id: 'flags', label: 'Feature Flags', icon: <Power className="h-4 w-4" /> },
 ];
 
 const TIMEZONE_OPTIONS = [
@@ -144,6 +161,12 @@ export function Settings(): ReactNode {
   const [channels, setChannels] = useState<ChannelConfig[]>([]);
   const [notifPrefs, setNotifPrefs] = useState<NotificationPref[]>([]);
   const [securityConfig, setSecurityConfig] = useState<SecurityConfig | null>(null);
+  const [brandConfig, setBrandConfig] = useState(DEFAULT_BRAND_CONFIG);
+  const [customDomain, setCustomDomain] = useState<CustomDomainStatus | null>(null);
+  const [newDomain, setNewDomain] = useState('');
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
+  const [newFlagName, setNewFlagName] = useState('');
+  const [newFlagDesc, setNewFlagDesc] = useState('');
 
   // --- Modal state ---
   const [showAddSso, setShowAddSso] = useState(false);
@@ -162,15 +185,19 @@ export function Settings(): ReactNode {
 
     async function loadAll(): Promise<void> {
       setLoading(true);
-      const [tenant, sso, roleList, agents, channelList, notifs, security] = await Promise.all([
-        fetchTenantSettings(),
-        fetchSsoConnections(),
-        fetchRoles(),
-        fetchAgentConfig(),
-        fetchChannelConfig(),
-        fetchNotificationPrefs(),
-        fetchSecurityConfig(),
-      ]);
+      const [tenant, sso, roleList, agents, channelList, notifs, security, brand, domain, flags] =
+        await Promise.all([
+          fetchTenantSettings(),
+          fetchSsoConnections(),
+          fetchRoles(),
+          fetchAgentConfig(),
+          fetchChannelConfig(),
+          fetchNotificationPrefs(),
+          fetchSecurityConfig(),
+          fetchBrandConfig(),
+          fetchCustomDomain(),
+          fetchFeatureFlags(),
+        ]);
 
       if (cancelled) return;
       setTenantSettings(tenant);
@@ -180,6 +207,9 @@ export function Settings(): ReactNode {
       setChannels(channelList);
       setNotifPrefs(notifs);
       setSecurityConfig(security);
+      setBrandConfig(brand);
+      setCustomDomain(domain);
+      setFeatureFlags(flags);
       setLoading(false);
     }
 
@@ -277,15 +307,68 @@ export function Settings(): ReactNode {
   }, [securityConfig]);
 
   const handleSaveBranding = useCallback(async () => {
-    if (!tenantSettings) return;
     setSaving(true);
-    const updated = await updateTenantSettings({
-      brandColor: tenantSettings.brandColor,
-      logoUrl: tenantSettings.logoUrl,
+    const updated = await updateBrandConfig({
+      logoUrl: brandConfig.logoUrl,
+      primaryColor: brandConfig.primaryColor,
+      accentColor: brandConfig.accentColor,
+      bgColor: brandConfig.bgColor,
+      textColor: brandConfig.textColor,
+      emailFromName: brandConfig.emailFromName,
+      emailFromAddress: brandConfig.emailFromAddress,
+      footerText: brandConfig.footerText,
     });
-    setTenantSettings(updated);
+    setBrandConfig(updated);
     setSaving(false);
-  }, [tenantSettings]);
+  }, [brandConfig]);
+
+  const handleRegisterDomain = useCallback(async () => {
+    if (!newDomain.trim()) return;
+    setSaving(true);
+    try {
+      const status = await registerCustomDomain(newDomain.trim());
+      setCustomDomain(status);
+      setNewDomain('');
+    } finally {
+      setSaving(false);
+    }
+  }, [newDomain]);
+
+  const handleRemoveDomain = useCallback(async () => {
+    setSaving(true);
+    try {
+      await removeCustomDomain();
+      setCustomDomain(null);
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  const handleCreateFlag = useCallback(async () => {
+    if (!newFlagName.trim()) return;
+    setSaving(true);
+    try {
+      const flag = await createFeatureFlag({
+        flagName: newFlagName.trim(),
+        description: newFlagDesc.trim() || undefined,
+      });
+      setFeatureFlags((prev) => [...prev, flag]);
+      setNewFlagName('');
+      setNewFlagDesc('');
+    } finally {
+      setSaving(false);
+    }
+  }, [newFlagName, newFlagDesc]);
+
+  const handleToggleFlag = useCallback(async (flagName: string, enabled: boolean) => {
+    const updated = await updateFeatureFlag(flagName, { enabled });
+    setFeatureFlags((prev) => prev.map((f) => (f.flagName === flagName ? updated : f)));
+  }, []);
+
+  const handleDeleteFlag = useCallback(async (flagName: string) => {
+    await deleteFeatureFlag(flagName);
+    setFeatureFlags((prev) => prev.filter((f) => f.flagName !== flagName));
+  }, []);
 
   const handleAddIp = useCallback(() => {
     if (!newIp || !securityConfig) return;
@@ -908,50 +991,52 @@ export function Settings(): ReactNode {
 
       {/* Branding Tab */}
       <TabPanel id="branding" activeTab={activeTab}>
-        <Card title="Brand Customization">
-          <div className="space-y-6">
-            {/* Color picker */}
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-content-secondary">
-                Brand Color
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={tenantSettings?.brandColor ?? '#3b82f6'}
-                  onChange={(e) => {
-                    setTenantSettings((s) =>
-                      s !== null ? { ...s, brandColor: e.target.value } : s,
-                    );
-                  }}
-                  className="h-10 w-14 cursor-pointer rounded border border-border bg-surface"
-                />
-                <Input
-                  value={tenantSettings?.brandColor ?? '#3b82f6'}
-                  onChange={(e) => {
-                    setTenantSettings((s) =>
-                      s !== null ? { ...s, brandColor: e.target.value } : s,
-                    );
-                  }}
-                  className="w-32 font-mono"
-                />
-                <div
-                  className="flex h-10 items-center rounded-lg px-4 text-sm font-medium text-white"
-                  style={{ backgroundColor: tenantSettings?.brandColor ?? '#3b82f6' }}
-                >
-                  Preview
+        <div className="space-y-4">
+          {/* Colors */}
+          <Card title="Brand Colors">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {(
+                [
+                  { key: 'primaryColor' as const, label: 'Primary color' },
+                  { key: 'accentColor' as const, label: 'Accent color' },
+                  { key: 'bgColor' as const, label: 'Background color' },
+                  { key: 'textColor' as const, label: 'Text color' },
+                ] as const
+              ).map(({ key, label }) => (
+                <div key={key} className="space-y-1.5">
+                  <label className="block text-sm font-medium text-content-secondary">
+                    {label}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={brandConfig[key]}
+                      onChange={(e) => {
+                        setBrandConfig((b) => ({ ...b, [key]: e.target.value }));
+                      }}
+                      className="h-9 w-12 cursor-pointer rounded border border-border bg-surface"
+                    />
+                    <Input
+                      value={brandConfig[key]}
+                      onChange={(e) => {
+                        setBrandConfig((b) => ({ ...b, [key]: e.target.value }));
+                      }}
+                      className="w-28 font-mono text-sm"
+                    />
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
+          </Card>
 
-            {/* Logo upload placeholder */}
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-content-secondary">Logo</label>
+          {/* Logo */}
+          <Card title="Logo & Identity">
+            <div className="space-y-4">
               <div className="flex items-center gap-4">
                 <div className="flex h-20 w-20 items-center justify-center rounded-xl border-2 border-dashed border-border bg-surface text-content-tertiary">
-                  {tenantSettings?.logoUrl !== null ? (
+                  {brandConfig.logoUrl !== null ? (
                     <img
-                      src={tenantSettings?.logoUrl}
+                      src={brandConfig.logoUrl}
                       alt="Logo"
                       className="h-full w-full rounded-xl object-contain p-2"
                     />
@@ -966,16 +1051,192 @@ export function Settings(): ReactNode {
                   <p className="mt-1 text-xs text-content-tertiary">PNG, SVG, or WebP. Max 2MB.</p>
                 </div>
               </div>
-            </div>
 
-            <div className="flex justify-end pt-2">
-              <Button
-                icon={<Save className="h-4 w-4" />}
-                loading={saving}
-                onClick={handleSaveBranding}
-              >
-                Save Branding
-              </Button>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-medium text-content-secondary">
+                    Email from name
+                  </label>
+                  <Input
+                    value={brandConfig.emailFromName ?? ''}
+                    onChange={(e) => {
+                      setBrandConfig((b) => ({ ...b, emailFromName: e.target.value || null }));
+                    }}
+                    placeholder="ORDR-Connect"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-medium text-content-secondary">
+                    Email from address
+                  </label>
+                  <Input
+                    value={brandConfig.emailFromAddress ?? ''}
+                    onChange={(e) => {
+                      setBrandConfig((b) => ({
+                        ...b,
+                        emailFromAddress: e.target.value || null,
+                      }));
+                    }}
+                    placeholder="noreply@yourcompany.com"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-content-secondary">
+                  Footer text
+                </label>
+                <Input
+                  value={brandConfig.footerText ?? ''}
+                  onChange={(e) => {
+                    setBrandConfig((b) => ({ ...b, footerText: e.target.value || null }));
+                  }}
+                  placeholder="© 2026 Your Company. All rights reserved."
+                />
+              </div>
+            </div>
+          </Card>
+
+          {/* Custom domain */}
+          <Card title="Custom Domain">
+            {customDomain !== null ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-content">{customDomain.domain}</p>
+                  <p className="text-xs text-content-tertiary">
+                    SSL:{' '}
+                    <Badge
+                      variant={
+                        customDomain.sslStatus === 'active'
+                          ? 'success'
+                          : customDomain.sslStatus === 'failed'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    >
+                      {customDomain.sslStatus}
+                    </Badge>
+                  </p>
+                </div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  loading={saving}
+                  icon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => void handleRemoveDomain()}
+                >
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  value={newDomain}
+                  onChange={(e) => {
+                    setNewDomain(e.target.value);
+                  }}
+                  placeholder="app.yourcompany.com"
+                  className="flex-1"
+                />
+                <Button loading={saving} onClick={() => void handleRegisterDomain()}>
+                  Register
+                </Button>
+              </div>
+            )}
+            <p className="mt-2 text-xs text-content-tertiary">
+              Add a CNAME pointing to your ORDR-Connect subdomain before registering.
+            </p>
+          </Card>
+
+          <div className="flex justify-end">
+            <Button
+              icon={<Save className="h-4 w-4" />}
+              loading={saving}
+              onClick={() => void handleSaveBranding()}
+            >
+              Save Branding
+            </Button>
+          </div>
+        </div>
+      </TabPanel>
+
+      {/* Feature Flags Tab */}
+      <TabPanel id="flags" activeTab={activeTab}>
+        <Card title="Feature Flags">
+          <div className="space-y-4">
+            <p className="text-sm text-content-secondary">
+              Runtime feature gates for your tenant. Enable or disable features without
+              redeployment.
+            </p>
+
+            {/* Existing flags */}
+            {featureFlags.length > 0 && (
+              <div className="divide-y divide-border rounded-xl border border-border">
+                {featureFlags.map((flag) => (
+                  <div key={flag.flagName} className="flex items-center justify-between p-3">
+                    <div>
+                      <p className="font-mono text-sm font-medium text-content">{flag.flagName}</p>
+                      {flag.description !== null && (
+                        <p className="text-xs text-content-tertiary">{flag.description}</p>
+                      )}
+                      <p className="text-xs text-content-tertiary">Rollout: {flag.rolloutPct}%</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Toggle
+                        checked={flag.enabled}
+                        onChange={(v) => void handleToggleFlag(flag.flagName, v)}
+                      />
+                      <button
+                        onClick={() => void handleDeleteFlag(flag.flagName)}
+                        className="rounded p-1 text-content-tertiary hover:bg-surface hover:text-danger"
+                        aria-label="Delete flag"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {featureFlags.length === 0 && (
+              <p className="py-4 text-center text-sm text-content-tertiary">
+                No feature flags configured yet.
+              </p>
+            )}
+
+            {/* Create new flag */}
+            <div className="space-y-2 rounded-xl border border-border p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+                New flag
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={newFlagName}
+                  onChange={(e) => {
+                    setNewFlagName(e.target.value);
+                  }}
+                  placeholder="flag-name (kebab-case)"
+                  className="flex-1 font-mono"
+                />
+              </div>
+              <Input
+                value={newFlagDesc}
+                onChange={(e) => {
+                  setNewFlagDesc(e.target.value);
+                }}
+                placeholder="Description (optional)"
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  loading={saving}
+                  icon={<Plus className="h-4 w-4" />}
+                  onClick={() => void handleCreateFlag()}
+                >
+                  Create Flag
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
