@@ -36,6 +36,7 @@ import { and, eq, desc, count } from 'drizzle-orm';
 import type { OrdrDatabase } from '@ordr/db';
 import { customers, messages } from '@ordr/db';
 import type { AuditLogger } from '@ordr/audit';
+import type { FieldEncryptor } from '@ordr/crypto';
 import {
   customerToFhirPatient,
   fhirPatientToCustomerImport,
@@ -86,6 +87,8 @@ interface FhirDependencies {
   readonly db: OrdrDatabase;
   readonly auditLogger: AuditLogger;
   readonly baseUrl: string;
+  /** Field encryptor for PHI before DB insert (HIPAA §164.312(a)(2)(iv)). */
+  readonly fieldEncryptor: FieldEncryptor;
 }
 
 let deps: FhirDependencies | null = null;
@@ -105,6 +108,35 @@ function ensureCtx(c: { get(key: 'tenantContext'): TenantContext | undefined }):
 function ensureDeps(): FhirDependencies {
   if (!deps) throw new Error('[ORDR:API] FHIR routes not configured');
   return deps;
+}
+
+/**
+ * Encrypts PHI fields from a FHIR import payload before DB insert.
+ * HIPAA §164.312(a)(2)(iv) — field-level encryption at rest.
+ */
+function encryptImportPhi(
+  phi: {
+    readonly givenName?: string | undefined;
+    readonly familyName?: string | undefined;
+    readonly email?: string | undefined;
+    readonly phone?: string | undefined;
+  },
+  enc: FieldEncryptor,
+): {
+  readonly name: string;
+  readonly email?: string;
+  readonly phone?: string;
+} {
+  const rawName =
+    phi.givenName !== undefined && phi.familyName !== undefined
+      ? `${phi.givenName} ${phi.familyName}`
+      : (phi.familyName ?? phi.givenName ?? 'Unknown');
+
+  return {
+    name: enc.encryptField('name', rawName),
+    ...(phi.email !== undefined && { email: enc.encryptField('email', phi.email) }),
+    ...(phi.phone !== undefined && { phone: enc.encryptField('phone', phi.phone) }),
+  };
 }
 
 /** FHIR JSON response with the required application/fhir+json content type. */
@@ -327,9 +359,8 @@ fhirRouter.post('/Patient', requirePermissionMiddleware('customers', 'create'), 
     );
   }
 
-  // NOTE: PHI fields (name, email, phone) stored as-is here.
-  // Production deployments MUST wire a FieldEncryptor via configureFhirRoutes
-  // to encrypt before insert (HIPAA §164.312(a)(2)(iv)).
+  const { fieldEncryptor } = ensureDeps();
+  const encryptedPhi = encryptImportPhi(importPayload.phi, fieldEncryptor);
   const newId = randomUUID();
   const rows = await db
     .insert(customers)
@@ -339,12 +370,9 @@ fhirRouter.post('/Patient', requirePermissionMiddleware('customers', 'create'), 
       externalId: importPayload.externalId,
       type: importPayload.type,
       status: 'active',
-      name:
-        importPayload.phi.givenName !== undefined && importPayload.phi.familyName !== undefined
-          ? `${importPayload.phi.givenName} ${importPayload.phi.familyName}`
-          : (importPayload.phi.familyName ?? importPayload.phi.givenName ?? 'Unknown'),
-      ...(importPayload.phi.email !== undefined && { email: importPayload.phi.email }),
-      ...(importPayload.phi.phone !== undefined && { phone: importPayload.phi.phone }),
+      name: encryptedPhi.name,
+      ...(encryptedPhi.email !== undefined && { email: encryptedPhi.email }),
+      ...(encryptedPhi.phone !== undefined && { phone: encryptedPhi.phone }),
     })
     .onConflictDoNothing()
     .returning();
@@ -670,6 +698,7 @@ fhirRouter.post('/', requirePermissionMiddleware('customers', 'create'), async (
       continue;
     }
 
+    const encPhi = encryptImportPhi(importPayload.phi, ensureDeps().fieldEncryptor);
     const newId = randomUUID();
     const rows = await db
       .insert(customers)
@@ -679,12 +708,9 @@ fhirRouter.post('/', requirePermissionMiddleware('customers', 'create'), async (
         externalId: importPayload.externalId,
         type: importPayload.type,
         status: 'active',
-        name:
-          importPayload.phi.givenName !== undefined && importPayload.phi.familyName !== undefined
-            ? `${importPayload.phi.givenName} ${importPayload.phi.familyName}`
-            : (importPayload.phi.familyName ?? importPayload.phi.givenName ?? 'Unknown'),
-        ...(importPayload.phi.email !== undefined && { email: importPayload.phi.email }),
-        ...(importPayload.phi.phone !== undefined && { phone: importPayload.phi.phone }),
+        name: encPhi.name,
+        ...(encPhi.email !== undefined && { email: encPhi.email }),
+        ...(encPhi.phone !== undefined && { phone: encPhi.phone }),
       })
       .onConflictDoNothing()
       .returning();
