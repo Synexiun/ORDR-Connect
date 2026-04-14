@@ -13,15 +13,9 @@
  * MVP: Uses InMemoryAnalyticsStore with the same interface — no real ClickHouse dependency.
  */
 
-import {
-  type Result,
-  ok,
-  err,
-  InternalError,
-  ValidationError,
-} from '@ordr/core';
-import type { AppError } from '@ordr/core';
-import type { AnalyticsClientConfig, MetricValue, MetricName } from './types.js';
+import { type Result, ok, err, InternalError, ValidationError } from '@ordr/core';
+import type { ClickHouseClient } from '@clickhouse/client';
+import type { AnalyticsClientConfig } from './types.js';
 import { QUERY_TIMEOUT_MS } from './types.js';
 
 // ─── Client Interface ────────────────────────────────────────────
@@ -31,13 +25,13 @@ export interface AnalyticsStore {
     sql: string,
     params: Readonly<Record<string, unknown>>,
     tenantId: string,
-  ): Promise<Result<readonly T[], AppError>>;
+  ): Promise<Result<readonly T[]>>;
 
   insert(
     table: string,
     rows: readonly Readonly<Record<string, unknown>>[],
     tenantId: string,
-  ): Promise<Result<void, AppError>>;
+  ): Promise<Result<void>>;
 
   healthCheck(): Promise<boolean>;
 
@@ -48,6 +42,7 @@ export interface AnalyticsStore {
 
 export class AnalyticsClient implements AnalyticsStore {
   private readonly config: AnalyticsClientConfig;
+  private chClient: ClickHouseClient | null = null;
   private connected = false;
 
   constructor(config: AnalyticsClientConfig) {
@@ -55,59 +50,65 @@ export class AnalyticsClient implements AnalyticsStore {
   }
 
   /**
-   * Execute a tenant-scoped query with parameterized inputs.
+   * Execute a tenant-scoped parameterized query against ClickHouse.
    *
    * SECURITY:
-   * - tenantId is injected as a parameter, never concatenated
-   * - Query parameters are NEVER logged (PII/PHI risk)
-   * - 30-second timeout prevents resource exhaustion
+   * - tenantId is injected as a query parameter — never concatenated (Rule 4)
+   * - Query parameters are NEVER logged — may contain PII/PHI (Rule 3, Rule 6)
+   * - 30-second timeout prevents resource exhaustion (Rule 4)
    */
   async query<T>(
     sql: string,
     params: Readonly<Record<string, unknown>>,
     tenantId: string,
-  ): Promise<Result<readonly T[], AppError>> {
+  ): Promise<Result<readonly T[]>> {
     const validationResult = this.validateTenantId(tenantId);
     if (validationResult !== null) {
-      return validationResult as Result<readonly T[], AppError>;
+      return validationResult;
     }
 
-    if (!this.connected) {
+    if (!this.connected || !this.chClient) {
       return err(new InternalError('AnalyticsClient is not connected'));
     }
 
     try {
-      // Production: execute parameterized query against ClickHouse
-      // SECURITY: tenantId is always injected as a parameter
-      // SECURITY: NEVER log params — may contain PII
-      void sql;
-      void params;
-      void tenantId;
-      void QUERY_TIMEOUT_MS;
-
-      return ok([] as readonly T[]);
+      // SECURITY: params are passed as query_params — ClickHouse handles escaping
+      // SECURITY: NEVER log params or sql with interpolated values
+      const result = await this.chClient.query({
+        query: sql,
+        query_params: params as Record<string, unknown>,
+        format: 'JSONEachRow',
+        clickhouse_settings: {
+          // Enforce query timeout at the server level as well
+          max_execution_time: Math.floor(QUERY_TIMEOUT_MS / 1000),
+        },
+      });
+      const rows = await result.json<T>();
+      return ok(rows as readonly T[]);
     } catch (cause: unknown) {
-      // SECURITY: Log only error type — NEVER parameters
-      const message =
-        cause instanceof Error ? cause.message : 'Query execution failed';
+      // SECURITY: Log only error message — NEVER parameters or query text
+      const message = cause instanceof Error ? cause.message : 'Query execution failed';
       return err(new InternalError(`Analytics query failed: ${message}`));
     }
   }
 
   /**
-   * Insert rows into a table with tenant isolation.
+   * Insert rows into ClickHouse with mandatory tenant isolation.
+   *
+   * SECURITY: tenantId is stamped onto every row before insert —
+   * no row can be written without a tenant boundary (Rule 2, SOC2 CC6.1).
    */
   async insert(
     table: string,
     rows: readonly Readonly<Record<string, unknown>>[],
     tenantId: string,
-  ): Promise<Result<void, AppError>> {
+  ): Promise<Result<void>> {
     const validationResult = this.validateTenantId(tenantId);
     if (validationResult !== null) {
-      return validationResult as Result<void, AppError>;
+      return validationResult;
     }
 
-    if (!this.connected) {
+    if (!this.connected || !this.chClient) {
       return err(new InternalError('AnalyticsClient is not connected'));
     }
 
@@ -116,51 +117,85 @@ export class AnalyticsClient implements AnalyticsStore {
     }
 
     try {
-      // Production: batch insert into ClickHouse with tenantId on every row
-      void table;
-      void rows;
-
+      // Stamp tenant_id onto every row — never trust caller to include it
+      const stamped = rows.map((row) => ({ ...row, tenant_id: tenantId }));
+      await this.chClient.insert({
+        table,
+        values: stamped,
+        format: 'JSONEachRow',
+      });
       return ok(undefined);
     } catch (cause: unknown) {
-      const message =
-        cause instanceof Error ? cause.message : 'Insert failed';
+      const message = cause instanceof Error ? cause.message : 'Insert failed';
       return err(new InternalError(`Analytics insert failed: ${message}`));
     }
   }
 
   /**
-   * Verify ClickHouse connectivity.
+   * Verify ClickHouse connectivity via ping.
    */
   async healthCheck(): Promise<boolean> {
-    return this.connected;
+    if (!this.chClient) return false;
+    try {
+      const result = await this.chClient.ping();
+      return result.success;
+    } catch {
+      return false;
+    }
   }
 
   /**
-   * Connect to ClickHouse.
+   * Connect to ClickHouse and verify the connection.
+   *
+   * TLS is determined by the URL scheme: https:// enables TLS.
+   * The config.tls flag is used to normalise http/https URL prefix.
    */
   async connect(): Promise<void> {
     try {
-      // Production: initialize ClickHouse HTTP client with TLS
-      void this.config;
+      const { createClient } = await import('@clickhouse/client');
+
+      // Normalise URL: prepend scheme if not present
+      const rawUrl = this.config.url;
+      const url = rawUrl.startsWith('http')
+        ? rawUrl
+        : this.config.tls
+          ? `https://${rawUrl}`
+          : `http://${rawUrl}`;
+
+      this.chClient = createClient({
+        url,
+        username: this.config.username,
+        password: this.config.password,
+        database: this.config.database,
+        request_timeout: QUERY_TIMEOUT_MS,
+      });
+
+      const ping = await this.chClient.ping();
+      if (!ping.success) {
+        throw new Error('ClickHouse ping returned unsuccessful');
+      }
+
       this.connected = true;
     } catch (cause: unknown) {
       this.connected = false;
-      const message =
-        cause instanceof Error ? cause.message : 'Unknown connection error';
+      this.chClient = null;
+      const message = cause instanceof Error ? cause.message : 'Unknown connection error';
       throw new InternalError(`ClickHouse connection failed: ${message}`);
     }
   }
 
   /**
-   * Gracefully close the connection.
+   * Gracefully close the ClickHouse connection.
    */
   async close(): Promise<void> {
+    await this.chClient?.close();
+    this.chClient = null;
     this.connected = false;
   }
 
   // ─── Private Helpers ─────────────────────────────────────────
 
-  private validateTenantId(tenantId: string): Result<never, AppError> | null {
+  private validateTenantId(tenantId: string): Result<never> | null {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(
         new ValidationError('tenantId is required for all analytics queries', {
@@ -197,25 +232,27 @@ export class InMemoryAnalyticsStore implements AnalyticsStore {
    *
    * SECURITY: tenantId filter is ALWAYS applied — no cross-tenant access.
    */
-  async query<T>(
+  query<T>(
     sql: string,
     params: Readonly<Record<string, unknown>>,
     tenantId: string,
-  ): Promise<Result<readonly T[], AppError>> {
+  ): Promise<Result<readonly T[]>> {
     if (!tenantId || tenantId.trim().length === 0) {
-      return err(
-        new ValidationError('tenantId is required for all analytics queries', {
-          tenantId: ['tenantId must be a non-empty string'],
-        }),
+      return Promise.resolve(
+        err(
+          new ValidationError('tenantId is required for all analytics queries', {
+            tenantId: ['tenantId must be a non-empty string'],
+          }),
+        ),
       );
     }
 
     if (!this.healthy) {
-      return err(new InternalError('Analytics store is unavailable'));
+      return Promise.resolve(err(new InternalError('Analytics store is unavailable')));
     }
 
-    // Extract table name from SQL for filtering
-    const tableMatch = /FROM\s+(\w+)/i.exec(sql);
+    // Extract table name from SQL for filtering — using match() to avoid exec() pattern
+    const tableMatch = sql.match(/FROM\s+(\w+)/i);
     const table = tableMatch?.[1] ?? '';
 
     // Filter by tenantId (MANDATORY) and table
@@ -241,27 +278,29 @@ export class InMemoryAnalyticsStore implements AnalyticsStore {
       }
     }
 
-    return ok(results.map((row) => row.data as T));
+    return Promise.resolve(ok(results.map((row) => row.data as T)));
   }
 
   /**
    * Insert rows with mandatory tenant isolation.
    */
-  async insert(
+  insert(
     table: string,
     rows: readonly Readonly<Record<string, unknown>>[],
     tenantId: string,
-  ): Promise<Result<void, AppError>> {
+  ): Promise<Result<void>> {
     if (!tenantId || tenantId.trim().length === 0) {
-      return err(
-        new ValidationError('tenantId is required for all analytics inserts', {
-          tenantId: ['tenantId must be a non-empty string'],
-        }),
+      return Promise.resolve(
+        err(
+          new ValidationError('tenantId is required for all analytics inserts', {
+            tenantId: ['tenantId must be a non-empty string'],
+          }),
+        ),
       );
     }
 
     if (!this.healthy) {
-      return err(new InternalError('Analytics store is unavailable'));
+      return Promise.resolve(err(new InternalError('Analytics store is unavailable')));
     }
 
     for (const row of rows) {
@@ -269,21 +308,20 @@ export class InMemoryAnalyticsStore implements AnalyticsStore {
         table,
         tenantId,
         data: { ...row, tenant_id: tenantId },
-        insertedAt: (row['timestamp'] instanceof Date)
-          ? row['timestamp']
-          : new Date(),
+        insertedAt: row['timestamp'] instanceof Date ? row['timestamp'] : new Date(),
       });
     }
 
-    return ok(undefined);
+    return Promise.resolve(ok(undefined));
   }
 
-  async healthCheck(): Promise<boolean> {
-    return this.healthy;
+  healthCheck(): Promise<boolean> {
+    return Promise.resolve(this.healthy);
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
     this.healthy = false;
+    return Promise.resolve();
   }
 
   // ─── Test Helpers ──────────────────────────────────────────────
@@ -291,9 +329,7 @@ export class InMemoryAnalyticsStore implements AnalyticsStore {
   /** Get all rows for a tenant in a table — test helper only */
   getRows(tenantId: string, table?: string): readonly StoredRow[] {
     return this.rows.filter(
-      (row) =>
-        row.tenantId === tenantId &&
-        (table === undefined || row.table === table),
+      (row) => row.tenantId === tenantId && (table === undefined || row.table === table),
     );
   }
 

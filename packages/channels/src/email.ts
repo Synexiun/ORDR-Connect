@@ -9,19 +9,10 @@
  * - Webhook events are parsed and validated
  */
 
-import {
-  type Result,
-  ok,
-  err,
-  ValidationError,
-  InternalError,
-} from '@ordr/core';
+import sgMail from '@sendgrid/mail';
+import { type Result, ok, err, ValidationError, InternalError } from '@ordr/core';
 
-import type {
-  SendResult,
-  EmailOptions,
-  EmailEvent,
-} from './types.js';
+import type { SendResult, EmailOptions, EmailEvent } from './types.js';
 import { MESSAGE_STATUSES } from './types.js';
 
 // ─── Email Validation ────────────────────────────────────────────
@@ -30,7 +21,9 @@ import { MESSAGE_STATUSES } from './types.js';
  * RFC 5322 simplified email validation.
  * Balances strictness with practical use. Does not allow IP addresses.
  */
-const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+// Bounded, linear-time email regex — no nested quantifiers (ReDoS-safe per Rule 4).
+// Length is pre-validated to 254 chars before this regex is applied.
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,252}$/;
 
 /**
  * Validate email address format.
@@ -86,10 +79,12 @@ export interface SendGridMessage {
   readonly dynamicTemplateData?: Readonly<Record<string, unknown>> | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly asm?: { readonly groupId: number } | undefined;
-  readonly trackingSettings?: {
-    readonly clickTracking?: { readonly enable: boolean } | undefined;
-    readonly openTracking?: { readonly enable: boolean } | undefined;
-  } | undefined;
+  readonly trackingSettings?:
+    | {
+        readonly clickTracking?: { readonly enable: boolean } | undefined;
+        readonly openTracking?: { readonly enable: boolean } | undefined;
+      }
+    | undefined;
 }
 
 export interface SendGridResponse {
@@ -140,15 +135,18 @@ export const DEFAULT_BRANDED_EMAIL_OPTIONS: BrandedEmailOptions = {
  * - Unsubscribe link included for CAN-SPAM compliance
  */
 export function injectBranding(html: string, brand: BrandedEmailOptions): string {
-  const logoHtml = brand.logoUrl
-    ? `<img src="${escapeHtml(brand.logoUrl)}" alt="Logo" style="max-height:48px;max-width:200px;margin-bottom:16px;" />`
-    : '';
+  const logoHtml =
+    brand.logoUrl !== null
+      ? `<img src="${escapeHtml(brand.logoUrl)}" alt="Logo" style="max-height:48px;max-width:200px;margin-bottom:16px;" />`
+      : '';
 
-  const footerHtml = brand.footerText
-    ? `<p style="margin:0;font-size:12px;color:${escapeHtml(brand.textColor)};">${escapeHtml(brand.footerText)}</p>`
-    : '';
+  const footerHtml =
+    brand.footerText !== null
+      ? `<p style="margin:0;font-size:12px;color:${escapeHtml(brand.textColor)};">${escapeHtml(brand.footerText)}</p>`
+      : '';
 
-  const unsubscribeHtml = '<p style="margin:8px 0 0 0;font-size:11px;"><a href="{{unsubscribe_url}}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a></p>';
+  const unsubscribeHtml =
+    '<p style="margin:8px 0 0 0;font-size:11px;"><a href="{{unsubscribe_url}}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a></p>';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -221,7 +219,7 @@ export class EmailProvider {
     body: string,
     opts?: EmailOptions,
     branding?: BrandedEmailOptions,
-  ): Promise<Result<SendResult, ValidationError | InternalError>> {
+  ): Promise<Result<SendResult>> {
     // Validate email address
     const emailResult = validateEmail(to);
     if (!emailResult.success) {
@@ -267,15 +265,15 @@ export class EmailProvider {
           'List-Unsubscribe': `<mailto:unsubscribe@${this.extractDomain(this.fromEmail)}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
         },
-        asm: opts?.unsubscribeGroupId !== undefined
-          ? { groupId: opts.unsubscribeGroupId }
-          : undefined,
-        trackingSettings: opts?.trackingEnabled !== undefined
-          ? {
-              clickTracking: { enable: opts.trackingEnabled },
-              openTracking: { enable: opts.trackingEnabled },
-            }
-          : undefined,
+        asm:
+          opts?.unsubscribeGroupId !== undefined ? { groupId: opts.unsubscribeGroupId } : undefined,
+        trackingSettings:
+          opts?.trackingEnabled !== undefined
+            ? {
+                clickTracking: { enable: opts.trackingEnabled },
+                openTracking: { enable: opts.trackingEnabled },
+              }
+            : undefined,
       };
 
       const response = await this.client.send(message);
@@ -302,9 +300,7 @@ export class EmailProvider {
    * SendGrid sends arrays of event objects. Each event is validated
    * and mapped to our EmailEvent type.
    */
-  parseWebhook(
-    events: unknown[],
-  ): Result<readonly EmailEvent[], ValidationError> {
+  parseWebhook(events: unknown[]): Result<readonly EmailEvent[], ValidationError> {
     if (!Array.isArray(events)) {
       return err(
         new ValidationError('Invalid webhook payload', {
@@ -327,14 +323,16 @@ export class EmailProvider {
       }
 
       parsed.push({
-        email: event['email'] as string,
-        event: event['event'] as string,
+        email: event['email'],
+        event: event['event'],
         timestamp: typeof event['timestamp'] === 'number' ? event['timestamp'] : Date.now() / 1000,
-        sgMessageId: typeof event['sg_message_id'] === 'string' ? event['sg_message_id'] : undefined,
+        sgMessageId:
+          typeof event['sg_message_id'] === 'string' ? event['sg_message_id'] : undefined,
         reason: typeof event['reason'] === 'string' ? event['reason'] : undefined,
-        bounce_classification: typeof event['bounce_classification'] === 'string'
-          ? event['bounce_classification']
-          : undefined,
+        bounce_classification:
+          typeof event['bounce_classification'] === 'string'
+            ? event['bounce_classification']
+            : undefined,
       });
     }
 
@@ -408,4 +406,36 @@ export class EmailProvider {
     }
     return 'Email delivery failed due to a provider error';
   }
+}
+
+// ─── Real Client Factory ─────────────────────────────────────────
+
+/**
+ * Create a real SendGrid client that satisfies SendGridClient.
+ *
+ * Adapts the module-level @sendgrid/mail API to our interface.
+ * setApiKey is called once at factory time — not stored on the object.
+ *
+ * SECURITY:
+ * - API key consumed at setup — never accessible after factory returns (Rule 5)
+ * - Email content is never logged by this adapter (Rule 6)
+ */
+export function createRealSendGridClient(apiKey: string): SendGridClient {
+  sgMail.setApiKey(apiKey);
+  return {
+    send: async (msg: SendGridMessage): Promise<SendGridResponse> => {
+      // Cast to the SendGrid SDK type — our SendGridMessage interface is structurally
+      // compatible with MailDataRequired; the cast avoids SDK type definition churn.
+      const [response] = await sgMail.send(msg as Parameters<typeof sgMail.send>[0]);
+      // Cast headers to a known shape — SendGrid SDK types them as any
+      const typedHeaders = response.headers as Record<string, string | string[]>;
+      const rawId = typedHeaders['x-message-id'];
+      const messageId = Array.isArray(rawId) ? rawId[0] : rawId;
+      return {
+        statusCode: response.statusCode,
+        headers: typedHeaders as Readonly<Record<string, string>>,
+        messageId,
+      };
+    },
+  };
 }

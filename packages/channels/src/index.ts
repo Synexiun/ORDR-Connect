@@ -47,11 +47,7 @@ export {
 export { MessageStateMachine, InvalidTransitionError } from './state-machine.js';
 
 // ─── Consent ─────────────────────────────────────────────────────
-export {
-  ConsentManager,
-  OPT_OUT_KEYWORDS,
-  OPT_IN_KEYWORDS,
-} from './consent.js';
+export { ConsentManager, OPT_OUT_KEYWORDS, OPT_IN_KEYWORDS } from './consent.js';
 
 // ─── SMS Provider ────────────────────────────────────────────────
 export type {
@@ -61,7 +57,7 @@ export type {
   TwilioWebhookValidator,
 } from './sms.js';
 
-export { SmsProvider, validatePhoneNumber } from './sms.js';
+export { SmsProvider, validatePhoneNumber, createRealTwilioClient } from './sms.js';
 
 // ─── Email Provider ──────────────────────────────────────────────
 export type {
@@ -76,6 +72,7 @@ export {
   validateEmail,
   injectBranding,
   DEFAULT_BRANDED_EMAIL_OPTIONS,
+  createRealSendGridClient,
 } from './email.js';
 
 // ─── Voice Provider ──────────────────────────────────────────────
@@ -99,10 +96,7 @@ export type {
   TwilioCallInstance,
 } from './voice.js';
 
-export {
-  VoiceProvider,
-  CALL_STATUSES,
-} from './voice.js';
+export { VoiceProvider, CALL_STATUSES } from './voice.js';
 
 // ─── WhatsApp Provider ───────────────────────────────────────────
 export type {
@@ -116,10 +110,7 @@ export type {
 export { WhatsAppProvider } from './whatsapp.js';
 
 // ─── Circuit Breaker ─────────────────────────────────────────────
-export type {
-  CircuitState,
-  CircuitBreakerConfig,
-} from './circuit-breaker.js';
+export type { CircuitState, CircuitBreakerConfig } from './circuit-breaker.js';
 
 export {
   CircuitBreaker,

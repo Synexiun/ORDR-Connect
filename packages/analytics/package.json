@@ -5,7 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -16,6 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@clickhouse/client": "^1.18.2",
     "@ordr/core": "workspace:*",
     "@ordr/events": "workspace:*",
     "zod": "^3.23.0"

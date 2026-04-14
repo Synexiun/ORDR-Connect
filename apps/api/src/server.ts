@@ -56,7 +56,13 @@ import {
 } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { ComplianceEngine, ComplianceGate } from '@ordr/compliance';
-import { ConsentManager, SmsProvider, EmailProvider } from '@ordr/channels';
+import {
+  ConsentManager,
+  SmsProvider,
+  EmailProvider,
+  createRealTwilioClient,
+  createRealSendGridClient,
+} from '@ordr/channels';
 import type { ConsentStore, TwilioClient, SendGridClient } from '@ordr/channels';
 import { LLMClient } from '@ordr/ai';
 import {
@@ -64,7 +70,9 @@ import {
   RealTimeCounters,
   InMemoryAnalyticsStore,
   InMemoryCounterStore,
+  AnalyticsClient,
 } from '@ordr/analytics';
+import type { AnalyticsStore } from '@ordr/analytics';
 import { AgentEngine, HitlQueue } from '@ordr/agent-runtime';
 import { and, eq, gt, gte, sum, count, desc, ilike, or, asc, type SQL } from 'drizzle-orm';
 import { MetricsRegistry } from '@ordr/observability';
@@ -877,15 +885,34 @@ async function bootstrap(): Promise<void> {
   });
   console.warn('[ORDR:API] Customer routes configured');
 
-  // ── 4.18. Analytics routes (InMemory store — Drizzle projection upgrade pending) ─
-  const analyticsStore = new InMemoryAnalyticsStore();
+  // ── 4.18. Analytics routes ────────────────────────────────────────────────
+  // Use real ClickHouse when CLICKHOUSE_URL is set; fall back to in-memory for
+  // local dev and test environments where ClickHouse is not provisioned.
+  let analyticsStore: AnalyticsStore;
+  const clickhouseUrl = process.env['CLICKHOUSE_URL'];
+  if (clickhouseUrl) {
+    const chClient = new AnalyticsClient({
+      url: clickhouseUrl,
+      database: process.env['CLICKHOUSE_DATABASE'] ?? 'ordr_analytics',
+      username: process.env['CLICKHOUSE_USERNAME'] ?? 'default',
+      password: process.env['CLICKHOUSE_PASSWORD'] ?? '',
+      tls: process.env['CLICKHOUSE_TLS'] !== 'false',
+    });
+    await chClient.connect();
+    analyticsStore = chClient;
+    console.warn('[ORDR:API] Analytics routes configured — ClickHouse connected');
+  } else {
+    analyticsStore = new InMemoryAnalyticsStore();
+    console.warn(
+      '[ORDR:API] Analytics routes configured — in-memory store (set CLICKHOUSE_URL for production)',
+    );
+  }
   const counterStore = new InMemoryCounterStore();
   configureAnalyticsRoutes({
     queries: new AnalyticsQueries(analyticsStore),
     realTimeCounters: new RealTimeCounters(counterStore),
     db,
   });
-  console.warn('[ORDR:API] Analytics routes configured');
 
   // ── 5. Compliance engine ───────────────────────────────────────────────
   const complianceEngine = new ComplianceEngine();
@@ -1546,22 +1573,39 @@ async function bootstrap(): Promise<void> {
   {
     const db = createDrizzle(dbConnection, schema);
 
-    // Stub TwilioClient — used when TWILIO_ACCOUNT_SID is not set
-    const stubTwilioClient: TwilioClient = {
-      messages: {
-        create: async () => ({
-          sid: 'stub-sid',
-          status: 'sent',
-          errorCode: null,
-          errorMessage: null,
-        }),
-      },
-    };
+    // Twilio: real client when credentials are present, stub otherwise.
+    // SECURITY: credentials sourced from environment only — never hardcoded (Rule 5).
+    const twilioAccountSid = process.env['TWILIO_ACCOUNT_SID'];
+    const twilioAuthToken = process.env['TWILIO_AUTH_TOKEN'];
+    const twilioClient: TwilioClient =
+      twilioAccountSid && twilioAuthToken
+        ? createRealTwilioClient(twilioAccountSid, twilioAuthToken)
+        : {
+            messages: {
+              create: async () => ({
+                sid: 'stub-sid',
+                status: 'sent',
+                errorCode: null,
+                errorMessage: null,
+              }),
+            },
+          };
+    if (!(twilioAccountSid && twilioAuthToken)) {
+      console.warn(
+        '[ORDR:API] Twilio not configured — SMS/voice will be stubbed (set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN)',
+      );
+    }
 
-    // Stub SendGridClient — used when SENDGRID_API_KEY is not set
-    const stubSendGridClient: SendGridClient = {
-      send: async () => ({ statusCode: 202, headers: {} }),
-    };
+    // SendGrid: real client when API key is present, stub otherwise.
+    const sendgridApiKey = process.env['SENDGRID_API_KEY'];
+    const sendgridClient: SendGridClient = sendgridApiKey
+      ? createRealSendGridClient(sendgridApiKey)
+      : { send: async () => ({ statusCode: 202, headers: {} }) };
+    if (!sendgridApiKey) {
+      console.warn(
+        '[ORDR:API] SendGrid not configured — email will be stubbed (set SENDGRID_API_KEY)',
+      );
+    }
 
     const inMemoryConsentStore: ConsentStore = {
       getConsent: async () => undefined,
@@ -1580,12 +1624,12 @@ async function bootstrap(): Promise<void> {
       consentStore: inMemoryConsentStore,
       complianceGate: new ComplianceGate(complianceEngine),
       smsProvider: new SmsProvider({
-        client: stubTwilioClient,
+        client: twilioClient,
         fromNumber: process.env['TWILIO_FROM_NUMBER'] ?? '+15550000000',
-        authToken: process.env['TWILIO_AUTH_TOKEN'] ?? '',
+        authToken: twilioAuthToken ?? '',
       }),
       emailProvider: new EmailProvider({
-        client: stubSendGridClient,
+        client: sendgridClient,
         fromEmail: process.env['SENDGRID_FROM_EMAIL'] ?? 'noreply@ordr.dev',
         fromName: process.env['SENDGRID_FROM_NAME'] ?? 'ORDR Connect',
       }),

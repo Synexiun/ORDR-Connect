@@ -10,19 +10,10 @@
  * - Provider errors are wrapped — raw Twilio errors never exposed
  */
 
-import {
-  type Result,
-  ok,
-  err,
-  ValidationError,
-  InternalError,
-} from '@ordr/core';
+import { Twilio } from 'twilio';
+import { type Result, ok, err, ValidationError, InternalError } from '@ordr/core';
 
-import type {
-  SendResult,
-  SmsOptions,
-  InboundSmsMessage,
-} from './types.js';
+import type { SendResult, SmsOptions, InboundSmsMessage } from './types.js';
 import { MESSAGE_STATUSES } from './types.js';
 
 // ─── E.164 Phone Validation ─────────────────────────────────────
@@ -64,7 +55,7 @@ export interface TwilioCreateParams {
   readonly from: string;
   readonly body: string;
   readonly statusCallback?: string | undefined;
-  readonly maxPrice?: string | undefined;
+  readonly maxPrice?: number | undefined;
   readonly validityPeriod?: number | undefined;
   readonly mediaUrl?: readonly string[] | undefined;
 }
@@ -121,11 +112,7 @@ export class SmsProvider {
    * handles transport only. The orchestration layer MUST call ConsentManager
    * before invoking send().
    */
-  async send(
-    to: string,
-    body: string,
-    opts?: SmsOptions,
-  ): Promise<Result<SendResult, ValidationError | InternalError>> {
+  async send(to: string, body: string, opts?: SmsOptions): Promise<Result<SendResult>> {
     // Validate phone number
     const phoneResult = validatePhoneNumber(to);
     if (!phoneResult.success) {
@@ -181,9 +168,7 @@ export class SmsProvider {
    * SECURITY: The raw body content is returned for immediate processing
    * but MUST NOT be logged by the caller.
    */
-  parseWebhook(
-    body: Record<string, string>,
-  ): Result<InboundSmsMessage, ValidationError> {
+  parseWebhook(body: Record<string, string>): Result<InboundSmsMessage, ValidationError> {
     const from = body['From'];
     const to = body['To'];
     const messageBody = body['Body'];
@@ -191,7 +176,13 @@ export class SmsProvider {
     const accountSid = body['AccountSid'];
     const numMedia = parseInt(body['NumMedia'] ?? '0', 10);
 
-    if (!from || !to || messageBody === undefined || !messageSid || !accountSid) {
+    if (
+      typeof from !== 'string' ||
+      typeof to !== 'string' ||
+      messageBody === undefined ||
+      typeof messageSid !== 'string' ||
+      typeof accountSid !== 'string'
+    ) {
       return err(
         new ValidationError('Invalid Twilio webhook payload', {
           webhook: ['Missing required fields: From, To, Body, MessageSid, AccountSid'],
@@ -203,7 +194,7 @@ export class SmsProvider {
     const mediaUrls: string[] = [];
     for (let i = 0; i < numMedia; i++) {
       const url = body[`MediaUrl${i}`];
-      if (url) {
+      if (url !== undefined) {
         mediaUrls.push(url);
       }
     }
@@ -225,22 +216,13 @@ export class SmsProvider {
    * SECURITY: All inbound webhooks MUST be validated before processing.
    * An invalid signature means the request may not be from Twilio.
    */
-  validateWebhookSignature(
-    signature: string,
-    url: string,
-    body: Record<string, string>,
-  ): boolean {
+  validateWebhookSignature(signature: string, url: string, body: Record<string, string>): boolean {
     if (!this.webhookValidator) {
       // If no validator is configured, reject all requests (fail closed)
       return false;
     }
 
-    return this.webhookValidator.validateRequest(
-      this.authToken,
-      signature,
-      url,
-      body,
-    );
+    return this.webhookValidator.validateRequest(this.authToken, signature, url, body);
   }
 
   // ─── Private ─────────────────────────────────────────────────
@@ -278,4 +260,39 @@ export class SmsProvider {
     }
     return 'SMS delivery failed due to a provider error';
   }
+}
+
+// ─── Real Client Factory ─────────────────────────────────────────
+
+/**
+ * Create a real Twilio SDK client that satisfies TwilioClient.
+ *
+ * Wraps the SDK in a thin adapter that matches our interface exactly,
+ * including the readonly→mutable conversion required for mediaUrl.
+ *
+ * SECURITY:
+ * - Credentials sourced from environment only — never from client input (Rule 5)
+ * - accountSid/authToken consumed at factory time — not stored on the returned object
+ */
+export function createRealTwilioClient(accountSid: string, authToken: string): TwilioClient {
+  const sdk = new Twilio(accountSid, authToken);
+  return {
+    messages: {
+      create: async (params: TwilioCreateParams): Promise<TwilioMessageInstance> => {
+        // Conditionally spread optional params — exactOptionalPropertyTypes requires
+        // absent properties, not properties explicitly set to undefined.
+        const sdkParams: Parameters<typeof sdk.messages.create>[0] = {
+          to: params.to,
+          from: params.from,
+          body: params.body,
+          ...(params.statusCallback !== undefined && { statusCallback: params.statusCallback }),
+          ...(params.maxPrice !== undefined && { maxPrice: params.maxPrice }),
+          ...(params.validityPeriod !== undefined && { validityPeriod: params.validityPeriod }),
+          // readonly string[] → string[] for Twilio SDK compatibility
+          ...(params.mediaUrl !== undefined && { mediaUrl: [...params.mediaUrl] }),
+        };
+        return sdk.messages.create(sdkParams);
+      },
+    },
+  };
 }

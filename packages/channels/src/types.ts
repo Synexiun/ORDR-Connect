@@ -172,7 +172,7 @@ export interface SendResult {
 
 export interface SmsOptions {
   readonly statusCallback?: string | undefined;
-  readonly maxPrice?: string | undefined;
+  readonly maxPrice?: number | undefined;
   readonly validityPeriod?: number | undefined;
   readonly mediaUrl?: readonly string[] | undefined;
 }

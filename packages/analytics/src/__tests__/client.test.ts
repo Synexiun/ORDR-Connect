@@ -10,8 +10,19 @@
  * - Empty tenantId rejection
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { InMemoryAnalyticsStore, AnalyticsClient } from '../client.js';
+
+// Mock @clickhouse/client so connect() tests don't require a real ClickHouse instance.
+// The mock client simulates a healthy server with successful ping and empty query results.
+vi.mock('@clickhouse/client', () => ({
+  createClient: () => ({
+    ping: async () => ({ success: true }),
+    query: async () => ({ json: async () => [] }),
+    insert: async () => undefined,
+    close: async () => undefined,
+  }),
+}));
 
 describe('InMemoryAnalyticsStore', () => {
   let store: InMemoryAnalyticsStore;
@@ -23,13 +34,9 @@ describe('InMemoryAnalyticsStore', () => {
   // ─── Tenant Isolation ──────────────────────────────────────────
 
   it('enforces tenant isolation on queries — returns only matching tenant rows', async () => {
-    await store.insert('metrics', [
-      { metric: 'messages_sent', value: 10 },
-    ], 'tenant-1');
+    await store.insert('metrics', [{ metric: 'messages_sent', value: 10 }], 'tenant-1');
 
-    await store.insert('metrics', [
-      { metric: 'messages_sent', value: 20 },
-    ], 'tenant-2');
+    await store.insert('metrics', [{ metric: 'messages_sent', value: 20 }], 'tenant-2');
 
     const result = await store.query<{ value: number }>(
       'SELECT * FROM metrics',
@@ -45,15 +52,9 @@ describe('InMemoryAnalyticsStore', () => {
   });
 
   it('returns empty array when querying tenant with no data', async () => {
-    await store.insert('metrics', [
-      { metric: 'messages_sent', value: 10 },
-    ], 'tenant-1');
+    await store.insert('metrics', [{ metric: 'messages_sent', value: 10 }], 'tenant-1');
 
-    const result = await store.query<{ value: number }>(
-      'SELECT * FROM metrics',
-      {},
-      'tenant-99',
-    );
+    const result = await store.query<{ value: number }>('SELECT * FROM metrics', {}, 'tenant-99');
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -155,11 +156,7 @@ describe('InMemoryAnalyticsStore', () => {
     await store.insert('metrics', [{ metric: 'a', value: 1 }], 'tenant-1');
     await store.insert('events', [{ metric: 'b', value: 2 }], 'tenant-1');
 
-    const result = await store.query<{ metric: string }>(
-      'SELECT * FROM metrics',
-      {},
-      'tenant-1',
-    );
+    const result = await store.query<{ metric: string }>('SELECT * FROM metrics', {}, 'tenant-1');
 
     expect(result.success).toBe(true);
     if (result.success) {
