@@ -572,11 +572,10 @@ async function computeReportData(
         .where(and(eq(schema.customers.tenantId, tenantId), eq(schema.customers.status, 'active')));
       const active = activeRow?.cnt ?? 0;
 
-      // Distribute total evenly across 7 days for chart (new customers per day)
+      // Distribute total evenly across chart periods (approximation until
+      // per-day acquisition is tracked in the DB).
       const avgPerDay = Math.round(total / 30);
-      const newData = keys.map(() =>
-        Math.max(0, avgPerDay + Math.round((Math.random() - 0.5) * avgPerDay * 0.3)),
-      );
+      const newData = keys.map(() => avgPerDay);
       const cumulativeData = newData.map(
         (_, i) => total - newData.slice(i + 1).reduce((a, b) => a + b, 0),
       );

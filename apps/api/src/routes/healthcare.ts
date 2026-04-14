@@ -230,8 +230,8 @@ healthcareRouter.get('/care-plans', requireAuth(), async (c): Promise<Response> 
   const carePlans = rows.map((row) => {
     const stage = row.lifecycleStage ?? 'lead';
     const phase = lifecycleToPhase[stage];
-    // completionPct: healthScore is 0-100; map to plan completion
-    const completionPct = row.healthScore ?? Math.floor(Math.random() * 60 + 20);
+    // completionPct: healthScore is 0-100; null score means no data yet (0%)
+    const completionPct = row.healthScore ?? 0;
     return {
       id: `cp-${row.id.slice(0, 8)}`,
       patientToken: toPatientToken(row.id),
