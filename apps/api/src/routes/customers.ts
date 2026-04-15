@@ -509,7 +509,7 @@ customersRouter.delete(
       console.error('[ORDR:API] Failed to publish customer.deleted event:', err);
     });
 
-    return c.json({ success: true as const }, 200);
+    return c.body(null, 204);
   },
 );
 

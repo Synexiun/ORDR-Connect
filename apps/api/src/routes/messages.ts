@@ -349,10 +349,11 @@ messagesRouter.post(
         timestamp: new Date(),
       });
 
-      // Persist each violation to the operator dashboard (fire-and-forget per violation)
+      // Persist each violation to the operator dashboard (fire-and-forget per violation).
+      // SOC2 CC6.2: Log any insert failures so compliance violations are never silently lost.
       const insertViolation = deps.insertViolation;
       if (insertViolation !== undefined) {
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
           complianceResult.violations.map((v) =>
             insertViolation({
               tenantId: ctx.tenantId,
@@ -364,6 +365,22 @@ messagesRouter.post(
             }),
           ),
         );
+        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (failures.length > 0) {
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'messages',
+              event: 'compliance_violation_insert_failed',
+              failedCount: failures.length,
+              totalCount: results.length,
+              errors: failures.map((f) =>
+                f.reason instanceof Error ? f.reason.message : 'Unknown error',
+              ),
+              timestamp: new Date().toISOString(),
+            }),
+          );
+        }
       }
 
       throw new ComplianceViolationError(

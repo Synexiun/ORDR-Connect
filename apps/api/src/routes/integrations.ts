@@ -728,7 +728,11 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
     },
   );
 
-  await deps.eventProducer.publish(TOPICS.INTEGRATION_EVENTS, envelope);
+  await deps.eventProducer
+    .publish(TOPICS.INTEGRATION_EVENTS, envelope)
+    .catch((publishErr: unknown) => {
+      console.error('[ORDR:API] Failed to publish integration event:', publishErr);
+    });
 
   // 7. Mark log as processed
   await deps.updateWebhookLogProcessed({ id: webhookLogId });

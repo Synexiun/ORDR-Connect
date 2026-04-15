@@ -214,13 +214,32 @@ voiceWebhooksRouter.post('/recording', async (c) => {
 
   // HIPAA: Store only the recording reference (SID).
   // The actual audio stays in Twilio's HIPAA-compliant storage.
-  await deps.storeRecordingReference(
-    recording.callSid,
-    recording.recordingSid,
-    recording.recordingDuration,
-  );
+  // Wrap in try/catch so the audit log always runs (SOC2 CC6.1).
+  let storeSuccess = true;
+  let storeError: string | undefined;
+  try {
+    await deps.storeRecordingReference(
+      recording.callSid,
+      recording.recordingSid,
+      recording.recordingDuration,
+    );
+  } catch (err: unknown) {
+    storeSuccess = false;
+    storeError = err instanceof Error ? err.message : 'Unknown storage error';
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'voice_webhook',
+        event: 'recording_store_failure',
+        callSid: recording.callSid,
+        recordingSid: recording.recordingSid,
+        error: storeError,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
 
-  // Audit log the recording reference storage
+  // Audit log the recording reference storage — runs even on failure
   await deps.auditLogger.log({
     tenantId: 'system',
     eventType: 'compliance.check',
@@ -228,11 +247,12 @@ voiceWebhooksRouter.post('/recording', async (c) => {
     actorId: 'webhook',
     resource: 'recording',
     resourceId: recording.recordingSid,
-    action: 'recording_reference_stored',
+    action: storeSuccess ? 'recording_reference_stored' : 'recording_reference_store_failed',
     details: {
       callSid: recording.callSid,
       durationSeconds: recording.recordingDuration,
       status: recording.recordingStatus,
+      ...(storeError !== undefined ? { error: storeError } : {}),
     },
     timestamp: new Date(),
   });
