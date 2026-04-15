@@ -18,6 +18,7 @@ import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ workflowRouter.get('/definitions', (c): Response => {
 
 // ─── POST /instances — Start a workflow instance ──────────────────
 
-workflowRouter.post('/instances', async (c): Promise<Response> => {
+workflowRouter.post('/instances', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Workflow routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -180,7 +181,7 @@ workflowRouter.get('/instances/:id', async (c): Promise<Response> => {
 
 // ─── PUT /instances/:id/pause — Pause a running instance ──────────
 
-workflowRouter.put('/instances/:id/pause', async (c): Promise<Response> => {
+workflowRouter.put('/instances/:id/pause', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Workflow routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -193,7 +194,7 @@ workflowRouter.put('/instances/:id/pause', async (c): Promise<Response> => {
 
 // ─── PUT /instances/:id/resume — Resume a paused instance ─────────
 
-workflowRouter.put('/instances/:id/resume', async (c): Promise<Response> => {
+workflowRouter.put('/instances/:id/resume', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Workflow routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -206,7 +207,7 @@ workflowRouter.put('/instances/:id/resume', async (c): Promise<Response> => {
 
 // ─── DELETE /instances/:id — Cancel an instance ───────────────────
 
-workflowRouter.delete('/instances/:id', async (c): Promise<Response> => {
+workflowRouter.delete('/instances/:id', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Workflow routes not configured');
 
   const ctx = ensureTenantContext(c);

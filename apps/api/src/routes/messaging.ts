@@ -31,6 +31,7 @@ import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import {
   ChannelManager,
   InMemoryChannelStore,
@@ -178,7 +179,7 @@ messagingRouter.get('/channels', requireAuth(), async (c) => {
 });
 
 // POST /channels
-messagingRouter.post('/channels', requireAuth(), async (c) => {
+messagingRouter.post('/channels', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -254,7 +255,7 @@ messagingRouter.get('/channels/:id', requireAuth(), async (c) => {
 });
 
 // POST /channels/:id/members
-messagingRouter.post('/channels/:id/members', requireAuth(), async (c) => {
+messagingRouter.post('/channels/:id/members', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -286,28 +287,33 @@ messagingRouter.post('/channels/:id/members', requireAuth(), async (c) => {
 });
 
 // DELETE /channels/:id/members/:uid
-messagingRouter.delete('/channels/:id/members/:uid', requireAuth(), async (c) => {
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined)
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'AUTH_FAILED',
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+messagingRouter.delete(
+  '/channels/:id/members/:uid',
+  requireAuth(),
+  rateLimit('write'),
+  async (c) => {
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTH_FAILED',
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
+        401,
+      );
+    await channelManager.removeMember(
+      c.req.param('id'),
+      ctx.tenantId,
+      c.req.param('uid'),
+      ctx.userId,
     );
-  await channelManager.removeMember(
-    c.req.param('id'),
-    ctx.tenantId,
-    c.req.param('uid'),
-    ctx.userId,
-  );
-  return c.json({ success: true as const });
-});
+    return c.json({ success: true as const });
+  },
+);
 
 // GET /channels/:id/messages
 messagingRouter.get('/channels/:id/messages', requireAuth(), async (c) => {
@@ -335,7 +341,7 @@ messagingRouter.get('/channels/:id/messages', requireAuth(), async (c) => {
 });
 
 // POST /channels/:id/messages
-messagingRouter.post('/channels/:id/messages', requireAuth(), async (c) => {
+messagingRouter.post('/channels/:id/messages', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -382,147 +388,167 @@ messagingRouter.post('/channels/:id/messages', requireAuth(), async (c) => {
 });
 
 // PATCH /channels/:id/messages/:mid
-messagingRouter.patch('/channels/:id/messages/:mid', requireAuth(), async (c) => {
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined)
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'AUTH_FAILED',
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+messagingRouter.patch(
+  '/channels/:id/messages/:mid',
+  requireAuth(),
+  rateLimit('write'),
+  async (c) => {
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTH_FAILED',
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
-    );
-  const body: unknown = await c.req.json();
-  const parsed = editMessageSchema.safeParse(body);
-  if (!parsed.success)
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid input',
-          correlationId: c.get('requestId'),
+        401,
+      );
+    const body: unknown = await c.req.json();
+    const parsed = editMessageSchema.safeParse(body);
+    if (!parsed.success)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid input',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      400,
+        400,
+      );
+    const message = await messageService.edit(
+      c.req.param('mid'),
+      ctx.tenantId,
+      ctx.userId,
+      parsed.data.content,
     );
-  const message = await messageService.edit(
-    c.req.param('mid'),
-    ctx.tenantId,
-    ctx.userId,
-    parsed.data.content,
-  );
-  publishEvent({
-    type: 'message.edit',
-    tenantId: ctx.tenantId,
-    channelId: c.req.param('id'),
-    userId: ctx.userId,
-    payload: messageToDto(message),
-    timestamp: new Date(),
-  });
-  return c.json({ success: true as const, data: messageToDto(message) });
-});
+    publishEvent({
+      type: 'message.edit',
+      tenantId: ctx.tenantId,
+      channelId: c.req.param('id'),
+      userId: ctx.userId,
+      payload: messageToDto(message),
+      timestamp: new Date(),
+    });
+    return c.json({ success: true as const, data: messageToDto(message) });
+  },
+);
 
 // DELETE /channels/:id/messages/:mid
-messagingRouter.delete('/channels/:id/messages/:mid', requireAuth(), async (c) => {
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined)
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'AUTH_FAILED',
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+messagingRouter.delete(
+  '/channels/:id/messages/:mid',
+  requireAuth(),
+  rateLimit('write'),
+  async (c) => {
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTH_FAILED',
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
-    );
-  const message = await messageService.delete(c.req.param('mid'), ctx.tenantId, ctx.userId);
-  publishEvent({
-    type: 'message.delete',
-    tenantId: ctx.tenantId,
-    channelId: c.req.param('id'),
-    userId: ctx.userId,
-    payload: { id: message.id },
-    timestamp: new Date(),
-  });
-  return c.json({ success: true as const, data: { id: message.id } });
-});
+        401,
+      );
+    const message = await messageService.delete(c.req.param('mid'), ctx.tenantId, ctx.userId);
+    publishEvent({
+      type: 'message.delete',
+      tenantId: ctx.tenantId,
+      channelId: c.req.param('id'),
+      userId: ctx.userId,
+      payload: { id: message.id },
+      timestamp: new Date(),
+    });
+    return c.json({ success: true as const, data: { id: message.id } });
+  },
+);
 
 // POST /channels/:id/messages/:mid/reactions
-messagingRouter.post('/channels/:id/messages/:mid/reactions', requireAuth(), async (c) => {
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined)
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'AUTH_FAILED',
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+messagingRouter.post(
+  '/channels/:id/messages/:mid/reactions',
+  requireAuth(),
+  rateLimit('write'),
+  async (c) => {
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTH_FAILED',
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
-    );
-  const body = (await c.req.json()) as unknown as { emoji?: string };
-  if (typeof body.emoji !== 'string' || body.emoji.length === 0 || body.emoji.length > 10) {
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'emoji required',
-          correlationId: c.get('requestId'),
+        401,
+      );
+    const body = (await c.req.json()) as unknown as { emoji?: string };
+    if (typeof body.emoji !== 'string' || body.emoji.length === 0 || body.emoji.length > 10) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'emoji required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      400,
+        400,
+      );
+    }
+    const message = await messageService.addReaction(
+      c.req.param('mid'),
+      ctx.tenantId,
+      ctx.userId,
+      body.emoji,
     );
-  }
-  const message = await messageService.addReaction(
-    c.req.param('mid'),
-    ctx.tenantId,
-    ctx.userId,
-    body.emoji,
-  );
-  publishEvent({
-    type: 'message.reaction',
-    tenantId: ctx.tenantId,
-    channelId: c.req.param('id'),
-    userId: ctx.userId,
-    payload: messageToDto(message),
-    timestamp: new Date(),
-  });
-  return c.json({ success: true as const, data: messageToDto(message) });
-});
+    publishEvent({
+      type: 'message.reaction',
+      tenantId: ctx.tenantId,
+      channelId: c.req.param('id'),
+      userId: ctx.userId,
+      payload: messageToDto(message),
+      timestamp: new Date(),
+    });
+    return c.json({ success: true as const, data: messageToDto(message) });
+  },
+);
 
 // DELETE /channels/:id/messages/:mid/reactions/:emoji
-messagingRouter.delete('/channels/:id/messages/:mid/reactions/:emoji', requireAuth(), async (c) => {
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined)
-    return c.json(
-      {
-        success: false,
-        error: {
-          code: 'AUTH_FAILED',
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+messagingRouter.delete(
+  '/channels/:id/messages/:mid/reactions/:emoji',
+  requireAuth(),
+  rateLimit('write'),
+  async (c) => {
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'AUTH_FAILED',
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
+        401,
+      );
+    const message = await messageService.removeReaction(
+      c.req.param('mid'),
+      ctx.tenantId,
+      ctx.userId,
+      decodeURIComponent(c.req.param('emoji')),
     );
-  const message = await messageService.removeReaction(
-    c.req.param('mid'),
-    ctx.tenantId,
-    ctx.userId,
-    decodeURIComponent(c.req.param('emoji')),
-  );
-  return c.json({ success: true as const, data: messageToDto(message) });
-});
+    return c.json({ success: true as const, data: messageToDto(message) });
+  },
+);
 
 // POST /channels/:id/read
 messagingRouter.post('/channels/:id/read', requireAuth(), async (c) => {

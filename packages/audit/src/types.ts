@@ -65,7 +65,10 @@ export type AuditEventType =
   | 'integration.webhook_received'
   | 'integration.webhook_invalid_signature'
   | 'integration.outbound_enqueued'
-  | 'integration.contact_deleted';
+  | 'integration.contact_deleted'
+  // Tickets (Phase 80)
+  | 'ticket.created'
+  | 'ticket.updated';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

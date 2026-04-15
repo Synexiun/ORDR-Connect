@@ -641,7 +641,7 @@ async function bootstrap(): Promise<void> {
   console.warn('[ORDR:API] Settings routes configured');
 
   // ── 4.14. Tickets routes (support ticketing system) ────────────────────────
-  configureTicketRoutes({ db });
+  configureTicketRoutes({ db, auditLogger });
   console.warn('[ORDR:API] Ticket routes configured');
 
   // ── 4.15. Reports routes (generation, scheduling, export) ──────────────────

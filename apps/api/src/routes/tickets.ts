@@ -28,9 +28,11 @@ import { z } from 'zod';
 import { eq, and, count, desc, sql } from 'drizzle-orm';
 import type { OrdrDatabase } from '@ordr/db';
 import * as schema from '@ordr/db';
+import type { AuditLogger } from '@ordr/audit';
 import { AuthorizationError, ValidationError, NotFoundError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Response Types ───────────────────────────────────────────────
 
@@ -138,6 +140,7 @@ async function resolveDisplayName(
 
 interface TicketDeps {
   readonly db: OrdrDatabase;
+  readonly auditLogger: Pick<AuditLogger, 'log'>;
 }
 
 let _deps: TicketDeps | null = null;
@@ -249,8 +252,8 @@ ticketsRouter.get('/:id', async (c): Promise<Response> => {
 
 // ── POST / — create ticket ────────────────────────────────────────
 
-ticketsRouter.post('/', async (c): Promise<Response> => {
-  const { db } = getDeps();
+ticketsRouter.post('/', rateLimit('write'), async (c): Promise<Response> => {
+  const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -291,12 +294,24 @@ ticketsRouter.post('/', async (c): Promise<Response> => {
     content: parsed.data.description,
   });
 
+  await auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'ticket.created',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'ticket',
+    resourceId: inserted.id,
+    action: 'create',
+    details: { category: parsed.data.category, priority: parsed.data.priority },
+    timestamp: new Date(),
+  });
+
   return c.json(toTicketResponse(inserted), 201);
 });
 
 // ── POST /:id/messages — add message to thread ───────────────────
 
-ticketsRouter.post('/:id/messages', async (c): Promise<Response> => {
+ticketsRouter.post('/:id/messages', rateLimit('write'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -369,8 +384,8 @@ ticketsRouter.post('/:id/messages', async (c): Promise<Response> => {
 
 // ── PATCH /:id — update assignee or status ───────────────────────
 
-ticketsRouter.patch('/:id', async (c): Promise<Response> => {
-  const { db } = getDeps();
+ticketsRouter.patch('/:id', rateLimit('write'), async (c): Promise<Response> => {
+  const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -407,6 +422,21 @@ ticketsRouter.patch('/:id', async (c): Promise<Response> => {
   if (updated[0] === undefined) {
     throw new NotFoundError(`Ticket not found: ${ticketId}`, requestId);
   }
+
+  await auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'ticket.updated',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'ticket',
+    resourceId: ticketId,
+    action: 'update',
+    details: {
+      ...(parsed.data.status !== undefined ? { newStatus: parsed.data.status } : {}),
+      ...(parsed.data.assignee !== undefined ? { newAssignee: parsed.data.assignee } : {}),
+    },
+    timestamp: new Date(),
+  });
 
   return new Response(null, { status: 204 });
 });
