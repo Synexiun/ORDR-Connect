@@ -25,27 +25,19 @@ import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
+// ReDoS-safe slug regex: no nested quantifiers (Rule 4 — regex without ReDoS protection)
+const SLUG_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
+
 const createOrgSchema = z.object({
   name: z.string().min(1).max(255),
-  // eslint-disable-next-line security/detect-unsafe-regex
-  slug: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  slug: z.string().min(1).max(100).regex(SLUG_RE),
   parentId: z.string().uuid().nullable().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
 const updateOrgSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  // eslint-disable-next-line security/detect-unsafe-regex
-  slug: z
-    .string()
-    .min(1)
-    .max(100)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-    .optional(),
+  slug: z.string().min(1).max(100).regex(SLUG_RE).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -233,6 +225,22 @@ organizationsRouter.patch(
     if (!result.success) {
       return jsonErr(c, result.error);
     }
+
+    // WORM audit — organization updated (SOC2 CC6.2)
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'organization.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'organization',
+      resourceId: orgId,
+      action: 'update',
+      details: {
+        ...(parsed.data.name !== undefined ? { newName: parsed.data.name } : {}),
+        ...(parsed.data.slug !== undefined ? { newSlug: parsed.data.slug } : {}),
+      },
+      timestamp: new Date(),
+    });
 
     return c.json({
       success: true as const,

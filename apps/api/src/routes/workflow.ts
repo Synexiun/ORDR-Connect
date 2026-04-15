@@ -15,6 +15,7 @@ import type { WorkflowEngine, WorkflowInstanceStore } from '@ordr/workflow';
 import { BUILTIN_TEMPLATES } from '@ordr/workflow';
 import { ValidationError, AuthorizationError, NotFoundError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
@@ -48,6 +49,7 @@ const cancelInstanceSchema = z.object({
 interface WorkflowDeps {
   readonly engine: WorkflowEngine;
   readonly instanceStore: WorkflowInstanceStore;
+  readonly auditLogger: Pick<AuditLogger, 'log'>;
 }
 
 let deps: WorkflowDeps | null = null;
@@ -127,6 +129,19 @@ workflowRouter.post('/instances', rateLimit('write'), async (c): Promise<Respons
     ctx.tenantId,
   );
 
+  // WORM audit — workflow started (ISO 27001 A.12.4.1)
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'workflow.instance_started',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'workflow_instance',
+    resourceId: instance.id,
+    action: 'create',
+    details: { definitionId: parsed.data.definitionId },
+    timestamp: new Date(),
+  });
+
   return c.json({ success: true as const, data: instance }, 201);
 });
 
@@ -189,6 +204,19 @@ workflowRouter.put('/instances/:id/pause', rateLimit('write'), async (c): Promis
 
   const instance = await deps.engine.pauseWorkflow(ctx.tenantId, instanceId);
 
+  // WORM audit — workflow paused (ISO 27001 A.12.4.1)
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'workflow.instance_paused',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'workflow_instance',
+    resourceId: instanceId,
+    action: 'update',
+    details: { newStatus: 'paused' },
+    timestamp: new Date(),
+  });
+
   return c.json({ success: true as const, data: instance });
 });
 
@@ -201,6 +229,19 @@ workflowRouter.put('/instances/:id/resume', rateLimit('write'), async (c): Promi
   const instanceId = c.req.param('id');
 
   const instance = await deps.engine.resumeWorkflow(ctx.tenantId, instanceId);
+
+  // WORM audit — workflow resumed (ISO 27001 A.12.4.1)
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'workflow.instance_resumed',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'workflow_instance',
+    resourceId: instanceId,
+    action: 'update',
+    details: { newStatus: 'running' },
+    timestamp: new Date(),
+  });
 
   return c.json({ success: true as const, data: instance });
 });
@@ -221,6 +262,19 @@ workflowRouter.delete('/instances/:id', rateLimit('write'), async (c): Promise<R
   }
 
   const instance = await deps.engine.cancelWorkflow(ctx.tenantId, instanceId, parsed.data.reason);
+
+  // WORM audit — workflow cancelled (ISO 27001 A.12.4.1)
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'workflow.instance_cancelled',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'workflow_instance',
+    resourceId: instanceId,
+    action: 'delete',
+    details: { reason: parsed.data.reason },
+    timestamp: new Date(),
+  });
 
   return c.json({ success: true as const, data: instance });
 });

@@ -97,6 +97,20 @@ onboardingRouter.put('/step', async (c) => {
   }
 
   const state = await deps.setOnboardingStep(ctx.tenantId, parsed.data.step);
+
+  // WORM audit — onboarding step advanced (ISO 27001 A.6.2.1)
+  await deps.auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'system.config_change',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'tenants',
+    resourceId: ctx.tenantId,
+    action: 'advance_onboarding_step',
+    details: { step: parsed.data.step },
+    timestamp: new Date(),
+  });
+
   return c.json({ success: true as const, data: state });
 });
 

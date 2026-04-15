@@ -24,6 +24,7 @@ import {
 } from '@ordr/billing';
 import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -54,6 +55,7 @@ interface BillingRouteDeps {
   readonly subscriptionManager: SubscriptionManager;
   readonly usageTracker: UsageTracker;
   readonly stripeWebhookSecret: string;
+  readonly auditLogger: Pick<AuditLogger, 'log'>;
 }
 
 let deps: BillingRouteDeps | null = null;
@@ -192,6 +194,19 @@ billingRouter.post('/', rateLimit('write'), async (c): Promise<Response> => {
       ctx.userId,
     );
 
+    // WORM audit — subscription created (SOC2 CC6.1)
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'billing.subscription_created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'subscription',
+      resourceId: ctx.tenantId,
+      action: 'create',
+      details: { planTier: parsed.data.planTier },
+      timestamp: new Date(),
+    });
+
     return c.json(
       {
         success: true as const,
@@ -240,6 +255,19 @@ billingRouter.put('/upgrade', rateLimit('write'), async (c): Promise<Response> =
       ctx.userId,
     );
 
+    // WORM audit — subscription upgraded (SOC2 CC6.1)
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'billing.subscription_upgraded',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'subscription',
+      resourceId: ctx.tenantId,
+      action: 'update',
+      details: { newPlanTier: parsed.data.planTier },
+      timestamp: new Date(),
+    });
+
     return c.json({
       success: true as const,
       data: subscription,
@@ -285,6 +313,19 @@ billingRouter.put('/downgrade', rateLimit('write'), async (c): Promise<Response>
       ctx.userId,
     );
 
+    // WORM audit — subscription downgraded (ISO 27001 A.9.1.2)
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'billing.subscription_downgraded',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'subscription',
+      resourceId: ctx.tenantId,
+      action: 'update',
+      details: { newPlanTier: parsed.data.planTier },
+      timestamp: new Date(),
+    });
+
     return c.json({
       success: true as const,
       data: subscription,
@@ -318,6 +359,19 @@ billingRouter.delete('/', rateLimit('write'), async (c): Promise<Response> => {
       'User-requested cancellation',
       ctx.userId,
     );
+
+    // WORM audit — subscription cancelled (HIPAA §164.312(a)(1))
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'billing.subscription_cancelled',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'subscription',
+      resourceId: ctx.tenantId,
+      action: 'delete',
+      details: { reason: 'User-requested cancellation' },
+      timestamp: new Date(),
+    });
 
     return c.json({
       success: true as const,

@@ -87,7 +87,19 @@ export type AuditEventType =
   | 'messaging.message_edited'
   | 'messaging.message_deleted'
   // Settings (Phase 84)
-  | 'settings.role_created';
+  | 'settings.role_created'
+  // Billing (Phase 85)
+  | 'billing.subscription_created'
+  | 'billing.subscription_upgraded'
+  | 'billing.subscription_downgraded'
+  | 'billing.subscription_cancelled'
+  // Workflow (Phase 85)
+  | 'workflow.instance_started'
+  | 'workflow.instance_paused'
+  | 'workflow.instance_resumed'
+  | 'workflow.instance_cancelled'
+  // Organizations (Phase 85)
+  | 'organization.updated';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

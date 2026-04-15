@@ -2260,6 +2260,7 @@ async function bootstrap(): Promise<void> {
     subscriptionManager,
     usageTracker: new UsageTracker(usageStore),
     stripeWebhookSecret: process.env['STRIPE_WEBHOOK_SECRET'] ?? '',
+    auditLogger,
   });
   console.warn('[ORDR:API] Billing routes configured');
 
@@ -2323,7 +2324,11 @@ async function bootstrap(): Promise<void> {
       : new InMemoryStepResultStore(),
     auditLogger: workflowAuditLogger,
   });
-  configureWorkflowRoutes({ engine: workflowEngine, instanceStore: workflowInstanceStore });
+  configureWorkflowRoutes({
+    engine: workflowEngine,
+    instanceStore: workflowInstanceStore,
+    auditLogger,
+  });
   console.warn(
     `[ORDR:API] Workflow routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
   );
