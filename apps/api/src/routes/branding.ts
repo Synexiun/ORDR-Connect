@@ -27,6 +27,7 @@ import { ValidationError, NotFoundError, AuthorizationError, ConflictError } fro
 import type { TenantContext, BrandConfigUpdate, CustomDomainConfig } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ---- Validation Schemas ----
 
@@ -61,16 +62,20 @@ const updateBrandingSchema = z.object({
  * Domain validation: valid hostname format, no IP addresses, no localhost.
  * Minimum 2 labels (e.g., app.example.com), maximum 253 characters.
  */
-// eslint-disable-next-line security/detect-unsafe-regex
-const DOMAIN_REGEX =
-  /^(?!.*localhost)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+/**
+ * Linear-time domain regex: validates hostname labels separated by dots.
+ * No nested quantifiers — safe against ReDoS.
+ * Rejects localhost via Zod refinement below.
+ */
+const DOMAIN_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/;
 
 const registerDomainSchema = z.object({
   domain: z
     .string()
     .min(4)
     .max(253)
-    .regex(DOMAIN_REGEX, 'Must be a valid domain name (e.g., app.example.com)'),
+    .regex(DOMAIN_REGEX, 'Must be a valid domain name (e.g., app.example.com)')
+    .refine((d) => !d.toLowerCase().includes('localhost'), 'localhost domains are not allowed'),
 });
 
 // ---- Dependencies (injected at startup) ----
@@ -183,7 +188,7 @@ brandingRouter.get('/', async (c) => {
 
 // ---- PUT / — update brand config (admin only) ----
 
-brandingRouter.put('/', requireRoleMiddleware('tenant_admin'), async (c) => {
+brandingRouter.put('/', requireRoleMiddleware('tenant_admin'), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Branding routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -253,93 +258,103 @@ brandingRouter.get('/domain', async (c) => {
 
 // ---- POST /domain — register custom domain (admin only) ----
 
-brandingRouter.post('/domain', requireRoleMiddleware('tenant_admin'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Branding routes not configured');
+brandingRouter.post(
+  '/domain',
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Branding routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  // Validate input
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = registerDomainSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid domain', parseZodErrors(parsed.error), requestId);
-  }
+    // Validate input
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = registerDomainSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid domain', parseZodErrors(parsed.error), requestId);
+    }
 
-  const domain = parsed.data.domain.toLowerCase();
+    const domain = parsed.data.domain.toLowerCase();
 
-  // Check if domain is already taken by another tenant
-  const existing = await deps.getBrandConfigByDomain(domain);
-  if (existing && existing.tenantId !== ctx.tenantId) {
-    throw new ConflictError('Domain is already registered by another tenant', requestId);
-  }
+    // Check if domain is already taken by another tenant
+    const existing = await deps.getBrandConfigByDomain(domain);
+    if (existing && existing.tenantId !== ctx.tenantId) {
+      throw new ConflictError('Domain is already registered by another tenant', requestId);
+    }
 
-  // Set custom domain
-  const updated = await deps.setCustomDomain(ctx.tenantId, domain);
+    // Set custom domain
+    const updated = await deps.setCustomDomain(ctx.tenantId, domain);
 
-  // Audit log — WORM (Rule 3)
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'config.updated',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'white_label_configs',
-    resourceId: updated.id,
-    action: 'register_domain',
-    details: { domain },
-    timestamp: new Date(),
-  });
+    // Audit log — WORM (Rule 3)
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'config.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'white_label_configs',
+      resourceId: updated.id,
+      action: 'register_domain',
+      details: { domain },
+      timestamp: new Date(),
+    });
 
-  const domainConfig: CustomDomainConfig = {
-    domain,
-    tenantId: ctx.tenantId,
-    sslStatus: 'pending',
-    verifiedAt: null,
-  };
+    const domainConfig: CustomDomainConfig = {
+      domain,
+      tenantId: ctx.tenantId,
+      sslStatus: 'pending',
+      verifiedAt: null,
+    };
 
-  return c.json(
-    {
-      success: true as const,
-      data: domainConfig,
-    },
-    201,
-  );
-});
+    return c.json(
+      {
+        success: true as const,
+        data: domainConfig,
+      },
+      201,
+    );
+  },
+);
 
 // ---- DELETE /domain — remove custom domain (admin only) ----
 
-brandingRouter.delete('/domain', requireRoleMiddleware('tenant_admin'), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Branding routes not configured');
+brandingRouter.delete(
+  '/domain',
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Branding routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
 
-  const config = await deps.getBrandConfig(ctx.tenantId);
-  if (config === null || config.customDomain === null) {
-    throw new NotFoundError('No custom domain configured', requestId);
-  }
+    const config = await deps.getBrandConfig(ctx.tenantId);
+    if (config === null || config.customDomain === null) {
+      throw new NotFoundError('No custom domain configured', requestId);
+    }
 
-  const removedDomain = config.customDomain;
-  const removed = await deps.removeCustomDomain(ctx.tenantId);
-  if (!removed) {
-    throw new NotFoundError('No custom domain configured', requestId);
-  }
+    const removedDomain = config.customDomain;
+    const removed = await deps.removeCustomDomain(ctx.tenantId);
+    if (!removed) {
+      throw new NotFoundError('No custom domain configured', requestId);
+    }
 
-  // Audit log — WORM (Rule 3)
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'config.updated',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'white_label_configs',
-    resourceId: config.id,
-    action: 'remove_domain',
-    details: { domain: removedDomain },
-    timestamp: new Date(),
-  });
+    // Audit log — WORM (Rule 3)
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'config.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'white_label_configs',
+      resourceId: config.id,
+      action: 'remove_domain',
+      details: { domain: removedDomain },
+      timestamp: new Date(),
+    });
 
-  return c.json({ success: true as const }, 200);
-});
+    return c.json({ success: true as const }, 200);
+  },
+);
 
 export { brandingRouter };

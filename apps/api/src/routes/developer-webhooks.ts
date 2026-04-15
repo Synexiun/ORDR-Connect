@@ -25,6 +25,7 @@ import { NotFoundError, ValidationError } from '@ordr/core';
 import { DELIVERABLE_EVENTS } from '@ordr/events';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 const PRIVATE_IP_PATTERNS = [
   /^127\./,
@@ -161,7 +162,7 @@ developerWebhooksRouter.get('/', requireAuth(), async (c) => {
   return c.json({ success: true as const, data: webhooks.map(toSafeWebhook) });
 });
 
-developerWebhooksRouter.post('/', requireAuth(), async (c) => {
+developerWebhooksRouter.post('/', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Webhook routes not configured');
   const { userId, requestId } = ensureCtx(c);
 
@@ -220,7 +221,7 @@ developerWebhooksRouter.post('/', requireAuth(), async (c) => {
   );
 });
 
-developerWebhooksRouter.delete('/:webhookId', requireAuth(), async (c) => {
+developerWebhooksRouter.delete('/:webhookId', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Webhook routes not configured');
   const { userId, requestId } = ensureCtx(c);
   const webhookId = c.req.param('webhookId');
@@ -244,40 +245,45 @@ developerWebhooksRouter.delete('/:webhookId', requireAuth(), async (c) => {
   return c.json({ success: true as const });
 });
 
-developerWebhooksRouter.patch('/:webhookId/toggle', requireAuth(), async (c) => {
-  if (!deps) throw new Error('[ORDR:API] Webhook routes not configured');
-  const { userId, requestId } = ensureCtx(c);
-  const webhookId = c.req.param('webhookId');
+developerWebhooksRouter.patch(
+  '/:webhookId/toggle',
+  requireAuth(),
+  rateLimit('write'),
+  async (c) => {
+    if (!deps) throw new Error('[ORDR:API] Webhook routes not configured');
+    const { userId, requestId } = ensureCtx(c);
+    const webhookId = c.req.param('webhookId');
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = toggleSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      'Invalid toggle data',
-      {
-        active: parsed.error.issues.map((i) => i.message),
-      },
-      requestId,
-    );
-  }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = toggleSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid toggle data',
+        {
+          active: parsed.error.issues.map((i) => i.message),
+        },
+        requestId,
+      );
+    }
 
-  const existing = await deps.findWebhook(userId, webhookId);
-  if (!existing) throw new NotFoundError('Webhook not found', requestId);
+    const existing = await deps.findWebhook(userId, webhookId);
+    if (!existing) throw new NotFoundError('Webhook not found', requestId);
 
-  const updated = await deps.toggleWebhook(userId, webhookId, parsed.data.active);
+    const updated = await deps.toggleWebhook(userId, webhookId, parsed.data.active);
 
-  await deps.auditLogger.log({
-    tenantId: 'developer-portal',
-    eventType: 'data.updated',
-    actorType: 'user',
-    actorId: userId,
-    resource: 'developer_webhooks',
-    resourceId: webhookId,
-    action: 'toggle_webhook',
-    details: { active: parsed.data.active },
-    timestamp: new Date(),
-  });
+    await deps.auditLogger.log({
+      tenantId: 'developer-portal',
+      eventType: 'data.updated',
+      actorType: 'user',
+      actorId: userId,
+      resource: 'developer_webhooks',
+      resourceId: webhookId,
+      action: 'toggle_webhook',
+      details: { active: parsed.data.active },
+      timestamp: new Date(),
+    });
 
-  return c.json({ success: true as const, data: toSafeWebhook(updated) });
-});
+    return c.json({ success: true as const, data: toSafeWebhook(updated) });
+  },
+);

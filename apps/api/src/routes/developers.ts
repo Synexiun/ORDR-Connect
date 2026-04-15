@@ -42,6 +42,7 @@ import {
 import { hashPassword, verifyPassword, randomUUID } from '@ordr/crypto';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Sandbox Tier Limits ────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ const developersRouter = new Hono<Env>();
 
 // ─── POST /register — Create developer account ─────────────────────
 
-developersRouter.post('/register', async (c) => {
+developersRouter.post('/register', rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
   const requestId = c.get('requestId');
@@ -261,7 +262,7 @@ developersRouter.post('/register', async (c) => {
 
 // ─── POST /login — Authenticate developer ──────────────────────────
 
-developersRouter.post('/login', async (c) => {
+developersRouter.post('/login', rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
   const requestId = c.get('requestId');
@@ -367,7 +368,7 @@ developersRouter.get('/me', requireAuth(), async (c) => {
 
 // ─── POST /keys — Create API key ───────────────────────────────────
 
-developersRouter.post('/keys', requireAuth(), async (c) => {
+developersRouter.post('/keys', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
   const requestId = c.get('requestId');
@@ -455,7 +456,7 @@ developersRouter.get('/keys', requireAuth(), async (c) => {
 
 // ─── DELETE /keys/:keyId — Revoke API key ──────────────────────────
 
-developersRouter.delete('/keys/:keyId', requireAuth(), async (c) => {
+developersRouter.delete('/keys/:keyId', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
   const requestId = c.get('requestId');
@@ -491,7 +492,7 @@ developersRouter.delete('/keys/:keyId', requireAuth(), async (c) => {
 
 // ─── POST /sandbox — Provision sandbox tenant ──────────────────────
 
-developersRouter.post('/sandbox', requireAuth(), async (c) => {
+developersRouter.post('/sandbox', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
   const requestId = c.get('requestId');
@@ -594,7 +595,7 @@ developersRouter.get('/sandbox', requireAuth(), async (c) => {
 
 // ─── DELETE /sandbox/:sandboxId — Destroy sandbox ──────────────────
 
-developersRouter.delete('/sandbox/:sandboxId', requireAuth(), async (c) => {
+developersRouter.delete('/sandbox/:sandboxId', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Developer routes not configured');
 
   const requestId = c.get('requestId');

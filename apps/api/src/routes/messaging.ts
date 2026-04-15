@@ -655,7 +655,7 @@ messagingRouter.delete(
 );
 
 // POST /channels/:id/read
-messagingRouter.post('/channels/:id/read', requireAuth(), async (c) => {
+messagingRouter.post('/channels/:id/read', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -701,7 +701,7 @@ messagingRouter.post('/channels/:id/read', requireAuth(), async (c) => {
 });
 
 // POST /channels/:id/typing
-messagingRouter.post('/channels/:id/typing', requireAuth(), async (c) => {
+messagingRouter.post('/channels/:id/typing', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -763,7 +763,7 @@ messagingRouter.get('/presence', requireAuth(), (c) => {
 });
 
 // PUT /presence
-messagingRouter.put('/presence', requireAuth(), async (c) => {
+messagingRouter.put('/presence', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(

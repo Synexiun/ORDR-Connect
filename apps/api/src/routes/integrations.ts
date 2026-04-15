@@ -43,6 +43,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
 import { requireRoleMiddleware } from '../middleware/auth.js';
 import { withCredentials } from '../middleware/crm-credentials.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── CRMAdapter interface ─────────────────────────────────────────
 // NOTE: Extended to include handleWebhook and updated getHealth signature.
@@ -910,31 +911,36 @@ integrationsRouter.get('/:provider/contacts/:id', async (c): Promise<Response> =
 
 // ─── POST /:provider/contacts — Upsert a contact ─────────────────
 
-integrationsRouter.post('/:provider/contacts', async (c): Promise<Response> => {
-  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+integrationsRouter.post(
+  '/:provider/contacts',
+  requirePermissionMiddleware('integrations', 'write'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
-  ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const provider = c.req.param('provider');
-  const adapter = resolveAdapter(provider, deps.adapters);
-  const body: unknown = await c.req.json();
+    ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const provider = c.req.param('provider');
+    const adapter = resolveAdapter(provider, deps.adapters);
+    const body: unknown = await c.req.json().catch(() => null);
 
-  const parsed = upsertContactBodySchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid contact data', parseZodErrors(parsed.error), requestId);
-  }
+    const parsed = upsertContactBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid contact data', parseZodErrors(parsed.error), requestId);
+    }
 
-  const contact = await adapter.upsertContact(parsed.data);
+    const contact = await adapter.upsertContact(parsed.data);
 
-  return c.json(
-    {
-      success: true as const,
-      data: contact,
-      provider,
-    },
-    200,
-  );
-});
+    return c.json(
+      {
+        success: true as const,
+        data: contact,
+        provider,
+      },
+      200,
+    );
+  },
+);
 
 // ─── DELETE /:provider/contacts/:id — Delete a contact (admin only) ─
 
@@ -1129,86 +1135,91 @@ integrationsRouter.get('/:provider/activities', async (c): Promise<Response> => 
 
 // ─── POST /:provider/activities — Push an activity ────────────────
 
-integrationsRouter.post('/:provider/activities', async (c): Promise<Response> => {
-  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const provider = c.req.param('provider');
-  const adapter = resolveAdapter(provider, deps.adapters);
-  const creds = c.get('crmCredentials');
-  if (!creds) {
-    return c.json(
-      {
-        success: false as const,
-        error: {
-          code: 'CREDENTIALS_MISSING' as const,
-          message: 'Integration credentials not configured',
-          correlationId: requestId,
+integrationsRouter.post(
+  '/:provider/activities',
+  requirePermissionMiddleware('integrations', 'write'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const provider = c.req.param('provider');
+    const adapter = resolveAdapter(provider, deps.adapters);
+    const creds = c.get('crmCredentials');
+    if (!creds) {
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'CREDENTIALS_MISSING' as const,
+            message: 'Integration credentials not configured',
+            correlationId: requestId,
+          },
         },
-      },
-      400,
-    );
-  }
+        400,
+      );
+    }
 
-  const body: unknown = await c.req.json();
-  const parsed = pushActivityBodySchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid activity data', parseZodErrors(parsed.error), requestId);
-  }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = pushActivityBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid activity data', parseZodErrors(parsed.error), requestId);
+    }
 
-  const { subject, type, description, date } = parsed.data;
-  let externalId: string;
-  try {
-    externalId = await adapter.pushActivity(creds, {
-      externalId: '',
-      type,
-      subject,
-      description: description ?? null,
-      contactExternalId: parsed.data.customerId,
-      dealExternalId: null,
-      dueDate: date !== undefined ? new Date(date) : null,
-      completedAt: null,
-      lastModified: new Date(),
-      metadata: {},
+    const { subject, type, description, date } = parsed.data;
+    let externalId: string;
+    try {
+      externalId = await adapter.pushActivity(creds, {
+        externalId: '',
+        type,
+        subject,
+        description: description ?? null,
+        contactExternalId: parsed.data.customerId,
+        dealExternalId: null,
+        dueDate: date !== undefined ? new Date(date) : null,
+        completedAt: null,
+        lastModified: new Date(),
+        metadata: {},
+      });
+    } catch (err: unknown) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'integrations',
+          event: 'crm_push_failure',
+          provider,
+          action: 'pushActivity',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'INTEGRATION_ERROR' as const,
+            message: 'Failed to push activity to provider',
+            correlationId: requestId,
+          },
+        },
+        502,
+      );
+    }
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'crm_activity',
+      resourceId: externalId,
+      action: 'created',
+      details: { provider, activityExternalId: externalId },
+      timestamp: new Date(),
     });
-  } catch (err: unknown) {
-    console.error(
-      JSON.stringify({
-        level: 'error',
-        component: 'integrations',
-        event: 'crm_push_failure',
-        provider,
-        action: 'pushActivity',
-        error: err instanceof Error ? err.message : 'Unknown error',
-      }),
-    );
-    return c.json(
-      {
-        success: false as const,
-        error: {
-          code: 'INTEGRATION_ERROR' as const,
-          message: 'Failed to push activity to provider',
-          correlationId: requestId,
-        },
-      },
-      502,
-    );
-  }
 
-  await deps.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'crm_activity',
-    resourceId: externalId,
-    action: 'created',
-    details: { provider, activityExternalId: externalId },
-    timestamp: new Date(),
-  });
-
-  return c.json({ success: true as const, externalId, provider }, 201);
-});
+    return c.json({ success: true as const, externalId, provider }, 201);
+  },
+);
 
 // ─── GET /:provider/field-mappings ────────────────────────────────
 

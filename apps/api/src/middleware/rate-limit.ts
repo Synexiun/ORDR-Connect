@@ -141,7 +141,14 @@ export function rateLimit(tier: RateLimitTier): MiddlewareHandler<Env> {
         // or missing X-Agent-Id header). Log so it is observable in production.
         const requestId = c.get('requestId');
         console.warn(
-          `[ORDR:API] rateLimit('agent') fallback to write tier — no agentId on ${c.req.method} ${new URL(c.req.url).pathname} (requestId: ${requestId})`,
+          JSON.stringify({
+            level: 'warn',
+            component: 'rate-limit',
+            event: 'agent_tier_fallback',
+            method: c.req.method,
+            path: new URL(c.req.url).pathname,
+            requestId,
+          }),
         );
         key = `rl:write:${tenantCtx.tenantId}`;
         config = TIER_CONFIGS.write;

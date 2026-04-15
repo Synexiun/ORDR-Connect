@@ -91,6 +91,14 @@ export const audit = createMiddleware<Env>(async (c, next) => {
   } catch {
     // Audit logging failure must NEVER crash the request.
     // In production, this should alert an on-call engineer.
-    console.error(`[ORDR:AUDIT] Failed to log audit event for ${method} ${c.req.path}`);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'audit',
+        event: 'audit_log_failure',
+        method,
+        path: c.req.path,
+      }),
+    );
   }
 });

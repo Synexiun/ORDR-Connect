@@ -299,63 +299,68 @@ complianceDashboardRouter.get('/violations', async (c): Promise<Response> => {
 
 // ── POST /violations/:id/resolve ──────────────────────────────────────────────
 
-complianceDashboardRouter.post('/violations/:id/resolve', async (c): Promise<Response> => {
-  const d = getDeps();
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const violationId = c.req.param('id');
+complianceDashboardRouter.post(
+  '/violations/:id/resolve',
+  requirePermissionMiddleware('compliance', 'write'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const d = getDeps();
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const violationId = c.req.param('id');
 
-  const body: unknown = await c.req.json().catch(() => ({}));
-  const parsed = resolveBodySchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      'Invalid resolve payload',
-      parsed.error.flatten().fieldErrors as Record<string, string[]>,
-      requestId,
-    );
-  }
+    const body: unknown = await c.req.json().catch(() => ({}));
+    const parsed = resolveBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid resolve payload',
+        parsed.error.flatten().fieldErrors as Record<string, string[]>,
+        requestId,
+      );
+    }
 
-  // Verify violation exists and belongs to this tenant before update
-  const existing = await d.getViolation(ctx.tenantId, violationId);
-  if (!existing) {
-    throw new NotFoundError(`Violation not found: ${violationId}`, requestId);
-  }
-  if (existing.resolved) {
-    throw new ValidationError(
-      'Violation is already resolved',
-      { id: ['Already resolved'] },
-      requestId,
-    );
-  }
+    // Verify violation exists and belongs to this tenant before update
+    const existing = await d.getViolation(ctx.tenantId, violationId);
+    if (!existing) {
+      throw new NotFoundError(`Violation not found: ${violationId}`, requestId);
+    }
+    if (existing.resolved) {
+      throw new ValidationError(
+        'Violation is already resolved',
+        { id: ['Already resolved'] },
+        requestId,
+      );
+    }
 
-  const updated = await d.resolveViolation(ctx.tenantId, violationId, {
-    resolvedBy: ctx.userId,
-    resolutionNote: parsed.data.note ?? null,
-  });
+    const updated = await d.resolveViolation(ctx.tenantId, violationId, {
+      resolvedBy: ctx.userId,
+      resolutionNote: parsed.data.note ?? null,
+    });
 
-  if (!updated) {
-    throw new NotFoundError(`Violation not found: ${violationId}`, requestId);
-  }
+    if (!updated) {
+      throw new NotFoundError(`Violation not found: ${violationId}`, requestId);
+    }
 
-  await d.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'compliance.violation',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'compliance_violations',
-    resourceId: violationId,
-    action: 'resolve_violation',
-    details: {
-      rule: existing.rule,
-      regulation: existing.regulation,
-      severity: existing.severity,
-      resolutionNote: updated.resolutionNote,
-    },
-    timestamp: new Date(),
-  });
+    await d.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'compliance.violation',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'compliance_violations',
+      resourceId: violationId,
+      action: 'resolve_violation',
+      details: {
+        rule: existing.rule,
+        regulation: existing.regulation,
+        severity: existing.severity,
+        resolutionNote: updated.resolutionNote,
+      },
+      timestamp: new Date(),
+    });
 
-  return c.json({ success: true as const, data: updated });
-});
+    return c.json({ success: true as const, data: updated });
+  },
+);
 
 // ── GET /consent-status ───────────────────────────────────────────────────────
 
