@@ -22,20 +22,13 @@ import type {
   JobDefinition,
   JobInstance,
   JobStatus,
-  JobResult,
   JobHandler,
   JobPriority,
-  RetryPolicy,
   DeadLetterEntry,
   SchedulerConfig,
   SchedulerStatus,
-  CronExpression,
 } from './types.js';
-import {
-  DEFAULT_RETRY_POLICY,
-  DEFAULT_SCHEDULER_CONFIG,
-  PRIORITY_RANK,
-} from './types.js';
+import { DEFAULT_RETRY_POLICY, DEFAULT_SCHEDULER_CONFIG, PRIORITY_RANK } from './types.js';
 import { parseCron, nextOccurrence } from './cron-parser.js';
 
 // ─── Store Interface ─────────────────────────────────────────────
@@ -65,7 +58,10 @@ export interface SchedulerStore {
   /** Get due instances (pending + due time, ordered by priority). */
   getDueInstances(now: Date): Promise<JobInstance[]>;
   /** Get instances with optional status filter. */
-  listInstances(filter?: { readonly status?: JobStatus; readonly jobType?: string }): Promise<JobInstance[]>;
+  listInstances(filter?: {
+    readonly status?: JobStatus;
+    readonly jobType?: string;
+  }): Promise<JobInstance[]>;
   /** Get retryable instances (status='retrying', nextRetryAt <= now). */
   getRetryableInstances(now: Date): Promise<JobInstance[]>;
 
@@ -119,6 +115,7 @@ export type SchedulerAlertCallback = (alert: {
 
 // ─── In-Memory Store (for testing) ───────────────────────────────
 
+/* eslint-disable @typescript-eslint/require-await -- sync in-memory store implements async interface */
 export class InMemorySchedulerStore implements SchedulerStore {
   private readonly definitions = new Map<string, JobDefinition>();
   private readonly instances = new Map<string, JobInstance>();
@@ -175,12 +172,15 @@ export class InMemorySchedulerStore implements SchedulerStore {
       });
   }
 
-  async listInstances(filter?: { readonly status?: JobStatus; readonly jobType?: string }): Promise<JobInstance[]> {
+  async listInstances(filter?: {
+    readonly status?: JobStatus;
+    readonly jobType?: string;
+  }): Promise<JobInstance[]> {
     let results = [...this.instances.values()];
-    if (filter?.status) {
+    if (filter?.status !== undefined && filter.status !== '') {
       results = results.filter((i) => i.status === filter.status);
     }
-    if (filter?.jobType) {
+    if (filter?.jobType !== undefined && filter.jobType !== '') {
       const defsOfType = [...this.definitions.values()].filter((d) => d.jobType === filter.jobType);
       const defIds = new Set(defsOfType.map((d) => d.id));
       results = results.filter((i) => defIds.has(i.definitionId));
@@ -235,6 +235,7 @@ export class InMemorySchedulerStore implements SchedulerStore {
     this.deadLetter.delete(id);
   }
 }
+/* eslint-enable @typescript-eslint/require-await */
 
 // ─── Job Scheduler ───────────────────────────────────────────────
 
@@ -272,7 +273,10 @@ export class JobScheduler {
    * Register a job handler with a cron schedule.
    * Creates the job definition in the store and registers the handler function.
    */
-  async registerJob(definition: Omit<JobDefinition, 'createdAt' | 'updatedAt'>, handler: JobHandler): Promise<void> {
+  async registerJob(
+    definition: Omit<JobDefinition, 'createdAt' | 'updatedAt'>,
+    handler: JobHandler,
+  ): Promise<void> {
     const now = new Date();
     const fullDef: JobDefinition = {
       ...definition,
@@ -607,6 +611,7 @@ export class JobScheduler {
 
       for (const instance of allDue) {
         if (this.activeJobs >= this.config.maxConcurrentJobs) break;
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard: running may change during async iteration
         if (!this.running) break;
 
         const definition = await this.store.getDefinition(instance.definitionId);
@@ -620,7 +625,14 @@ export class JobScheduler {
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown poll error';
-      console.error(`[ORDR:SCHEDULER] Poll error: ${message}`);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'scheduler',
+          event: 'poll_error',
+          error: message,
+        }),
+      );
     }
   }
 
@@ -676,7 +688,14 @@ export class JobScheduler {
   private async executeInstance(instance: JobInstance, definition: JobDefinition): Promise<void> {
     const handler = this.handlers.get(definition.jobType);
     if (!handler) {
-      console.error(`[ORDR:SCHEDULER] No handler registered for job type "${definition.jobType}"`);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'scheduler',
+          event: 'handler_not_found',
+          jobType: definition.jobType,
+        }),
+      );
       await this.store.releaseLock(instance.id, this.config.instanceId);
       return;
     }
@@ -705,7 +724,7 @@ export class JobScheduler {
           definitionId: definition.id,
           retryCount: instance.retryCount,
         },
-        timestamp: runningInstance.startedAt!,
+        timestamp: runningInstance.startedAt ?? new Date(),
       });
 
       // Execute the handler
@@ -734,11 +753,16 @@ export class JobScheduler {
             durationMs: Date.now() - startTime,
             success: true,
           },
-          timestamp: completedInstance.completedAt!,
+          timestamp: completedInstance.completedAt ?? new Date(),
         });
       } else {
         // Job failed
-        await this.handleJobFailure(runningInstance, definition, result.error ?? 'Unknown error', startTime);
+        await this.handleJobFailure(
+          runningInstance,
+          definition,
+          result.error ?? 'Unknown error',
+          startTime,
+        );
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unhandled execution error';
@@ -840,9 +864,8 @@ export class JobScheduler {
       });
 
       // Alert for critical job failures
-      const severity = definition.priority === 'critical' ? 'p1'
-        : definition.priority === 'high' ? 'p2'
-          : 'p3';
+      const severity =
+        definition.priority === 'critical' ? 'p1' : definition.priority === 'high' ? 'p2' : 'p3';
 
       await this.alert({
         severity,
@@ -851,7 +874,14 @@ export class JobScheduler {
         error: errorMessage,
         timestamp: now,
       }).catch((alertErr: unknown) => {
-        console.error('[ORDR:SCHEDULER] Failed to send alert:', alertErr);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'scheduler',
+            event: 'alert_send_failure',
+            error: alertErr instanceof Error ? alertErr.message : 'Unknown error',
+          }),
+        );
       });
     }
   }
