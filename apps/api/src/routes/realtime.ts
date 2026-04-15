@@ -152,7 +152,7 @@ realtimeRouter.post('/publish', async (c): Promise<Response> => {
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = publishSchema.safeParse(body);
 
   if (!parsed.success) {

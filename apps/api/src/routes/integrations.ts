@@ -796,7 +796,7 @@ integrationsRouter.post(
     const requestId = c.get('requestId');
     const provider = c.req.param('provider');
     const adapter = resolveAdapter(provider, deps.adapters);
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
 
     const parsed = authorizeBodySchema.safeParse(body);
     if (!parsed.success) {
@@ -832,7 +832,7 @@ integrationsRouter.post(
     const requestId = c.get('requestId');
     const provider = c.req.param('provider');
     const adapter = resolveAdapter(provider, deps.adapters);
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
 
     const parsed = callbackBodySchema.safeParse(body);
     if (!parsed.success) {
@@ -1246,7 +1246,7 @@ integrationsRouter.put(
     const requestId = c.get('requestId');
     const provider = c.req.param('provider');
 
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
     const parsed = putFieldMappingsBodySchema.safeParse(body);
     if (!parsed.success) {
       throw new ValidationError('Invalid field mappings', parseZodErrors(parsed.error), requestId);

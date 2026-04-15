@@ -162,7 +162,7 @@ tenantsRouter.patch('/me', requireRoleMiddleware('tenant_admin'), async (c): Pro
   if (ctx === undefined) throw new AuthorizationError('Tenant context required');
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = updateNameSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Invalid update request', parseZodErrors(parsed.error), requestId);
@@ -223,7 +223,7 @@ tenantsRouter.post('/', requireRoleMiddleware('super_admin'), async (c): Promise
   if (ctx === undefined) throw new AuthorizationError('Tenant context required');
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = createTenantSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Invalid tenant request', parseZodErrors(parsed.error), requestId);
@@ -278,7 +278,7 @@ tenantsRouter.patch('/:id', requireRoleMiddleware('super_admin'), async (c): Pro
   const requestId = c.get('requestId');
   const tenantId = c.req.param('id');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = updateTenantSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Invalid update request', parseZodErrors(parsed.error), requestId);
@@ -321,7 +321,7 @@ tenantsRouter.patch(
     const requestId = c.get('requestId');
     const tenantId = c.req.param('id');
 
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
     const parsed = updateStatusSchema.safeParse(body);
     if (!parsed.success) {
       throw new ValidationError('Invalid status request', parseZodErrors(parsed.error), requestId);

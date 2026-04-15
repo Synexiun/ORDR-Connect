@@ -146,7 +146,7 @@ searchRouter.post('/', rateLimit('read'), async (c): Promise<Response> => {
 
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
 
   const parsed = searchBodySchema.safeParse(body);
   if (!parsed.success) {
@@ -230,7 +230,7 @@ searchRouter.post('/faceted', rateLimit('read'), async (c): Promise<Response> =>
 
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
 
   const parsed = facetedSearchBodySchema.safeParse(body);
   if (!parsed.success) {
@@ -276,7 +276,7 @@ searchRouter.post(
 
     const ctx = ensureTenantContext(c);
     const requestId = c.get('requestId');
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
 
     const parsed = indexEntityBodySchema.safeParse(body);
     if (!parsed.success) {

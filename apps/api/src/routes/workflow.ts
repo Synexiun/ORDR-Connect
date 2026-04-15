@@ -112,7 +112,7 @@ workflowRouter.post('/instances', rateLimit('write'), async (c): Promise<Respons
 
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
 
   const parsed = startInstanceSchema.safeParse(body);
   if (!parsed.success) {
@@ -254,7 +254,7 @@ workflowRouter.delete('/instances/:id', rateLimit('write'), async (c): Promise<R
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
   const instanceId = c.req.param('id');
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
 
   const parsed = cancelInstanceSchema.safeParse(body);
   if (!parsed.success) {

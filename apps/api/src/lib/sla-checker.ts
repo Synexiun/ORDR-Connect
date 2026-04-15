@@ -65,11 +65,24 @@ export class SlaChecker {
     if (this.timer !== null) return;
     this.timer = setInterval(() => {
       void this.check().catch((err: unknown) => {
-        console.error('[ORDR:SLA] Check error:', err);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'sla-checker',
+            event: 'check_failure',
+            error: err instanceof Error ? err.message : 'Unknown error',
+          }),
+        );
       });
     }, intervalMs);
     console.warn(
-      `[ORDR:SLA] Checker started — threshold=${String(BREACH_THRESHOLD_HOURS)}h, interval=${String(intervalMs / 60_000)}min`,
+      JSON.stringify({
+        level: 'warn',
+        component: 'sla-checker',
+        event: 'checker_started',
+        thresholdHours: BREACH_THRESHOLD_HOURS,
+        intervalMin: intervalMs / 60_000,
+      }),
     );
   }
 
@@ -78,7 +91,9 @@ export class SlaChecker {
     if (this.timer !== null) {
       clearInterval(this.timer);
       this.timer = null;
-      console.warn('[ORDR:SLA] Checker stopped');
+      console.warn(
+        JSON.stringify({ level: 'warn', component: 'sla-checker', event: 'checker_stopped' }),
+      );
     }
   }
 
@@ -92,7 +107,14 @@ export class SlaChecker {
     if (breaches.length === 0) return 0;
 
     await this.insertNotifications(breaches);
-    console.warn(`[ORDR:SLA] ${String(breaches.length)} breach(es) detected and notified`);
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'sla-checker',
+        event: 'breaches_detected',
+        count: breaches.length,
+      }),
+    );
     return breaches.length;
   }
 

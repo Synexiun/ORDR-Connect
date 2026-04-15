@@ -175,7 +175,7 @@ billingRouter.post('/', rateLimit('write'), async (c): Promise<Response> => {
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = createSubscriptionSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -237,7 +237,7 @@ billingRouter.put('/upgrade', rateLimit('write'), async (c): Promise<Response> =
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = upgradePlanSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -295,7 +295,7 @@ billingRouter.put('/downgrade', rateLimit('write'), async (c): Promise<Response>
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = downgradePlanSchema.safeParse(body);
 
   if (!parsed.success) {

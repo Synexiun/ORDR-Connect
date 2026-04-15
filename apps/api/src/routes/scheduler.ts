@@ -109,7 +109,7 @@ schedulerRouter.post(
 
     const ctx = ensureTenantContext(c);
     const requestId = c.get('requestId');
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
 
     const parsed = scheduleOnceBodySchema.safeParse(body);
     if (!parsed.success) {

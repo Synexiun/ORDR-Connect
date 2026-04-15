@@ -207,7 +207,7 @@ dsrRouter.post('/', rateLimit('bulk'), requirePermissionMiddleware('dsr', 'write
   const ctx = ensureTenantContext(c);
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = createDsrSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('Invalid request body', parseZodErrors(parsed.error), requestId);
@@ -393,7 +393,7 @@ dsrRouter.post('/:id/reject', requirePermissionMiddleware('dsr', 'write'), async
   const dsrId = c.req.param('id');
   const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = rejectDsrSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError('reason is required', parseZodErrors(parsed.error), requestId);

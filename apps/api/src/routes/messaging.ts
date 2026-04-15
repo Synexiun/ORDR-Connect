@@ -199,7 +199,7 @@ messagingRouter.post('/channels', requireAuth(), rateLimit('write'), async (c) =
       },
       401,
     );
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = createChannelSchema.safeParse(body);
   if (!parsed.success)
     return c.json(
@@ -291,7 +291,7 @@ messagingRouter.post('/channels/:id/members', requireAuth(), rateLimit('write'),
       },
       401,
     );
-  const body = (await c.req.json()) as unknown as { userId?: string };
+  const body = ((await c.req.json().catch(() => null)) ?? {}) as { userId?: string };
   if (typeof body.userId !== 'string')
     return c.json(
       {
@@ -407,7 +407,7 @@ messagingRouter.post('/channels/:id/messages', requireAuth(), rateLimit('write')
       },
       401,
     );
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = sendMessageSchema.safeParse(body);
   if (!parsed.success)
     return c.json(
@@ -475,7 +475,7 @@ messagingRouter.patch(
         },
         401,
       );
-    const body: unknown = await c.req.json();
+    const body: unknown = await c.req.json().catch(() => null);
     const parsed = editMessageSchema.safeParse(body);
     if (!parsed.success)
       return c.json(
@@ -593,7 +593,7 @@ messagingRouter.post(
         },
         401,
       );
-    const body = (await c.req.json()) as unknown as { emoji?: string };
+    const body = ((await c.req.json().catch(() => null)) ?? {}) as { emoji?: string };
     if (typeof body.emoji !== 'string' || body.emoji.length === 0 || body.emoji.length > 10) {
       return c.json(
         {
@@ -669,7 +669,7 @@ messagingRouter.post('/channels/:id/read', requireAuth(), async (c) => {
       },
       401,
     );
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = markReadSchema.safeParse(body);
   if (!parsed.success)
     return c.json(
@@ -715,7 +715,10 @@ messagingRouter.post('/channels/:id/typing', requireAuth(), async (c) => {
       },
       401,
     );
-  const body = (await c.req.json()) as unknown as { typing?: boolean; userName?: string };
+  const body = ((await c.req.json().catch(() => null)) ?? {}) as {
+    typing?: boolean;
+    userName?: string;
+  };
   if (body.typing === true) {
     presenceManager.startTyping(c.req.param('id'), ctx.userId, body.userName ?? ctx.userId);
     publishEvent({
@@ -774,7 +777,7 @@ messagingRouter.put('/presence', requireAuth(), async (c) => {
       },
       401,
     );
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = setStatusSchema.safeParse(body);
   if (!parsed.success)
     return c.json(

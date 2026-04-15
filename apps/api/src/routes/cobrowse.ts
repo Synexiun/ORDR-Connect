@@ -164,7 +164,7 @@ cobrowseRouter.post('/sessions', requireAuth(), rateLimit('write'), async (c) =>
     );
   }
 
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = createSessionSchema.safeParse(body);
   if (!parsed.success)
     return c.json(
@@ -604,7 +604,7 @@ cobrowseRouter.post('/sessions/:id/signal', requireAuth(), rateLimit('write'), a
       400,
     );
   }
-  const body: unknown = await c.req.json();
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = signalSchema.safeParse(body);
   if (!parsed.success)
     return c.json(
