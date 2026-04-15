@@ -312,7 +312,7 @@ ticketsRouter.post('/', rateLimit('write'), async (c): Promise<Response> => {
 // ── POST /:id/messages — add message to thread ───────────────────
 
 ticketsRouter.post('/:id/messages', rateLimit('write'), async (c): Promise<Response> => {
-  const { db } = getDeps();
+  const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -367,6 +367,19 @@ ticketsRouter.post('/:id/messages', rateLimit('write'), async (c): Promise<Respo
       updatedAt: new Date(),
     })
     .where(eq(schema.tickets.id, ticketId));
+
+  // WORM audit — ticket message added (SOC2 CC9.1)
+  await auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'ticket.message_added',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'ticket_message',
+    resourceId: inserted.id,
+    action: 'create',
+    details: { ticketId },
+    timestamp: new Date(),
+  });
 
   return c.json(
     {

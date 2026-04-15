@@ -486,7 +486,16 @@ messagesRouter.post(
     await deps.eventProducer
       .publish(TOPICS.INTERACTION_EVENTS, event)
       .catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'messages',
+            event: 'kafka_publish_failure',
+            topic: 'interaction_events',
+            action: 'interaction.logged',
+            error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+          }),
+        );
       });
 
     // SECURITY: Return metadata only — NO content

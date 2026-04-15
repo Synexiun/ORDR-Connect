@@ -195,7 +195,16 @@ webhooksRouter.post('/twilio', async (c) => {
       await deps.eventProducer
         .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
         .catch((publishErr: unknown) => {
-          console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'webhooks',
+              event: 'kafka_publish_failure',
+              topic: 'interaction_events',
+              action: 'interaction.logged',
+              error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+            }),
+          );
         });
     }
 
@@ -235,7 +244,16 @@ webhooksRouter.post('/twilio', async (c) => {
       await deps.eventProducer
         .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
         .catch((publishErr: unknown) => {
-          console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'webhooks',
+              event: 'kafka_publish_failure',
+              topic: 'interaction_events',
+              action: 'interaction.logged',
+              error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+            }),
+          );
         });
     }
   }
@@ -325,7 +343,16 @@ webhooksRouter.post('/sendgrid', async (c) => {
       await deps.eventProducer
         .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
         .catch((publishErr: unknown) => {
-          console.error('[ORDR:API] Failed to publish interaction.logged event:', publishErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'webhooks',
+              event: 'kafka_publish_failure',
+              topic: 'interaction_events',
+              action: 'interaction.logged',
+              error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+            }),
+          );
         });
     }
   }

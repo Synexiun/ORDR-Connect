@@ -159,7 +159,16 @@ voiceWebhooksRouter.post('/status', async (c) => {
     await deps.eventProducer
       .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
       .catch((publishErr: unknown) => {
-        console.error('[ORDR:API] Failed to publish voice interaction.logged event:', publishErr);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'webhooks-voice',
+            event: 'kafka_publish_failure',
+            topic: 'interaction_events',
+            action: 'voice.interaction.logged',
+            error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+          }),
+        );
       });
   }
 
@@ -329,7 +338,16 @@ voiceWebhooksRouter.post('/gather', async (c) => {
   await deps.eventProducer
     .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
     .catch((publishErr: unknown) => {
-      console.error('[ORDR:API] Failed to publish gather interaction.logged event:', publishErr);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'webhooks-voice',
+          event: 'kafka_publish_failure',
+          topic: 'interaction_events',
+          action: 'gather.interaction.logged',
+          error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+        }),
+      );
     });
 
   // Return empty TwiML — downstream processor handles the IVR flow

@@ -731,7 +731,16 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
   await deps.eventProducer
     .publish(TOPICS.INTEGRATION_EVENTS, envelope)
     .catch((publishErr: unknown) => {
-      console.error('[ORDR:API] Failed to publish integration event:', publishErr);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'integrations',
+          event: 'kafka_publish_failure',
+          topic: 'integration_events',
+          action: 'integration.synced',
+          error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+        }),
+      );
     });
 
   // 7. Mark log as processed

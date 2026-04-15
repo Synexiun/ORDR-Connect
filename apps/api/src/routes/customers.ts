@@ -344,7 +344,16 @@ customersRouter.post(
 
     await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
       // Event publish failure should not fail the request
-      console.error('[ORDR:API] Failed to publish customer.created event:', err);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'customers',
+          event: 'kafka_publish_failure',
+          topic: 'customer_events',
+          action: 'customer.created',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
     });
 
     // Return decrypted version
@@ -442,7 +451,16 @@ customersRouter.patch(
     );
 
     await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
-      console.error('[ORDR:API] Failed to publish customer.updated event:', err);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'customers',
+          event: 'kafka_publish_failure',
+          topic: 'customer_events',
+          action: 'customer.updated',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
     });
 
     // Return decrypted version
@@ -506,7 +524,16 @@ customersRouter.delete(
     );
 
     await deps.eventProducer.publish(TOPICS.CUSTOMER_EVENTS, event).catch((err: unknown) => {
-      console.error('[ORDR:API] Failed to publish customer.deleted event:', err);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'customers',
+          event: 'kafka_publish_failure',
+          topic: 'customer_events',
+          action: 'customer.deleted',
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }),
+      );
     });
 
     return c.body(null, 204);

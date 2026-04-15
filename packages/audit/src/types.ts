@@ -68,7 +68,8 @@ export type AuditEventType =
   | 'integration.contact_deleted'
   // Tickets (Phase 80)
   | 'ticket.created'
-  | 'ticket.updated';
+  | 'ticket.updated'
+  | 'ticket.message_added';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

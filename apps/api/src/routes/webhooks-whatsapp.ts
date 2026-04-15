@@ -221,7 +221,16 @@ whatsappWebhooksRouter.post('/', async (c) => {
       await deps.eventProducer
         .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
         .catch((publishErr: unknown) => {
-          console.error('[ORDR:API] Failed to publish whatsapp status event:', publishErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'webhooks-whatsapp',
+              event: 'kafka_publish_failure',
+              topic: 'interaction_events',
+              action: 'whatsapp.status',
+              error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+            }),
+          );
         });
     }
   }

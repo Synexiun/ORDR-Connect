@@ -331,7 +331,16 @@ agentsRouter.post(
     );
 
     await deps.eventProducer.publish(TOPICS.AGENT_EVENTS, event).catch((publishErr: unknown) => {
-      console.error('[ORDR:API] Failed to publish agent.triggered event:', publishErr);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'agents',
+          event: 'kafka_publish_failure',
+          topic: 'agent_events',
+          action: 'agent.triggered',
+          error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+        }),
+      );
     });
 
     // Broadcast SSE event so connected dashboard clients update immediately
@@ -492,7 +501,16 @@ agentsRouter.post(
     );
 
     await deps.eventProducer.publish(TOPICS.AGENT_EVENTS, event).catch((publishErr: unknown) => {
-      console.error('[ORDR:API] Failed to publish agent.killed event:', publishErr);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'agents',
+          event: 'kafka_publish_failure',
+          topic: 'agent_events',
+          action: 'agent.killed',
+          error: publishErr instanceof Error ? publishErr.message : 'Unknown error',
+        }),
+      );
     });
 
     // Broadcast SSE event — dashboard active-agent count updates immediately
