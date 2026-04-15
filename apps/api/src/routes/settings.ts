@@ -43,6 +43,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { AuthorizationError, ValidationError, NotFoundError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Typed settings sub-tree stored in tenants.settings ──────────
 
@@ -300,6 +301,7 @@ settingsRouter.get('/tenant', async (c): Promise<Response> => {
 settingsRouter.patch(
   '/tenant',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
@@ -409,67 +411,72 @@ settingsRouter.get('/sso', async (c): Promise<Response> => {
 
 // ── POST /sso ─────────────────────────────────────────────────────
 
-settingsRouter.post('/sso', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
-  const { db, auditLogger } = getDeps();
-  const requestId = c.get('requestId');
-  const ctx = c.get('tenantContext');
-  if (!ctx) throw new AuthorizationError('Authentication required');
+settingsRouter.post(
+  '/sso',
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const { db, auditLogger } = getDeps();
+    const requestId = c.get('requestId');
+    const ctx = c.get('tenantContext');
+    if (!ctx) throw new AuthorizationError('Authentication required');
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = createSsoSchema.safeParse(body);
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path.join('.');
-      const existing = fieldErrors[field];
-      if (existing) existing.push(issue.message);
-      else fieldErrors[field] = [issue.message];
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = createSsoSchema.safeParse(body);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path.join('.');
+        const existing = fieldErrors[field];
+        if (existing) existing.push(issue.message);
+        else fieldErrors[field] = [issue.message];
+      }
+      throw new ValidationError('Invalid SSO connection data', fieldErrors, requestId);
     }
-    throw new ValidationError('Invalid SSO connection data', fieldErrors, requestId);
-  }
 
-  const inserted = await db
-    .insert(schema.ssoConnections)
-    .values({
-      tenantId: ctx.tenantId,
-      name: `${parsed.data.provider} (${parsed.data.domain})`,
-      type: parsed.data.protocol,
-      provider: parsed.data.provider,
-      status: 'validating',
-      metadata: { domain: parsed.data.domain },
-    })
-    .returning({ id: schema.ssoConnections.id });
-
-  const row = inserted[0];
-  if (row === undefined) throw new Error('[ORDR:API] SSO insert returned no rows');
-
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'sso.connection.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'sso_connection',
-    resourceId: row.id,
-    action: 'create',
-    details: { provider: parsed.data.provider, protocol: parsed.data.protocol },
-    timestamp: new Date(),
-  });
-
-  return c.json(
-    {
-      success: true as const,
-      data: {
-        id: row.id,
+    const inserted = await db
+      .insert(schema.ssoConnections)
+      .values({
+        tenantId: ctx.tenantId,
+        name: `${parsed.data.provider} (${parsed.data.domain})`,
+        type: parsed.data.protocol,
         provider: parsed.data.provider,
-        protocol: parsed.data.protocol,
-        status: 'pending' as const,
-        domain: parsed.data.domain,
+        status: 'validating',
+        metadata: { domain: parsed.data.domain },
+      })
+      .returning({ id: schema.ssoConnections.id });
+
+    const row = inserted[0];
+    if (row === undefined) throw new Error('[ORDR:API] SSO insert returned no rows');
+
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'sso.connection.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'sso_connection',
+      resourceId: row.id,
+      action: 'create',
+      details: { provider: parsed.data.provider, protocol: parsed.data.protocol },
+      timestamp: new Date(),
+    });
+
+    return c.json(
+      {
+        success: true as const,
+        data: {
+          id: row.id,
+          provider: parsed.data.provider,
+          protocol: parsed.data.protocol,
+          status: 'pending' as const,
+          domain: parsed.data.domain,
+        },
       },
-    },
-    201,
-  );
-});
+      201,
+    );
+  },
+);
 
 // ── GET /roles ────────────────────────────────────────────────────
 
@@ -522,6 +529,7 @@ settingsRouter.get('/roles', async (c): Promise<Response> => {
 settingsRouter.post(
   '/roles',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db } = getDeps();
     const requestId = c.get('requestId');
@@ -599,6 +607,7 @@ settingsRouter.get('/agents', async (c): Promise<Response> => {
 settingsRouter.patch(
   '/agents',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
@@ -668,6 +677,7 @@ settingsRouter.get('/channels', async (c): Promise<Response> => {
 settingsRouter.patch(
   '/channels/reorder',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db } = getDeps();
     const requestId = c.get('requestId');
@@ -711,6 +721,7 @@ settingsRouter.patch(
 settingsRouter.patch(
   '/channels/:channel',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db } = getDeps();
     const requestId = c.get('requestId');
@@ -763,6 +774,7 @@ settingsRouter.get('/notifications', async (c): Promise<Response> => {
 settingsRouter.patch(
   '/notifications/:key',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db } = getDeps();
     const requestId = c.get('requestId');
@@ -830,6 +842,7 @@ settingsRouter.get('/security', async (c): Promise<Response> => {
 settingsRouter.patch(
   '/security',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');

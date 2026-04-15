@@ -935,14 +935,26 @@ integrationsRouter.delete(
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
-    ensureTenantContext(c);
+    const ctx = ensureTenantContext(c);
     const provider = c.req.param('provider');
     const contactId = c.req.param('id');
     const adapter = resolveAdapter(provider, deps.adapters);
 
     await adapter.deleteContact(contactId);
 
-    return c.json({ success: true as const });
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'integration.contact_deleted',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'integration_contact',
+      resourceId: contactId,
+      action: 'delete',
+      details: { provider },
+      timestamp: new Date(),
+    });
+
+    return c.body(null, 204);
   },
 );
 

@@ -92,7 +92,7 @@ profileRouter.use('*', requireAuth());
 
 // ── GET / — current user profile ─────────────────────────────────
 
-profileRouter.get('/', async (c): Promise<Response> => {
+profileRouter.get('/', rateLimit('read'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -132,7 +132,7 @@ profileRouter.get('/', async (c): Promise<Response> => {
 
 // ── PATCH / — update profile ──────────────────────────────────────
 
-profileRouter.patch('/', async (c): Promise<Response> => {
+profileRouter.patch('/', rateLimit('write'), async (c): Promise<Response> => {
   const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -297,7 +297,7 @@ profileRouter.post('/mfa', rateLimit('write'), async (c): Promise<Response> => {
 
 // ── GET /sessions ─────────────────────────────────────────────────
 
-profileRouter.get('/sessions', async (c): Promise<Response> => {
+profileRouter.get('/sessions', rateLimit('read'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -381,7 +381,7 @@ profileRouter.delete('/sessions/:id', rateLimit('write'), async (c): Promise<Res
 
 // ── GET /tokens ───────────────────────────────────────────────────
 
-profileRouter.get('/tokens', async (c): Promise<Response> => {
+profileRouter.get('/tokens', rateLimit('read'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');

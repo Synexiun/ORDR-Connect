@@ -64,7 +64,8 @@ export type AuditEventType =
   | 'integration.conflict_detected'
   | 'integration.webhook_received'
   | 'integration.webhook_invalid_signature'
-  | 'integration.outbound_enqueued';
+  | 'integration.outbound_enqueued'
+  | 'integration.contact_deleted';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';
