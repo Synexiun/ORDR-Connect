@@ -339,7 +339,7 @@ profileRouter.get('/sessions', async (c): Promise<Response> => {
 
 // ── DELETE /sessions/:id ──────────────────────────────────────────
 
-profileRouter.delete('/sessions/:id', async (c): Promise<Response> => {
+profileRouter.delete('/sessions/:id', rateLimit('write'), async (c): Promise<Response> => {
   const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -499,7 +499,7 @@ profileRouter.post('/tokens', rateLimit('write'), async (c): Promise<Response> =
 
 // ── DELETE /tokens/:id — revoke ───────────────────────────────────
 
-profileRouter.delete('/tokens/:id', async (c): Promise<Response> => {
+profileRouter.delete('/tokens/:id', rateLimit('write'), async (c): Promise<Response> => {
   const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
