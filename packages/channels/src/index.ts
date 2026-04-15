@@ -49,6 +49,8 @@ export { MessageStateMachine, InvalidTransitionError } from './state-machine.js'
 // ─── Consent ─────────────────────────────────────────────────────
 export { ConsentManager, OPT_OUT_KEYWORDS, OPT_IN_KEYWORDS } from './consent.js';
 
+export { DrizzleConsentStore } from './drizzle-consent-store.js';
+
 // ─── SMS Provider ────────────────────────────────────────────────
 export type {
   TwilioClient,

@@ -55,9 +55,9 @@ import { FieldEncryptor } from '@ordr/crypto';
 import {
   loadKeyPair,
   OrganizationManager,
-  InMemoryOrgStore,
+  DrizzleOrgStore,
   InMemorySSOClient,
-  InMemorySSOConnectionStore,
+  DrizzleSSOConnectionStore,
   SSOManager,
   RedisRateLimiter,
   InMemoryRateLimiter,
@@ -82,8 +82,9 @@ import {
   EmailProvider,
   createRealTwilioClient,
   createRealSendGridClient,
+  DrizzleConsentStore,
 } from '@ordr/channels';
-import type { ConsentStore, TwilioClient, SendGridClient } from '@ordr/channels';
+import type { TwilioClient, SendGridClient } from '@ordr/channels';
 import { LLMClient, PromptRegistry } from '@ordr/ai';
 import {
   AnalyticsQueries,
@@ -2034,13 +2035,17 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 8.1 Organizations ──────────────────────────────────────────────────
+  // DrizzleOrgStore persists org hierarchy to PostgreSQL (survives pod restarts).
   configureOrgRoutes({
-    orgManager: new OrganizationManager(new InMemoryOrgStore()),
+    orgManager: new OrganizationManager(new DrizzleOrgStore(db)),
     auditLogger,
   });
-  console.warn('[ORDR:API] Organization routes configured');
+  console.warn('[ORDR:API] Organization routes configured (DrizzleOrgStore)');
 
   // ── 8.2 SSO ────────────────────────────────────────────────────────────
+  // DrizzleSSOConnectionStore persists SSO connections to PostgreSQL.
+  // InMemorySSOClient remains as the WorkOS API stub when credentials are not set
+  // (same pattern as Twilio/SendGrid stubs — appropriate for dev/test).
   {
     const ssoStateKey =
       process.env['WORKOS_SSO_STATE_KEY'] ?? fieldEncryptionKey.toString('hex').slice(0, 32);
@@ -2052,12 +2057,12 @@ async function bootstrap(): Promise<void> {
           redirectUri: `${process.env['API_BASE_URL'] ?? 'http://localhost:3000'}/api/v1/sso/callback`,
         },
         new InMemorySSOClient(),
-        new InMemorySSOConnectionStore(),
+        new DrizzleSSOConnectionStore(db),
         ssoStateKey,
       ),
       auditLogger,
     });
-    console.warn('[ORDR:API] SSO routes configured');
+    console.warn('[ORDR:API] SSO routes configured (DrizzleSSOConnectionStore)');
   }
 
   // ── 8.3 Messages ───────────────────────────────────────────────────────
@@ -2098,21 +2103,14 @@ async function bootstrap(): Promise<void> {
       );
     }
 
-    const inMemoryConsentStore: ConsentStore = {
-      getConsent: async () => undefined,
-      saveConsent: async () => {
-        /* no-op */
-      },
-      revokeConsent: async () => {
-        /* no-op */
-      },
-    };
+    // 8.3 — Consent store: Drizzle-backed WORM persistence (GDPR Art.7 / HIPAA §164.530)
+    const consentStore = new DrizzleConsentStore(db);
 
     configureMessageRoutes({
       auditLogger,
       eventProducer: new EventProducer(kafkaProducer, undefined, confluentRegistry),
       consentManager: new ConsentManager(),
-      consentStore: inMemoryConsentStore,
+      consentStore,
       complianceGate: new ComplianceGate(complianceEngine),
       smsProvider: new SmsProvider({
         client: twilioClient,

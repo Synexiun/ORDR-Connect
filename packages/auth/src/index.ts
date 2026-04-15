@@ -121,6 +121,10 @@ export type { Organization, OrgTree, CreateOrgInput, OrgStore } from './organiza
 
 export { OrganizationManager, InMemoryOrgStore } from './organization.js';
 
+export { DrizzleOrgStore } from './drizzle-org-store.js';
+
+export { DrizzleSSOConnectionStore } from './drizzle-sso-connection-store.js';
+
 // ─── Custom Roles ─────────────────────────────────────────────────
 export type {
   CustomRole,
