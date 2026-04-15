@@ -1061,7 +1061,19 @@ integrationsRouter.get('/:provider/activities', async (c): Promise<Response> => 
   const provider = c.req.param('provider');
   const adapter = resolveAdapter(provider, deps.adapters);
   const creds = c.get('crmCredentials');
-  if (!creds) return c.json({ error: 'credentials_missing' }, 500 as never);
+  if (!creds) {
+    return c.json(
+      {
+        success: false as const,
+        error: {
+          code: 'CREDENTIALS_MISSING' as const,
+          message: 'Integration credentials not configured',
+          correlationId: requestId,
+        },
+      },
+      400,
+    );
+  }
 
   const parsed = listActivitiesQuerySchema.safeParse({
     limit: c.req.query('limit'),
@@ -1072,11 +1084,36 @@ integrationsRouter.get('/:provider/activities', async (c): Promise<Response> => 
     throw new ValidationError('Invalid query parameters', parseZodErrors(parsed.error), requestId);
   }
 
-  const result = await adapter.fetchActivities(
-    creds,
-    parsed.data.customerId !== undefined ? { externalIds: [parsed.data.customerId] } : {},
-    { limit: parsed.data.limit, offset: parsed.data.offset },
-  );
+  let result: Awaited<ReturnType<typeof adapter.fetchActivities>>;
+  try {
+    result = await adapter.fetchActivities(
+      creds,
+      parsed.data.customerId !== undefined ? { externalIds: [parsed.data.customerId] } : {},
+      { limit: parsed.data.limit, offset: parsed.data.offset },
+    );
+  } catch (err: unknown) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'integrations',
+        event: 'crm_fetch_failure',
+        provider,
+        action: 'fetchActivities',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      }),
+    );
+    return c.json(
+      {
+        success: false as const,
+        error: {
+          code: 'INTEGRATION_ERROR' as const,
+          message: 'Failed to fetch activities from provider',
+          correlationId: requestId,
+        },
+      },
+      502,
+    );
+  }
 
   // ctx required for future tenant-scoped activity filtering
   void ctx;
@@ -1099,7 +1136,19 @@ integrationsRouter.post('/:provider/activities', async (c): Promise<Response> =>
   const provider = c.req.param('provider');
   const adapter = resolveAdapter(provider, deps.adapters);
   const creds = c.get('crmCredentials');
-  if (!creds) return c.json({ error: 'credentials_missing' }, 500 as never);
+  if (!creds) {
+    return c.json(
+      {
+        success: false as const,
+        error: {
+          code: 'CREDENTIALS_MISSING' as const,
+          message: 'Integration credentials not configured',
+          correlationId: requestId,
+        },
+      },
+      400,
+    );
+  }
 
   const body: unknown = await c.req.json();
   const parsed = pushActivityBodySchema.safeParse(body);
@@ -1108,18 +1157,43 @@ integrationsRouter.post('/:provider/activities', async (c): Promise<Response> =>
   }
 
   const { subject, type, description, date } = parsed.data;
-  const externalId = await adapter.pushActivity(creds, {
-    externalId: '',
-    type,
-    subject,
-    description: description ?? null,
-    contactExternalId: parsed.data.customerId,
-    dealExternalId: null,
-    dueDate: date !== undefined ? new Date(date) : null,
-    completedAt: null,
-    lastModified: new Date(),
-    metadata: {},
-  });
+  let externalId: string;
+  try {
+    externalId = await adapter.pushActivity(creds, {
+      externalId: '',
+      type,
+      subject,
+      description: description ?? null,
+      contactExternalId: parsed.data.customerId,
+      dealExternalId: null,
+      dueDate: date !== undefined ? new Date(date) : null,
+      completedAt: null,
+      lastModified: new Date(),
+      metadata: {},
+    });
+  } catch (err: unknown) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'integrations',
+        event: 'crm_push_failure',
+        provider,
+        action: 'pushActivity',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      }),
+    );
+    return c.json(
+      {
+        success: false as const,
+        error: {
+          code: 'INTEGRATION_ERROR' as const,
+          message: 'Failed to push activity to provider',
+          correlationId: requestId,
+        },
+      },
+      502,
+    );
+  }
 
   await deps.auditLogger.log({
     tenantId: ctx.tenantId,

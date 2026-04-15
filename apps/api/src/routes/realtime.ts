@@ -167,12 +167,35 @@ realtimeRouter.post('/publish', async (c): Promise<Response> => {
 
   let delivered: number;
 
-  if (userIds !== undefined && userIds.length > 0) {
-    // SOC2 CC6.1 — Targeted delivery to specific users within the tenant
-    delivered = await deps.publisher.notifyUsers(ctx.tenantId, userIds, type, data);
-  } else {
-    // Broadcast to all connections in the tenant
-    delivered = await deps.publisher.broadcastToTenant(ctx.tenantId, type, data);
+  try {
+    if (userIds !== undefined && userIds.length > 0) {
+      // SOC2 CC6.1 — Targeted delivery to specific users within the tenant
+      delivered = await deps.publisher.notifyUsers(ctx.tenantId, userIds, type, data);
+    } else {
+      // Broadcast to all connections in the tenant
+      delivered = await deps.publisher.broadcastToTenant(ctx.tenantId, type, data);
+    }
+  } catch (err: unknown) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'realtime',
+        event: 'publish_failure',
+        type,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      }),
+    );
+    return c.json(
+      {
+        success: false as const,
+        error: {
+          code: 'PUBLISH_FAILED' as const,
+          message: 'Failed to deliver realtime event',
+          correlationId: requestId,
+        },
+      },
+      502,
+    );
   }
 
   return c.json({
