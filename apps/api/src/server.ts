@@ -197,6 +197,7 @@ import type postgres from 'postgres';
 const TRACKED_SECRET_KEYS = [
   'JWT_PRIVATE_KEY',
   'ENCRYPTION_MASTER_KEY',
+  'FIELD_ENCRYPTION_KEY',
   'STRIPE_SECRET_KEY',
   'TWILIO_AUTH_TOKEN',
   'SENDGRID_API_KEY',
@@ -464,9 +465,23 @@ async function bootstrap(): Promise<void> {
   // Uses RealStripeClient when STRIPE_SECRET_KEY is set; falls back to
   // MockStripeClient for development / environments without Stripe configured.
   // Rule 5: STRIPE_SECRET_KEY must come from Vault — NEVER hardcoded.
+  // Rule 1 / Rule 5: FIELD_ENCRYPTION_KEY must come from Vault in production.
+  // Fail fast if unset when NODE_ENV=production; dev fallback is intentionally
+  // weak to prevent accidental use of dev-encrypted data in prod.
+  const fieldEncryptionKeyEnv = process.env['FIELD_ENCRYPTION_KEY'];
+  if (config.nodeEnv === 'production' && !fieldEncryptionKeyEnv) {
+    throw new Error(
+      'FIELD_ENCRYPTION_KEY is required in production — set via Vault or environment',
+    );
+  }
   const fieldEncryptionKey = Buffer.from(
-    process.env['FIELD_ENCRYPTION_KEY'] ?? 'dev-only-key-replace-in-prod-!!!',
+    fieldEncryptionKeyEnv ?? 'dev-only-key-replace-in-prod-!!!',
   );
+  if (!fieldEncryptionKeyEnv) {
+    console.warn(
+      '[ORDR:API] Using dev-only FIELD_ENCRYPTION_KEY — set FIELD_ENCRYPTION_KEY for production',
+    );
+  }
   const stripeSecretKey = process.env['STRIPE_SECRET_KEY'];
   const stripeClient =
     stripeSecretKey !== undefined && stripeSecretKey !== ''

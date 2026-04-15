@@ -44,6 +44,7 @@ import {
 } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ profileRouter.patch('/', async (c): Promise<Response> => {
 
 // ── POST /change-password ─────────────────────────────────────────
 
-profileRouter.post('/change-password', async (c): Promise<Response> => {
+profileRouter.post('/change-password', rateLimit('write'), async (c): Promise<Response> => {
   const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -251,7 +252,7 @@ profileRouter.post('/change-password', async (c): Promise<Response> => {
 
 // ── POST /mfa — toggle MFA ────────────────────────────────────────
 
-profileRouter.post('/mfa', async (c): Promise<Response> => {
+profileRouter.post('/mfa', rateLimit('write'), async (c): Promise<Response> => {
   const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -418,7 +419,7 @@ profileRouter.get('/tokens', async (c): Promise<Response> => {
 
 // ── POST /tokens — generate API key ──────────────────────────────
 
-profileRouter.post('/tokens', async (c): Promise<Response> => {
+profileRouter.post('/tokens', rateLimit('write'), async (c): Promise<Response> => {
   const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
