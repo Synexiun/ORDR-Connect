@@ -89,11 +89,25 @@ export class SecurityEventBus {
         const result = handler(event);
         if (result instanceof Promise) {
           result.catch((handlerErr: unknown) => {
-            console.error('[ORDR:SECURITY] SecurityEventBus handler error:', handlerErr);
+            console.error(
+              JSON.stringify({
+                level: 'error',
+                component: 'security-event-bus',
+                event: 'handler_error',
+                error: handlerErr instanceof Error ? handlerErr.message : String(handlerErr),
+              }),
+            );
           });
         }
       } catch (handlerErr: unknown) {
-        console.error('[ORDR:SECURITY] SecurityEventBus handler threw:', handlerErr);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'security-event-bus',
+            event: 'handler_threw',
+            error: handlerErr instanceof Error ? handlerErr.message : String(handlerErr),
+          }),
+        );
       }
     }
 

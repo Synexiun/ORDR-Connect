@@ -70,8 +70,13 @@ class SecretStoreImpl {
         }
       } catch (err) {
         console.error(
-          `[ORDR:VAULT] Poll error for ${key}:`,
-          err instanceof Error ? err.message : 'unknown',
+          JSON.stringify({
+            level: 'error',
+            component: 'vault-secret-store',
+            event: 'poll_error',
+            key,
+            error: err instanceof Error ? err.message : 'unknown',
+          }),
         );
       }
     }

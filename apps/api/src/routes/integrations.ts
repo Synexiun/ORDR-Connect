@@ -685,7 +685,13 @@ integrationsRouter.post('/:provider/webhook', async (c): Promise<Response> => {
       // observability pipeline for SIEM ingestion.
       // HIPAA §164.312(e): integrity control record = webhook_log row id: ${webhookLogId}
       console.error(
-        `[ORDR:SECURITY:WEBHOOK] Invalid signature unknown-tenant: provider=${provider} webhookLogId=${webhookLogId}`,
+        JSON.stringify({
+          level: 'error',
+          component: 'integrations',
+          event: 'webhook_signature_invalid',
+          provider,
+          webhookLogId,
+        }),
       );
     }
     return c.json({ received: true }, 200);

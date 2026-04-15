@@ -72,7 +72,9 @@ export class VaultClient {
         body: JSON.stringify({}),
       });
       if (!res.ok) {
-        console.warn('[ORDR:VAULT] Token renewal failed — re-authenticating');
+        console.warn(
+          JSON.stringify({ level: 'warn', component: 'vault', event: 'token_renewal_failed' }),
+        );
         await this.authenticate();
         return;
       }
@@ -82,8 +84,12 @@ export class VaultClient {
       this.renewTimer = setTimeout(() => void this.renewToken(), ttlMs * 0.8);
     } catch (err) {
       console.error(
-        '[ORDR:VAULT] Token renewal error:',
-        err instanceof Error ? err.message : 'unknown',
+        JSON.stringify({
+          level: 'error',
+          component: 'vault',
+          event: 'token_renewal_error',
+          error: err instanceof Error ? err.message : 'unknown',
+        }),
       );
       // Best-effort re-auth — if this also fails, token expires and callers will throw
       await this.authenticate().catch(() => undefined);
@@ -172,7 +178,15 @@ export class VaultClient {
     if (!res.ok) {
       throw new Error(`[ORDR:VAULT] softDeleteVersion ${path}@${version} failed: ${res.status}`);
     }
-    console.warn(`[ORDR:VAULT] Soft-deleted ${path} version ${version} (data retained for audit)`);
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'vault',
+        event: 'version_soft_deleted',
+        path,
+        version,
+      }),
+    );
   }
 
   /** Stop the token renewal timer. Call on process shutdown. */

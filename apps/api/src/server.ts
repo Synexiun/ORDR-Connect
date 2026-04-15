@@ -502,7 +502,7 @@ async function bootstrap(): Promise<void> {
   );
 
   // ── 4.6. Notifications route ───────────────────────────────────────────
-  configureNotificationsRoute(db);
+  configureNotificationsRoute(db, auditLogger);
   console.warn('[ORDR:API] Notifications route configured');
 
   // ── 4.6.1. Audit logs route ────────────────────────────────────────────
@@ -2419,7 +2419,7 @@ async function bootstrap(): Promise<void> {
     ? new DrizzleSchedulerStore(schedulerDb)
     : new InMemorySchedulerStore();
   const jobScheduler = new JobScheduler(schedulerStore, schedulerAuditLog, schedulerAlert);
-  configureSchedulerRoutes({ scheduler: jobScheduler, store: schedulerStore });
+  configureSchedulerRoutes({ scheduler: jobScheduler, store: schedulerStore, auditLogger });
   console.warn(
     `[ORDR:API] Scheduler routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
   );

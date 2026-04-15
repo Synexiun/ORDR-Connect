@@ -17,6 +17,7 @@ import { JOB_PRIORITIES, isValidCron } from '@ordr/scheduler';
 import type { JobPriority } from '@ordr/scheduler';
 import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
@@ -44,6 +45,7 @@ const listInstancesQuerySchema = z.object({
 interface SchedulerDeps {
   readonly scheduler: JobScheduler;
   readonly store: SchedulerStore;
+  readonly auditLogger?: Pick<AuditLogger, 'log'>;
 }
 
 let deps: SchedulerDeps | null = null;
@@ -126,6 +128,20 @@ schedulerRouter.post(
       new Date(parsed.data.runAt),
       { tenantId: ctx.tenantId, priority: parsed.data.priority },
     );
+
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'scheduler.job_scheduled',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'scheduler_job',
+        resourceId: instanceId,
+        action: 'schedule_once',
+        details: { jobType: parsed.data.jobType, priority: parsed.data.priority },
+        timestamp: new Date(),
+      });
+    }
 
     return c.json({ success: true as const, data: { instanceId }, requestId }, 201);
   },

@@ -99,7 +99,13 @@ export type AuditEventType =
   | 'workflow.instance_resumed'
   | 'workflow.instance_cancelled'
   // Organizations (Phase 85)
-  | 'organization.updated';
+  | 'organization.updated'
+  // Notifications (Phase 88)
+  | 'notification.read'
+  | 'notification.dismissed'
+  | 'notification.bulk_read'
+  // Scheduler (Phase 88)
+  | 'scheduler.job_scheduled';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

@@ -18,16 +18,22 @@ import { eq, and, desc } from 'drizzle-orm';
 import type { OrdrDatabase } from '@ordr/db';
 import { notifications } from '@ordr/db';
 import { NotFoundError } from '@ordr/core';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
 
-// ─── Module-level DB ────────────────────────────────────────────
+// ─── Module-level deps ──────────────────────────────────────────
 
 let _db: OrdrDatabase | null = null;
+let _auditLogger: Pick<AuditLogger, 'log'> | null = null;
 
-export function configureNotificationsRoute(db: OrdrDatabase): void {
+export function configureNotificationsRoute(
+  db: OrdrDatabase,
+  auditLogger?: Pick<AuditLogger, 'log'>,
+): void {
   _db = db;
+  if (auditLogger) _auditLogger = auditLogger;
 }
 
 function getDb(): OrdrDatabase {
@@ -187,6 +193,20 @@ notificationsRouter.patch(
       throw new NotFoundError('Notification not found', c.get('requestId'));
     }
 
+    if (_auditLogger) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'notification.read',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'notification',
+        resourceId: id,
+        action: 'mark_read',
+        details: {},
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const, data: rowToDto(row) });
   },
 );
@@ -227,6 +247,20 @@ notificationsRouter.patch(
       throw new NotFoundError('Notification not found', c.get('requestId'));
     }
 
+    if (_auditLogger) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'notification.dismissed',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'notification',
+        resourceId: id,
+        action: 'dismiss',
+        details: {},
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const, data: rowToDto(dismissedRow) });
   },
 );
@@ -260,6 +294,20 @@ notificationsRouter.post(
       .set({ read: true, readAt: now })
       .where(and(eq(notifications.tenantId, ctx.tenantId), eq(notifications.read, false)))
       .returning({ id: notifications.id });
+
+    if (_auditLogger && rows.length > 0) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'notification.bulk_read',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'notification',
+        resourceId: ctx.tenantId,
+        action: 'mark_read_all',
+        details: { count: rows.length },
+        timestamp: new Date(),
+      });
+    }
 
     return c.json({
       success: true as const,

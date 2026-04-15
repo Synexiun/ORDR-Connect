@@ -112,11 +112,23 @@ export class HeartbeatEmitter {
       if (this._consecutiveFailures >= CONSECUTIVE_FAIL_DEGRADE && !this._degraded) {
         this._degraded = true;
         console.error(
-          `[kernel] Heartbeat ${this._limbId}: ${this._consecutiveFailures.toString()} consecutive failures — DEGRADED`,
+          JSON.stringify({
+            level: 'error',
+            component: 'kernel-heartbeat',
+            event: 'heartbeat_degraded',
+            limbId: this._limbId,
+            consecutiveFailures: this._consecutiveFailures,
+          }),
         );
       } else if (this._consecutiveFailures >= CONSECUTIVE_FAIL_WARN) {
         console.warn(
-          `[kernel] Heartbeat ${this._limbId}: ${this._consecutiveFailures.toString()} consecutive failures`,
+          JSON.stringify({
+            level: 'warn',
+            component: 'kernel-heartbeat',
+            event: 'heartbeat_failures',
+            limbId: this._limbId,
+            consecutiveFailures: this._consecutiveFailures,
+          }),
         );
       }
     }
