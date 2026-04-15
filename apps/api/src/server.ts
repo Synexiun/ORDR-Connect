@@ -57,6 +57,7 @@ import {
   OrganizationManager,
   DrizzleOrgStore,
   InMemorySSOClient,
+  RealWorkOSClient,
   DrizzleSSOConnectionStore,
   SSOManager,
   RedisRateLimiter,
@@ -1430,7 +1431,7 @@ async function bootstrap(): Promise<void> {
   // The same limiter instance is passed to both the API middleware AND the auth
   // login route so brute-force state is consistent across all entry points.
   const redisUrl = process.env['REDIS_URL']?.trim();
-  let authRateLimiter: InMemoryRateLimiter | import('@ordr/auth').RedisRateLimiter;
+  let authRateLimiter: import('@ordr/auth').RateLimiter;
   if (redisUrl !== undefined && redisUrl !== '') {
     const redisClient = new Redis(redisUrl, { lazyConnect: true });
     redisClient.on('error', (err: Error) => {
@@ -2044,25 +2045,36 @@ async function bootstrap(): Promise<void> {
 
   // ── 8.2 SSO ────────────────────────────────────────────────────────────
   // DrizzleSSOConnectionStore persists SSO connections to PostgreSQL.
-  // InMemorySSOClient remains as the WorkOS API stub when credentials are not set
-  // (same pattern as Twilio/SendGrid stubs — appropriate for dev/test).
+  // RealWorkOSClient calls WorkOS API when credentials are present;
+  // InMemorySSOClient is used as a stub for dev/test when credentials are absent.
   {
+    const workosApiKey = process.env['WORKOS_API_KEY'];
+    const workosClientId = process.env['WORKOS_CLIENT_ID'];
     const ssoStateKey =
       process.env['WORKOS_SSO_STATE_KEY'] ?? fieldEncryptionKey.toString('hex').slice(0, 32);
+    const workosClient =
+      workosApiKey && workosClientId ? new RealWorkOSClient(workosApiKey) : new InMemorySSOClient();
+    if (!(workosApiKey && workosClientId)) {
+      console.warn(
+        '[ORDR:API] WorkOS not configured — SSO will be stubbed (set WORKOS_API_KEY + WORKOS_CLIENT_ID)',
+      );
+    }
     configureSSORoutes({
       ssoManager: new SSOManager(
         {
-          apiKey: process.env['WORKOS_API_KEY'] ?? '',
-          clientId: process.env['WORKOS_CLIENT_ID'] ?? '',
+          apiKey: workosApiKey ?? '',
+          clientId: workosClientId ?? '',
           redirectUri: `${process.env['API_BASE_URL'] ?? 'http://localhost:3000'}/api/v1/sso/callback`,
         },
-        new InMemorySSOClient(),
+        workosClient,
         new DrizzleSSOConnectionStore(db),
         ssoStateKey,
       ),
       auditLogger,
     });
-    console.warn('[ORDR:API] SSO routes configured (DrizzleSSOConnectionStore)');
+    console.warn(
+      `[ORDR:API] SSO routes configured (${workosApiKey ? 'RealWorkOSClient' : 'InMemorySSOClient'}, DrizzleSSOConnectionStore)`,
+    );
   }
 
   // ── 8.3 Messages ───────────────────────────────────────────────────────
@@ -2114,12 +2126,30 @@ async function bootstrap(): Promise<void> {
       complianceGate: new ComplianceGate(complianceEngine),
       smsProvider: new SmsProvider({
         client: twilioClient,
-        fromNumber: process.env['TWILIO_FROM_NUMBER'] ?? '+15550000000',
+        // When real Twilio is configured, TWILIO_FROM_NUMBER is mandatory.
+        // Placeholder only applies to stubbed clients (dev/test).
+        fromNumber:
+          twilioAccountSid && twilioAuthToken
+            ? (process.env['TWILIO_FROM_NUMBER'] ??
+              (() => {
+                throw new Error(
+                  'TWILIO_FROM_NUMBER is required when Twilio credentials are configured',
+                );
+              })())
+            : (process.env['TWILIO_FROM_NUMBER'] ?? '+15550000000'),
         authToken: twilioAuthToken ?? '',
       }),
       emailProvider: new EmailProvider({
         client: sendgridClient,
-        fromEmail: process.env['SENDGRID_FROM_EMAIL'] ?? 'noreply@ordr.dev',
+        // When real SendGrid is configured, SENDGRID_FROM_EMAIL is mandatory.
+        fromEmail: sendgridApiKey
+          ? (process.env['SENDGRID_FROM_EMAIL'] ??
+            (() => {
+              throw new Error(
+                'SENDGRID_FROM_EMAIL is required when SENDGRID_API_KEY is configured',
+              );
+            })())
+          : (process.env['SENDGRID_FROM_EMAIL'] ?? 'noreply@ordr.dev'),
         fromName: process.env['SENDGRID_FROM_NAME'] ?? 'ORDR Connect',
       }),
 
@@ -2306,15 +2336,48 @@ async function bootstrap(): Promise<void> {
       timestamp: entry.timestamp,
     });
   };
-  const schedulerAlert = async (_alert: {
+  const schedulerAlert = async (alert: {
     readonly severity: 'p1' | 'p2' | 'p3';
     readonly jobType: string;
     readonly instanceId: string;
     readonly error: string;
     readonly timestamp: Date;
   }) => {
-    // In production: page on-call via PagerDuty for p1, alert for p2/p3
-    console.error('[ORDR:Scheduler] Dead-letter alert:', _alert);
+    // Structured error log for observability pipeline (Loki/CloudWatch/Datadog ingest).
+    // SOC2 CC7.2 — detection and alerting for system issues.
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'scheduler',
+        event: 'dead_letter_alert',
+        severity: alert.severity,
+        jobType: alert.jobType,
+        instanceId: alert.instanceId,
+        error: alert.error,
+        timestamp: alert.timestamp.toISOString(),
+      }),
+    );
+
+    // Emit audit event so the alert is recorded in the WORM audit chain.
+    await auditLogger
+      .log({
+        tenantId: 'system',
+        eventType: 'system.alert' as import('@ordr/audit').AuditEventType,
+        actorType: 'system',
+        actorId: 'scheduler',
+        resource: 'job',
+        resourceId: alert.instanceId,
+        action: 'dead_letter_alert',
+        details: {
+          severity: alert.severity,
+          jobType: alert.jobType,
+          error: alert.error,
+        },
+        timestamp: alert.timestamp,
+      })
+      .catch((auditErr: unknown) => {
+        console.error('[ORDR:Scheduler] Failed to audit alert:', auditErr);
+      });
   };
   const schedulerDb = createDrizzle(
     dbConnection,

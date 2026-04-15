@@ -156,6 +156,92 @@ export class InMemorySSOClient implements WorkOSClient {
   }
 }
 
+// ─── Real WorkOS Client (Production) ─────────────────────────────
+
+/**
+ * RealWorkOSClient — HTTP-based WorkOS API client for production SSO.
+ *
+ * Calls WorkOS REST API directly (no SDK dependency). Requires WORKOS_API_KEY.
+ * SOC2 CC6.1 — Federated authentication via enterprise IdP.
+ */
+export class RealWorkOSClient implements WorkOSClient {
+  private readonly apiKey: string;
+  private readonly baseUrl: string;
+
+  constructor(apiKey: string, baseUrl = 'https://api.workos.com') {
+    if (!apiKey) throw new Error('WorkOS API key is required for RealWorkOSClient');
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await -- sync URL construction behind async interface
+  async getAuthorizationUrl(params: {
+    readonly connectionId: string;
+    readonly redirectUri: string;
+    readonly state: string;
+    readonly clientId: string;
+  }): Promise<string> {
+    const url = new URL('/sso/authorize', this.baseUrl);
+    url.searchParams.set('connection', params.connectionId);
+    url.searchParams.set('client_id', params.clientId);
+    url.searchParams.set('redirect_uri', params.redirectUri);
+    url.searchParams.set('state', params.state);
+    url.searchParams.set('response_type', 'code');
+    return url.toString();
+  }
+
+  async getProfileByCode(code: string): Promise<{
+    readonly id: string;
+    readonly email: string;
+    readonly firstName: string;
+    readonly lastName: string;
+    readonly idpId: string;
+    readonly connectionType: SSOConnectionType;
+    readonly rawAttributes: Readonly<Record<string, unknown>>;
+  }> {
+    const response = await fetch(`${this.baseUrl}/sso/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: this.apiKey,
+        client_secret: this.apiKey,
+        grant_type: 'authorization_code',
+        code,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => 'unknown');
+      throw new Error(`WorkOS SSO token exchange failed (${String(response.status)}): ${body}`);
+    }
+
+    const data = (await response.json()) as {
+      profile: {
+        id: string;
+        email: string;
+        first_name: string;
+        last_name: string;
+        idp_id: string;
+        connection_type: string;
+        raw_attributes: Record<string, unknown>;
+      };
+    };
+
+    const p = data.profile;
+    return {
+      id: p.id,
+      email: p.email,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      idpId: p.idp_id,
+      connectionType: p.connection_type as SSOConnectionType,
+      rawAttributes: p.raw_attributes,
+    };
+  }
+}
+
 // ─── In-Memory Connection Store (Testing) ─────────────────────────
 
 export class InMemorySSOConnectionStore implements SSOConnectionStore {

@@ -88,7 +88,12 @@ export type {
   SSOConnectionStore,
 } from './sso.js';
 
-export { SSOManager, InMemorySSOClient, InMemorySSOConnectionStore } from './sso.js';
+export {
+  SSOManager,
+  InMemorySSOClient,
+  RealWorkOSClient,
+  InMemorySSOConnectionStore,
+} from './sso.js';
 
 // ─── SCIM ─────────────────────────────────────────────────────────
 export {
