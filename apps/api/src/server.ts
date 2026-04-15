@@ -2219,6 +2219,13 @@ async function bootstrap(): Promise<void> {
         return { contact: decrypted, contentBody: '' };
       },
 
+      updateMessageStatus: async (messageId, status) => {
+        await db
+          .update(schema.messages)
+          .set({ status: status as never, updatedAt: new Date() })
+          .where(eq(schema.messages.id, messageId));
+      },
+
       insertViolation: insertComplianceViolation,
     });
     console.warn('[ORDR:API] Message routes configured');

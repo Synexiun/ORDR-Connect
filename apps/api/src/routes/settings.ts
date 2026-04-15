@@ -231,7 +231,7 @@ async function patchTenantSettings(
   patch: Partial<TenantSettingsJson>,
 ): Promise<void> {
   const row = await fetchTenantRow(db, tenantId);
-  if (row === undefined) throw new Error('[ORDR:API] Tenant not found');
+  if (row === undefined) throw new NotFoundError('Tenant not found');
   const current = parseTenantSettings(row.settings);
   const next: TenantSettingsJson = { ...current, ...patch };
   await db
@@ -850,10 +850,32 @@ settingsRouter.patch(
       throw new ValidationError('Invalid security config', fieldErrors, requestId);
     }
 
+    // Capture before-state for security audit trail (HIPAA §164.312(a)(3))
+    const beforeRow = await fetchTenantRow(db, ctx.tenantId);
+    if (beforeRow === undefined) throw new NotFoundError('Tenant not found', requestId);
+    const beforeSettings = parseTenantSettings(beforeRow.settings);
+
     await patchTenantSettings(db, ctx.tenantId, {
       ...(parsed.data.mfaEnforced !== undefined ? { mfaEnforced: parsed.data.mfaEnforced } : {}),
       ...(parsed.data.ipAllowlist !== undefined ? { ipAllowlist: parsed.data.ipAllowlist } : {}),
     });
+
+    // Build before/after diff for security-critical fields
+    const auditDetails: Record<string, unknown> = {
+      changedFields: Object.keys(parsed.data),
+    };
+    if (parsed.data.mfaEnforced !== undefined) {
+      auditDetails['mfaEnforced'] = {
+        before: beforeSettings.mfaEnforced ?? true,
+        after: parsed.data.mfaEnforced,
+      };
+    }
+    if (parsed.data.ipAllowlist !== undefined) {
+      auditDetails['ipAllowlist'] = {
+        before: beforeSettings.ipAllowlist ?? [],
+        after: parsed.data.ipAllowlist,
+      };
+    }
 
     await auditLogger.log({
       tenantId: ctx.tenantId,
@@ -863,7 +885,7 @@ settingsRouter.patch(
       resource: 'tenant',
       resourceId: ctx.tenantId,
       action: 'update_security_config',
-      details: { changedFields: Object.keys(parsed.data) },
+      details: auditDetails,
       timestamp: new Date(),
     });
 

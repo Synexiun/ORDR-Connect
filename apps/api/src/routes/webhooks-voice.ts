@@ -119,6 +119,24 @@ voiceWebhooksRouter.post('/status', async (c) => {
   const callRecord = await deps.updateCallStatus(statusEvent.callSid, messageStatus);
 
   if (callRecord) {
+    // Audit log for call status mutation (SOC2 CC6.1 / HIPAA §164.312(b))
+    await deps.auditLogger.log({
+      tenantId: callRecord.tenantId,
+      eventType: 'data.updated',
+      actorType: 'system',
+      actorId: 'twilio_voice_webhook',
+      resource: 'call',
+      resourceId: statusEvent.callSid,
+      action: 'update_status',
+      details: {
+        messageId: callRecord.messageId,
+        callStatus: statusEvent.callStatus,
+        messageStatus,
+        direction: statusEvent.direction,
+        duration: statusEvent.duration,
+      },
+      timestamp: new Date(),
+    });
     // Publish interaction event — NO call content
     const interactionEvent = createEventEnvelope(
       EventType.INTERACTION_LOGGED,

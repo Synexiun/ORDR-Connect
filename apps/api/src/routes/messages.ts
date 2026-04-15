@@ -124,6 +124,11 @@ interface MessageDependencies {
     channel: string,
   ) => Promise<{ readonly contact: string; readonly contentBody: string } | null>;
   /**
+   * Update message status after send attempt (e.g. 'sent' or 'failed').
+   * Optional — callers may not track status beyond the initial insert.
+   */
+  readonly updateMessageStatus?: (messageId: string, status: string) => Promise<void>;
+  /**
    * Write a compliance violation to the operator dashboard.
    * Optional — fire-and-forget; audit log is always the authoritative record.
    */
@@ -386,20 +391,46 @@ messagesRouter.post(
     });
 
     // 5. Send via appropriate channel provider
+    // Wrap external provider calls in try/catch — Twilio/SendGrid failures must be
+    // logged with full context for incident response (SOC2 CC7.2).
     let sendSuccess = false;
-    if (channel === 'sms') {
-      const sendResult = await deps.smsProvider.send(contactInfo.contact, contactInfo.contentBody);
-      sendSuccess = sendResult.success;
-    } else {
-      const sendResult = await deps.emailProvider.send(
-        contactInfo.contact,
-        'Message from ORDR-Connect',
-        contactInfo.contentBody,
+    let sendError: string | undefined;
+    try {
+      if (channel === 'sms') {
+        const sendResult = await deps.smsProvider.send(
+          contactInfo.contact,
+          contactInfo.contentBody,
+        );
+        sendSuccess = sendResult.success;
+      } else {
+        const sendResult = await deps.emailProvider.send(
+          contactInfo.contact,
+          'Message from ORDR-Connect',
+          contactInfo.contentBody,
+        );
+        sendSuccess = sendResult.success;
+      }
+    } catch (providerErr: unknown) {
+      sendError = providerErr instanceof Error ? providerErr.message : 'Unknown provider error';
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'messages',
+          event: 'provider_send_failure',
+          channel,
+          messageId,
+          error: sendError,
+          timestamp: new Date().toISOString(),
+        }),
       );
-      sendSuccess = sendResult.success;
     }
 
-    // 6. Audit log
+    // 6. Update message status based on send outcome
+    if (deps.updateMessageStatus !== undefined) {
+      await deps.updateMessageStatus(messageId, sendSuccess ? 'sent' : 'failed');
+    }
+
+    // 7. Audit log — includes error context on failure for incident response
     await deps.auditLogger.log({
       tenantId: ctx.tenantId,
       eventType: 'data.created',
@@ -412,6 +443,7 @@ messagesRouter.post(
         customerId,
         channel,
         success: sendSuccess,
+        ...(sendError !== undefined ? { error: sendError } : {}),
       },
       timestamp: new Date(),
     });
