@@ -22,6 +22,7 @@ import type {
 } from '@ordr/search';
 import { MAX_SEARCH_LIMIT, SEARCHABLE_ENTITY_TYPES } from '@ordr/search';
 import { ValidationError, AuthorizationError } from '@ordr/core';
+import type { AuditLogger } from '@ordr/audit';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -95,6 +96,7 @@ const indexEntityBodySchema = z.object({
 interface SearchDeps {
   readonly engine: SearchEngine;
   readonly indexer: SearchIndexer;
+  readonly auditLogger?: Pick<AuditLogger, 'log'>;
 }
 
 let deps: SearchDeps | null = null;
@@ -335,6 +337,20 @@ searchRouter.delete(
     const entityType = rawEntityType as SearchableEntityType;
     const removed = await deps.indexer.removeEntity(entityType, entityId, ctx.tenantId);
 
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'search.index_deleted',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'search_index',
+        resourceId: entityId,
+        action: 'delete',
+        details: { entityType },
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const, removed, requestId });
   },
 );
@@ -370,6 +386,20 @@ searchRouter.post(
 
     const entityType = rawEntityType as SearchableEntityType;
     const count = await deps.indexer.reindexAll(entityType, ctx.tenantId);
+
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'search.reindex',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'search_index',
+        resourceId: ctx.tenantId,
+        action: 'reindex',
+        details: { entityType, reindexed: count },
+        timestamp: new Date(),
+      });
+    }
 
     return c.json({
       success: true as const,

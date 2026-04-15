@@ -33,6 +33,7 @@ import {
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import { quotaGate } from '../middleware/plan-gate.js';
 
 // ---- Input Schemas ---------------------------------------------------------
@@ -277,6 +278,7 @@ messagesRouter.get('/:id', requirePermissionMiddleware('messages', 'read'), asyn
 messagesRouter.post(
   '/send',
   requirePermissionMiddleware('messages', 'create'),
+  rateLimit('write'),
   quotaGate('messages'),
   async (c) => {
     if (!deps) throw new Error('[ORDR:API] Message routes not configured');

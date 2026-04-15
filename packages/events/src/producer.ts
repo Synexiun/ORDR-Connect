@@ -169,8 +169,13 @@ export class EventProducer {
         } catch (err) {
           // Non-fatal — log and continue. Service still publishes with Zod validation.
           console.warn(
-            `[ORDR:events] Schema Registry: failed to register '${eventType}':`,
-            err instanceof Error ? err.message : String(err),
+            JSON.stringify({
+              level: 'warn',
+              component: 'events-producer',
+              event: 'schema_register_failed',
+              eventType,
+              error: err instanceof Error ? err.message : String(err),
+            }),
           );
         }
       }),
@@ -197,8 +202,13 @@ export class EventProducer {
     } catch (err) {
       // Non-fatal — registry failures never block event publishing.
       console.warn(
-        `[ORDR:events] Schema Registry: lazy registration failed for '${eventType}':`,
-        err instanceof Error ? err.message : String(err),
+        JSON.stringify({
+          level: 'warn',
+          component: 'events-producer',
+          event: 'schema_lazy_register_failed',
+          eventType,
+          error: err instanceof Error ? err.message : String(err),
+        }),
       );
       return undefined;
     }

@@ -105,7 +105,12 @@ export type AuditEventType =
   | 'notification.dismissed'
   | 'notification.bulk_read'
   // Scheduler (Phase 88)
-  | 'scheduler.job_scheduled';
+  | 'scheduler.job_scheduled'
+  // Search (Phase 89)
+  | 'search.index_deleted'
+  | 'search.reindex'
+  // Realtime (Phase 89)
+  | 'realtime.event_published';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

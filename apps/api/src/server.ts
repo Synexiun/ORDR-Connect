@@ -2285,6 +2285,7 @@ async function bootstrap(): Promise<void> {
     channelManager,
     publisher: new EventPublisher(channelManager, realtimeAuditLogger),
     jwtConfig: activeJwtConfig,
+    auditLogger,
   });
   console.warn('[ORDR:API] Realtime routes configured');
 
@@ -2342,6 +2343,7 @@ async function bootstrap(): Promise<void> {
   configureSearchRoutes({
     engine: new SearchEngine(searchStore),
     indexer: new SearchIndexer(searchStore),
+    auditLogger,
   });
   console.warn(
     `[ORDR:API] Search routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,

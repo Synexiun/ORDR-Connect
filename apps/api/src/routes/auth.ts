@@ -31,6 +31,7 @@ import {
 import { verifyPassword } from '@ordr/crypto';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ---- Input Schemas ---------------------------------------------------------
 
@@ -251,7 +252,7 @@ authRouter.post('/login', async (c) => {
 
 // ---- POST /refresh ---------------------------------------------------------
 
-authRouter.post('/refresh', async (c) => {
+authRouter.post('/refresh', rateLimit('write'), async (c) => {
   if (!deps) {
     throw new Error('[ORDR:API] Auth routes not configured');
   }
@@ -289,7 +290,7 @@ authRouter.post('/refresh', async (c) => {
 
 // ---- POST /logout ----------------------------------------------------------
 
-authRouter.post('/logout', requireAuth(), async (c) => {
+authRouter.post('/logout', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) {
     throw new Error('[ORDR:API] Auth routes not configured');
   }

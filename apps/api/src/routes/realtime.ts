@@ -26,8 +26,10 @@ import type { TenantContext } from '@ordr/core';
 import { authenticateRequest } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import type { Env } from '../types.js';
+import type { AuditLogger } from '@ordr/audit';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -44,6 +46,7 @@ interface RealtimeDeps {
   readonly channelManager: ChannelManager;
   readonly publisher: EventPublisher;
   readonly jwtConfig: JwtConfig;
+  readonly auditLogger?: Pick<AuditLogger, 'log'>;
 }
 
 let deps: RealtimeDeps | null = null;
@@ -144,7 +147,12 @@ realtimeRouter.get('/stream', async (c): Promise<Response> => {
 // ISO 27001 A.8.16 — Only authorized actors can inject events into tenant channels.
 // HIPAA §164.312 — Event data validated at boundary; no PHI accepted.
 
-realtimeRouter.post('/publish', requireAuth(), requireRoleMiddleware('tenant_admin'));
+realtimeRouter.post(
+  '/publish',
+  requireAuth(),
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+);
 
 realtimeRouter.post('/publish', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Realtime routes not configured');
@@ -196,6 +204,20 @@ realtimeRouter.post('/publish', async (c): Promise<Response> => {
       },
       502,
     );
+  }
+
+  if (deps.auditLogger) {
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'realtime.event_published',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'realtime_event',
+      resourceId: requestId,
+      action: 'publish',
+      details: { category, type, delivered },
+      timestamp: new Date(),
+    });
   }
 
   return c.json({

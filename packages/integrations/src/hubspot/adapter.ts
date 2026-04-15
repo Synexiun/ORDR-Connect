@@ -205,8 +205,12 @@ export class HubSpotAdapter implements CRMAdapter {
     } catch (err) {
       // Best-effort: log warning but do not throw — local cleanup proceeds
       console.warn(
-        '[ORDR:INTEGRATIONS:HUBSPOT] Token revocation request failed (best-effort):',
-        err instanceof Error ? err.message : String(err),
+        JSON.stringify({
+          level: 'warn',
+          component: 'integrations-hubspot',
+          event: 'token_revocation_failed',
+          error: err instanceof Error ? err.message : String(err),
+        }),
       );
     }
   }
