@@ -29,6 +29,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -114,6 +115,14 @@ const signalSchema = z.object({
   type: z.enum(['offer', 'answer', 'ice-candidate', 'annotation', 'pointer']),
   payload: z.unknown(),
 });
+
+// ─── Module-level deps ──────────────────────────────────────────────────────
+
+let _auditLogger: Pick<AuditLogger, 'log'> | null = null;
+
+export function configureCobrowseRoutes(deps: { auditLogger: Pick<AuditLogger, 'log'> }): void {
+  _auditLogger = deps.auditLogger;
+}
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -215,6 +224,21 @@ cobrowseRouter.post('/sessions', requireAuth(), rateLimit('write'), async (c) =>
     timestamp: now,
   });
 
+  // WORM audit — cobrowse session created (HIPAA §164.310(c))
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'cobrowse.session_created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'cobrowse_session',
+      resourceId: session.id,
+      action: 'create',
+      details: { targetUserId: parsed.data.userId, mode: session.mode },
+      timestamp: now,
+    });
+  }
+
   return c.json(
     {
       success: true as const,
@@ -314,7 +338,7 @@ cobrowseRouter.get('/sessions/:id', requireAuth(), (c) => {
 });
 
 // POST /sessions/:id/accept — User accepts the session
-cobrowseRouter.post('/sessions/:id/accept', requireAuth(), rateLimit('write'), (c) => {
+cobrowseRouter.post('/sessions/:id/accept', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -376,11 +400,27 @@ cobrowseRouter.post('/sessions/:id/accept', requireAuth(), rateLimit('write'), (
     payload: { accepted: true, userId: ctx.userId },
     timestamp: now,
   });
+
+  // WORM audit — session accepted (HIPAA §164.310(c))
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'cobrowse.session_accepted',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'cobrowse_session',
+      resourceId: session.id,
+      action: 'update',
+      details: { newStatus: 'active' },
+      timestamp: now,
+    });
+  }
+
   return c.json({ success: true as const, data: { status: 'active' } });
 });
 
 // POST /sessions/:id/reject — User rejects
-cobrowseRouter.post('/sessions/:id/reject', requireAuth(), rateLimit('write'), (c) => {
+cobrowseRouter.post('/sessions/:id/reject', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -429,11 +469,27 @@ cobrowseRouter.post('/sessions/:id/reject', requireAuth(), rateLimit('write'), (
     payload: { rejected: true },
     timestamp: now,
   });
+
+  // WORM audit — session rejected (HIPAA §164.310(c))
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'cobrowse.session_rejected',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'cobrowse_session',
+      resourceId: session.id,
+      action: 'update',
+      details: { newStatus: 'rejected' },
+      timestamp: now,
+    });
+  }
+
   return c.json({ success: true as const, data: { status: 'rejected' } });
 });
 
 // POST /sessions/:id/end — Either party ends the session
-cobrowseRouter.post('/sessions/:id/end', requireAuth(), rateLimit('write'), (c) => {
+cobrowseRouter.post('/sessions/:id/end', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -478,6 +534,22 @@ cobrowseRouter.post('/sessions/:id/end', requireAuth(), rateLimit('write'), (c) 
     payload: { endedBy: ctx.userId },
     timestamp: now,
   });
+
+  // WORM audit — session ended (HIPAA §164.310(c))
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'cobrowse.session_ended',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'cobrowse_session',
+      resourceId: session.id,
+      action: 'update',
+      details: { newStatus: 'ended', endedBy: ctx.userId },
+      timestamp: now,
+    });
+  }
+
   return c.json({ success: true as const, data: { status: 'ended' } });
 });
 

@@ -69,7 +69,25 @@ export type AuditEventType =
   // Tickets (Phase 80)
   | 'ticket.created'
   | 'ticket.updated'
-  | 'ticket.message_added';
+  | 'ticket.message_added'
+  // Reports (Phase 84)
+  | 'report.generated'
+  | 'report.schedule_created'
+  | 'report.schedule_deleted'
+  // Cobrowse (Phase 84)
+  | 'cobrowse.session_created'
+  | 'cobrowse.session_accepted'
+  | 'cobrowse.session_rejected'
+  | 'cobrowse.session_ended'
+  // Messaging (Phase 84)
+  | 'messaging.channel_created'
+  | 'messaging.member_added'
+  | 'messaging.member_removed'
+  | 'messaging.message_sent'
+  | 'messaging.message_edited'
+  | 'messaging.message_deleted'
+  // Settings (Phase 84)
+  | 'settings.role_created';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

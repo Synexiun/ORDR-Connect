@@ -29,6 +29,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -48,6 +49,7 @@ import type { OrdrDatabase } from '@ordr/db';
 
 let channelManager = new ChannelManager(new InMemoryChannelStore());
 let messageService = new MessageService(new InMemoryMessageStore());
+let _auditLogger: Pick<AuditLogger, 'log'> | null = null;
 
 /**
  * Wire Drizzle-backed stores for production use.
@@ -55,9 +57,13 @@ let messageService = new MessageService(new InMemoryMessageStore());
  *
  * SOC2 CC8.1 — Change management: deterministic startup configuration.
  */
-export function configureMessagingRoutes(db: OrdrDatabase): void {
+export function configureMessagingRoutes(
+  db: OrdrDatabase,
+  auditLogger?: Pick<AuditLogger, 'log'>,
+): void {
   channelManager = new ChannelManager(new DrizzleChannelStore(db));
   messageService = new MessageService(new DrizzleMessageStore(db));
+  if (auditLogger) _auditLogger = auditLogger;
 }
 
 // ─── Presence (always in-memory — ephemeral by design) ───────────────────────
@@ -220,6 +226,22 @@ messagingRouter.post('/channels', requireAuth(), rateLimit('write'), async (c) =
     payload: channelToDto(channel),
     timestamp: new Date(),
   });
+
+  // WORM audit — channel created (SOC2 CC6.3)
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'messaging.channel_created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'messaging_channel',
+      resourceId: channel.id,
+      action: 'create',
+      details: {},
+      timestamp: new Date(),
+    });
+  }
+
   return c.json({ success: true as const, data: channelToDto(channel) }, 201);
 });
 
@@ -282,7 +304,24 @@ messagingRouter.post('/channels/:id/members', requireAuth(), rateLimit('write'),
       },
       400,
     );
-  await channelManager.addMember(c.req.param('id'), ctx.tenantId, body.userId, ctx.userId);
+  const channelId = c.req.param('id');
+  await channelManager.addMember(channelId, ctx.tenantId, body.userId, ctx.userId);
+
+  // WORM audit — member added (SOC2 CC6.3)
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'messaging.member_added',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'messaging_channel',
+      resourceId: channelId,
+      action: 'update',
+      details: { addedUserId: body.userId },
+      timestamp: new Date(),
+    });
+  }
+
   return c.json({ success: true as const });
 });
 
@@ -305,12 +344,25 @@ messagingRouter.delete(
         },
         401,
       );
-    await channelManager.removeMember(
-      c.req.param('id'),
-      ctx.tenantId,
-      c.req.param('uid'),
-      ctx.userId,
-    );
+    const channelId = c.req.param('id');
+    const removedUid = c.req.param('uid');
+    await channelManager.removeMember(channelId, ctx.tenantId, removedUid, ctx.userId);
+
+    // WORM audit — member removed (SOC2 CC6.3)
+    if (_auditLogger) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'messaging.member_removed',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'messaging_channel',
+        resourceId: channelId,
+        action: 'update',
+        details: { removedUserId: removedUid },
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const });
   },
 );
@@ -376,14 +428,31 @@ messagingRouter.post('/channels/:id/messages', requireAuth(), rateLimit('write')
     senderName: ctx.userId,
     ...parsed.data,
   } as import('@ordr/messaging').SendMessageInput);
+  const msgChannelId = c.req.param('id');
   publishEvent({
     type: 'message.new',
     tenantId: ctx.tenantId,
-    channelId: c.req.param('id'),
+    channelId: msgChannelId,
     userId: ctx.userId,
     payload: messageToDto(message),
     timestamp: new Date(),
   });
+
+  // WORM audit — message sent (HIPAA §164.312(a)(1))
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'messaging.message_sent',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'messaging_message',
+      resourceId: message.id,
+      action: 'create',
+      details: { channelId: msgChannelId },
+      timestamp: new Date(),
+    });
+  }
+
   return c.json({ success: true as const, data: messageToDto(message) }, 201);
 });
 
@@ -426,14 +495,31 @@ messagingRouter.patch(
       ctx.userId,
       parsed.data.content,
     );
+    const editChannelId = c.req.param('id');
     publishEvent({
       type: 'message.edit',
       tenantId: ctx.tenantId,
-      channelId: c.req.param('id'),
+      channelId: editChannelId,
       userId: ctx.userId,
       payload: messageToDto(message),
       timestamp: new Date(),
     });
+
+    // WORM audit — message edited (HIPAA §164.312(a)(1))
+    if (_auditLogger) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'messaging.message_edited',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'messaging_message',
+        resourceId: c.req.param('mid'),
+        action: 'update',
+        details: { channelId: editChannelId },
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const, data: messageToDto(message) });
   },
 );
@@ -457,15 +543,33 @@ messagingRouter.delete(
         },
         401,
       );
-    const message = await messageService.delete(c.req.param('mid'), ctx.tenantId, ctx.userId);
+    const delMid = c.req.param('mid');
+    const delChannelId = c.req.param('id');
+    const message = await messageService.delete(delMid, ctx.tenantId, ctx.userId);
     publishEvent({
       type: 'message.delete',
       tenantId: ctx.tenantId,
-      channelId: c.req.param('id'),
+      channelId: delChannelId,
       userId: ctx.userId,
       payload: { id: message.id },
       timestamp: new Date(),
     });
+
+    // WORM audit — message deleted (HIPAA §164.312(a)(1))
+    if (_auditLogger) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'messaging.message_deleted',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'messaging_message',
+        resourceId: delMid,
+        action: 'delete',
+        details: { channelId: delChannelId },
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const, data: { id: message.id } });
   },
 );

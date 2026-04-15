@@ -147,6 +147,7 @@ import { configureProfileRoutes } from './routes/profile.js';
 import { configureSettingsRoutes } from './routes/settings.js';
 import { configureTicketRoutes } from './routes/tickets.js';
 import { configureReportRoutes } from './routes/reports.js';
+import { configureCobrowseRoutes } from './routes/cobrowse.js';
 import { configureAnalyticsRoutes } from './routes/analytics.js';
 import { configureCustomerRoutes } from './routes/customers.js';
 import { configureAgentRoutes } from './routes/agents.js';
@@ -509,7 +510,7 @@ async function bootstrap(): Promise<void> {
   console.warn('[ORDR:API] Audit logs route configured');
 
   // ── 4.6.2. Messaging routes — wire Drizzle stores (channel + message persistence) ──
-  configureMessagingRoutes(db);
+  configureMessagingRoutes(db, auditLogger);
   console.warn('[ORDR:API] Messaging routes configured (Drizzle stores active)');
 
   // ── 4.7. Healthcare routes ─────────────────────────────────────────────
@@ -645,8 +646,12 @@ async function bootstrap(): Promise<void> {
   console.warn('[ORDR:API] Ticket routes configured');
 
   // ── 4.15. Reports routes (generation, scheduling, export) ──────────────────
-  configureReportRoutes({ db });
+  configureReportRoutes({ db, auditLogger });
   console.warn('[ORDR:API] Report routes configured');
+
+  // ── 4.15b. Cobrowse routes (remote assistance sessions) ──────────────────
+  configureCobrowseRoutes({ auditLogger });
+  console.warn('[ORDR:API] Cobrowse routes configured');
 
   // ── 4.16. Marketplace routes (agent marketplace CRUD, installs, reviews) ───
   configureMarketplaceRoutes({

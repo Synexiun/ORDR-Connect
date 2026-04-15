@@ -531,7 +531,7 @@ settingsRouter.post(
   requireRoleMiddleware('tenant_admin'),
   rateLimit('write'),
   async (c): Promise<Response> => {
-    const { db } = getDeps();
+    const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) throw new AuthorizationError('Authentication required');
@@ -569,6 +569,19 @@ settingsRouter.post(
 
     const row = inserted[0];
     if (row === undefined) throw new Error('[ORDR:API] Role insert returned no rows');
+
+    // WORM audit — role created (SOC2 CC6.2)
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'settings.role_created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'custom_role',
+      resourceId: row.id,
+      action: 'create',
+      details: { roleName: row.name },
+      timestamp: new Date(),
+    });
 
     return c.json(
       {

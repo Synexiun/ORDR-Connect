@@ -31,6 +31,7 @@ import { eq, and, count, desc, sql, gte, lte } from 'drizzle-orm';
 import type { OrdrDatabase } from '@ordr/db';
 import * as schema from '@ordr/db';
 import { AuthorizationError, ValidationError, NotFoundError } from '@ordr/core';
+import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -837,6 +838,7 @@ async function computeReportData(
 
 interface ReportsDeps {
   readonly db: OrdrDatabase;
+  readonly auditLogger: Pick<AuditLogger, 'log'>;
 }
 
 let _deps: ReportsDeps | null = null;
@@ -942,7 +944,7 @@ reportsRouter.get('/schedules', async (c): Promise<Response> => {
 // ── POST /generate — trigger report generation ───────────────────
 
 reportsRouter.post('/generate', rateLimit('write'), async (c): Promise<Response> => {
-  const { db } = getDeps();
+  const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -1007,6 +1009,19 @@ reportsRouter.post('/generate', rateLimit('write'), async (c): Promise<Response>
     throw new Error('[ORDR:API] Report insert returned no rows');
   }
 
+  // WORM audit — report generated (SOC2 PI1.4)
+  await auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'report.generated',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'report',
+    resourceId: inserted.id,
+    action: 'create',
+    details: { type: inserted.type, rowCount: inserted.rowCount },
+    timestamp: new Date(),
+  });
+
   return c.json(
     {
       id: inserted.id,
@@ -1026,7 +1041,7 @@ reportsRouter.post('/generate', rateLimit('write'), async (c): Promise<Response>
 // ── POST /schedules — create scheduled report ────────────────────
 
 reportsRouter.post('/schedules', rateLimit('write'), async (c): Promise<Response> => {
-  const { db } = getDeps();
+  const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -1066,6 +1081,19 @@ reportsRouter.post('/schedules', rateLimit('write'), async (c): Promise<Response
     throw new Error('[ORDR:API] Schedule insert returned no rows');
   }
 
+  // WORM audit — schedule created (ISO 27001 A.12.4.1)
+  await auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'report.schedule_created',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'report_schedule',
+    resourceId: inserted.id,
+    action: 'create',
+    details: { type: inserted.type, frequency: inserted.frequency },
+    timestamp: new Date(),
+  });
+
   return c.json(
     {
       id: inserted.id,
@@ -1084,7 +1112,7 @@ reportsRouter.post('/schedules', rateLimit('write'), async (c): Promise<Response
 // ── DELETE /schedules/:id ─────────────────────────────────────────
 
 reportsRouter.delete('/schedules/:id', rateLimit('write'), async (c): Promise<Response> => {
-  const { db } = getDeps();
+  const { db, auditLogger } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
   if (!ctx) throw new AuthorizationError('Authentication required');
@@ -1104,6 +1132,19 @@ reportsRouter.delete('/schedules/:id', rateLimit('write'), async (c): Promise<Re
   if (deleted[0] === undefined) {
     throw new NotFoundError(`Schedule not found: ${scheduleId}`, requestId);
   }
+
+  // WORM audit — schedule deleted (ISO 27001 A.12.4.1)
+  await auditLogger.log({
+    tenantId: ctx.tenantId,
+    eventType: 'report.schedule_deleted',
+    actorType: 'user',
+    actorId: ctx.userId,
+    resource: 'report_schedule',
+    resourceId: scheduleId,
+    action: 'delete',
+    details: {},
+    timestamp: new Date(),
+  });
 
   return new Response(null, { status: 204 });
 });
