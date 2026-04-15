@@ -32,6 +32,7 @@ import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 import { jsonErr } from '../lib/http.js';
 
@@ -95,7 +96,7 @@ aiRouter.use('*', featureGate(FEATURES.AI_AGENTS));
 
 // ─── POST /sentiment — Batch sentiment analysis ──────────────────
 
-aiRouter.post('/sentiment', async (c): Promise<Response> => {
+aiRouter.post('/sentiment', rateLimit('agent'), async (c): Promise<Response> => {
   const { llmClient } = ensureDeps();
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
@@ -134,7 +135,7 @@ aiRouter.post('/sentiment', async (c): Promise<Response> => {
 
 // ─── POST /insights — Agent insight generation ───────────────────
 
-aiRouter.post('/insights', async (c): Promise<Response> => {
+aiRouter.post('/insights', rateLimit('agent'), async (c): Promise<Response> => {
   const { llmClient } = ensureDeps();
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
@@ -210,7 +211,7 @@ Provide an operational insight and recommended action.`;
 
 // ─── POST /route — Entity routing decision ───────────────────────
 
-aiRouter.post('/route', async (c): Promise<Response> => {
+aiRouter.post('/route', rateLimit('agent'), async (c): Promise<Response> => {
   const { llmClient } = ensureDeps();
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');

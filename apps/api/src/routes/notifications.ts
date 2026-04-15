@@ -20,6 +20,7 @@ import { notifications } from '@ordr/db';
 import { NotFoundError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Module-level DB ────────────────────────────────────────────
 
@@ -152,104 +153,119 @@ notificationsRouter.get('/', requireAuth(), async (c): Promise<Response> => {
 
 // ── PATCH /:id/read ───────────────────────────────────────────
 
-notificationsRouter.patch('/:id/read', requireAuth(), async (c): Promise<Response> => {
-  const ctx = c.get('tenantContext');
-  if (!ctx)
-    return c.json(
-      {
-        success: false as const,
-        error: {
-          code: 'AUTH_FAILED' as const,
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+notificationsRouter.patch(
+  '/:id/read',
+  requireAuth(),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const ctx = c.get('tenantContext');
+    if (!ctx)
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'AUTH_FAILED' as const,
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
-    );
+        401,
+      );
 
-  const id = c.req.param('id');
-  const db = getDb();
-  const now = new Date();
+    const id = c.req.param('id');
+    const db = getDb();
+    const now = new Date();
 
-  const rows = await db
-    .update(notifications)
-    .set({ read: true, readAt: now })
-    .where(and(eq(notifications.id, id), eq(notifications.tenantId, ctx.tenantId)))
-    .returning();
+    const rows = await db
+      .update(notifications)
+      .set({ read: true, readAt: now })
+      .where(and(eq(notifications.id, id), eq(notifications.tenantId, ctx.tenantId)))
+      .returning();
 
-  const row = rows[0];
-  if (row === undefined) {
-    throw new NotFoundError('Notification not found', c.get('requestId'));
-  }
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError('Notification not found', c.get('requestId'));
+    }
 
-  return c.json({ success: true as const, data: rowToDto(row) });
-});
+    return c.json({ success: true as const, data: rowToDto(row) });
+  },
+);
 
 // ── PATCH /:id/dismiss ────────────────────────────────────────
 
-notificationsRouter.patch('/:id/dismiss', requireAuth(), async (c): Promise<Response> => {
-  const ctx = c.get('tenantContext');
-  if (!ctx)
-    return c.json(
-      {
-        success: false as const,
-        error: {
-          code: 'AUTH_FAILED' as const,
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+notificationsRouter.patch(
+  '/:id/dismiss',
+  requireAuth(),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const ctx = c.get('tenantContext');
+    if (!ctx)
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'AUTH_FAILED' as const,
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
-    );
+        401,
+      );
 
-  const id = c.req.param('id');
-  const db = getDb();
-  const now = new Date();
+    const id = c.req.param('id');
+    const db = getDb();
+    const now = new Date();
 
-  const rows = await db
-    .update(notifications)
-    .set({ dismissed: true, dismissedAt: now })
-    .where(and(eq(notifications.id, id), eq(notifications.tenantId, ctx.tenantId)))
-    .returning();
+    const rows = await db
+      .update(notifications)
+      .set({ dismissed: true, dismissedAt: now })
+      .where(and(eq(notifications.id, id), eq(notifications.tenantId, ctx.tenantId)))
+      .returning();
 
-  const dismissedRow = rows[0];
-  if (dismissedRow === undefined) {
-    throw new NotFoundError('Notification not found', c.get('requestId'));
-  }
+    const dismissedRow = rows[0];
+    if (dismissedRow === undefined) {
+      throw new NotFoundError('Notification not found', c.get('requestId'));
+    }
 
-  return c.json({ success: true as const, data: rowToDto(dismissedRow) });
-});
+    return c.json({ success: true as const, data: rowToDto(dismissedRow) });
+  },
+);
 
 // ── POST /mark-read-all ───────────────────────────────────────
 
-notificationsRouter.post('/mark-read-all', requireAuth(), async (c): Promise<Response> => {
-  const ctx = c.get('tenantContext');
-  if (!ctx)
-    return c.json(
-      {
-        success: false as const,
-        error: {
-          code: 'AUTH_FAILED' as const,
-          message: 'Authentication required',
-          correlationId: c.get('requestId'),
+notificationsRouter.post(
+  '/mark-read-all',
+  requireAuth(),
+  rateLimit('bulk'),
+  async (c): Promise<Response> => {
+    const ctx = c.get('tenantContext');
+    if (!ctx)
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'AUTH_FAILED' as const,
+            message: 'Authentication required',
+            correlationId: c.get('requestId'),
+          },
         },
-      },
-      401,
-    );
+        401,
+      );
 
-  const db = getDb();
-  const now = new Date();
+    const db = getDb();
+    const now = new Date();
 
-  const rows = await db
-    .update(notifications)
-    .set({ read: true, readAt: now })
-    .where(and(eq(notifications.tenantId, ctx.tenantId), eq(notifications.read, false)))
-    .returning({ id: notifications.id });
+    const rows = await db
+      .update(notifications)
+      .set({ read: true, readAt: now })
+      .where(and(eq(notifications.tenantId, ctx.tenantId), eq(notifications.read, false)))
+      .returning({ id: notifications.id });
 
-  return c.json({
-    success: true as const,
-    data: { markedRead: rows.length },
-  });
-});
+    return c.json({
+      success: true as const,
+      data: { markedRead: rows.length },
+    });
+  },
+);
 
 export { notificationsRouter };

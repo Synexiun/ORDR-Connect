@@ -26,6 +26,7 @@ import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ billingRouter.get('/', async (c): Promise<Response> => {
 // SOC2 CC6.1 — Subscription creation gated to authenticated tenant only.
 // PCI CC6.1 — paymentMethodId is a Stripe token; never stored as plaintext card data.
 
-billingRouter.post('/', async (c): Promise<Response> => {
+billingRouter.post('/', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Billing routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -215,7 +216,7 @@ billingRouter.post('/', async (c): Promise<Response> => {
 // SOC2 CC6.1 — Plan changes audit-logged in SubscriptionManager.
 // ISO 27001 A.9.1.2 — Plan elevation follows least-privilege principle.
 
-billingRouter.put('/upgrade', async (c): Promise<Response> => {
+billingRouter.put('/upgrade', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Billing routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -260,7 +261,7 @@ billingRouter.put('/upgrade', async (c): Promise<Response> => {
 // SOC2 CC6.1 — Plan changes audit-logged; usage validated before downgrade.
 // ISO 27001 A.9.1.2 — Downgrade takes effect at period end (grace period).
 
-billingRouter.put('/downgrade', async (c): Promise<Response> => {
+billingRouter.put('/downgrade', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Billing routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -305,7 +306,7 @@ billingRouter.put('/downgrade', async (c): Promise<Response> => {
 // SOC2 CC6.1 — Cancellation audit-logged; takes effect at period end by default.
 // HIPAA §164.312(a)(1) — Revokes plan-based access at period end.
 
-billingRouter.delete('/', async (c): Promise<Response> => {
+billingRouter.delete('/', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Billing routes not configured');
 
   const ctx = ensureTenantContext(c);

@@ -33,6 +33,7 @@ import * as schema from '@ordr/db';
 import { AuthorizationError, ValidationError, NotFoundError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -940,7 +941,7 @@ reportsRouter.get('/schedules', async (c): Promise<Response> => {
 
 // ── POST /generate — trigger report generation ───────────────────
 
-reportsRouter.post('/generate', async (c): Promise<Response> => {
+reportsRouter.post('/generate', rateLimit('write'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -1024,7 +1025,7 @@ reportsRouter.post('/generate', async (c): Promise<Response> => {
 
 // ── POST /schedules — create scheduled report ────────────────────
 
-reportsRouter.post('/schedules', async (c): Promise<Response> => {
+reportsRouter.post('/schedules', rateLimit('write'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');
@@ -1082,7 +1083,7 @@ reportsRouter.post('/schedules', async (c): Promise<Response> => {
 
 // ── DELETE /schedules/:id ─────────────────────────────────────────
 
-reportsRouter.delete('/schedules/:id', async (c): Promise<Response> => {
+reportsRouter.delete('/schedules/:id', rateLimit('write'), async (c): Promise<Response> => {
   const { db } = getDeps();
   const requestId = c.get('requestId');
   const ctx = c.get('tenantContext');

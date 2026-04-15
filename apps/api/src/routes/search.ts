@@ -27,6 +27,7 @@ import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
 import { requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -140,7 +141,7 @@ searchRouter.use('*', requirePermissionMiddleware('search', 'read'));
 // SOC2 CC6.1 — Query always scoped to tenantId from JWT.
 // HIPAA §164.312 — Results contain only PHI-masked display fields.
 
-searchRouter.post('/', async (c): Promise<Response> => {
+searchRouter.post('/', rateLimit('read'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Search routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -224,7 +225,7 @@ searchRouter.get('/suggest', async (c): Promise<Response> => {
 // ─── POST /faceted — Faceted search ───────────────────────────────
 // SOC2 CC6.1 — Facet aggregations tenant-scoped.
 
-searchRouter.post('/faceted', async (c): Promise<Response> => {
+searchRouter.post('/faceted', rateLimit('read'), async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Search routes not configured');
 
   const ctx = ensureTenantContext(c);
@@ -266,32 +267,41 @@ searchRouter.post('/faceted', async (c): Promise<Response> => {
 // HIPAA §164.312 — PHI is stripped by indexer before storage.
 // ISO 27001 A.8.2.3 — Data classification enforced at index boundary.
 
-searchRouter.post('/index', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
-  if (!deps) throw new Error('[ORDR:API] Search routes not configured');
+searchRouter.post(
+  '/index',
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Search routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const requestId = c.get('requestId');
-  const body: unknown = await c.req.json();
+    const ctx = ensureTenantContext(c);
+    const requestId = c.get('requestId');
+    const body: unknown = await c.req.json();
 
-  const parsed = indexEntityBodySchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid index parameters', parseZodErrors(parsed.error), requestId);
-  }
+    const parsed = indexEntityBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        'Invalid index parameters',
+        parseZodErrors(parsed.error),
+        requestId,
+      );
+    }
 
-  const entry = await deps.indexer.indexEntity({
-    entityType: parsed.data.entityType,
-    entityId: parsed.data.entityId,
-    tenantId: ctx.tenantId,
-    fields: parsed.data.fields,
-    ...(parsed.data.displayTitle !== undefined ? { displayTitle: parsed.data.displayTitle } : {}),
-    ...(parsed.data.displaySubtitle !== undefined
-      ? { displaySubtitle: parsed.data.displaySubtitle }
-      : {}),
-    ...(parsed.data.metadata !== undefined ? { metadata: parsed.data.metadata } : {}),
-  });
+    const entry = await deps.indexer.indexEntity({
+      entityType: parsed.data.entityType,
+      entityId: parsed.data.entityId,
+      tenantId: ctx.tenantId,
+      fields: parsed.data.fields,
+      ...(parsed.data.displayTitle !== undefined ? { displayTitle: parsed.data.displayTitle } : {}),
+      ...(parsed.data.displaySubtitle !== undefined
+        ? { displaySubtitle: parsed.data.displaySubtitle }
+        : {}),
+      ...(parsed.data.metadata !== undefined ? { metadata: parsed.data.metadata } : {}),
+    });
 
-  return c.json({ success: true as const, data: entry, requestId }, 201);
-});
+    return c.json({ success: true as const, data: entry, requestId }, 201);
+  },
+);
 
 // ─── DELETE /index/:entityType/:entityId — Remove from index (admin only) ─
 // SOC2 CC6.1 — Index deletions restricted to tenant_admin.
@@ -299,6 +309,7 @@ searchRouter.post('/index', requireRoleMiddleware('tenant_admin'), async (c): Pr
 searchRouter.delete(
   '/index/:entityType/:entityId',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Search routes not configured');
 
@@ -335,6 +346,7 @@ searchRouter.delete(
 searchRouter.post(
   '/reindex/:entityType',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('bulk'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Search routes not configured');
 

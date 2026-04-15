@@ -31,6 +31,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ const signalSchema = z.object({
 const cobrowseRouter = new Hono<Env>();
 
 // POST /sessions — Admin initiates a session
-cobrowseRouter.post('/sessions', requireAuth(), async (c) => {
+cobrowseRouter.post('/sessions', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -313,7 +314,7 @@ cobrowseRouter.get('/sessions/:id', requireAuth(), (c) => {
 });
 
 // POST /sessions/:id/accept — User accepts the session
-cobrowseRouter.post('/sessions/:id/accept', requireAuth(), (c) => {
+cobrowseRouter.post('/sessions/:id/accept', requireAuth(), rateLimit('write'), (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -379,7 +380,7 @@ cobrowseRouter.post('/sessions/:id/accept', requireAuth(), (c) => {
 });
 
 // POST /sessions/:id/reject — User rejects
-cobrowseRouter.post('/sessions/:id/reject', requireAuth(), (c) => {
+cobrowseRouter.post('/sessions/:id/reject', requireAuth(), rateLimit('write'), (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -432,7 +433,7 @@ cobrowseRouter.post('/sessions/:id/reject', requireAuth(), (c) => {
 });
 
 // POST /sessions/:id/end — Either party ends the session
-cobrowseRouter.post('/sessions/:id/end', requireAuth(), (c) => {
+cobrowseRouter.post('/sessions/:id/end', requireAuth(), rateLimit('write'), (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -481,7 +482,7 @@ cobrowseRouter.post('/sessions/:id/end', requireAuth(), (c) => {
 });
 
 // POST /sessions/:id/signal — WebRTC signaling relay (offer/answer/ICE/annotation)
-cobrowseRouter.post('/sessions/:id/signal', requireAuth(), async (c) => {
+cobrowseRouter.post('/sessions/:id/signal', requireAuth(), rateLimit('write'), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(

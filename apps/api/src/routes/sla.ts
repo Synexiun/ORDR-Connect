@@ -14,6 +14,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import type { SlaChecker } from '../lib/sla-checker.js';
 
 // ─── Module-level SlaChecker ──────────────────────────────────────
@@ -37,7 +38,7 @@ const slaRouter = new Hono<Env>();
 
 // ── POST /check — trigger immediate check ─────────────────────────
 
-slaRouter.post('/check', requireAuth(), async (c): Promise<Response> => {
+slaRouter.post('/check', requireAuth(), rateLimit('write'), async (c): Promise<Response> => {
   const ctx = c.get('tenantContext');
   if (!ctx)
     return c.json(
