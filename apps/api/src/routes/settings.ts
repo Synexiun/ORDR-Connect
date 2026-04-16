@@ -692,7 +692,7 @@ settingsRouter.patch(
   requireRoleMiddleware('tenant_admin'),
   rateLimit('write'),
   async (c): Promise<Response> => {
-    const { db } = getDeps();
+    const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) throw new AuthorizationError('Authentication required');
@@ -725,6 +725,18 @@ settingsRouter.patch(
 
     await patchTenantSettings(db, ctx.tenantId, { channelConfig: channels });
 
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'system.config_change',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'tenant_settings',
+      resourceId: ctx.tenantId,
+      action: 'reorder_channel',
+      details: { channel: parsed.data.channel, direction: parsed.data.direction },
+      timestamp: new Date(),
+    });
+
     return c.json({ success: true as const, data: channels });
   },
 );
@@ -736,7 +748,7 @@ settingsRouter.patch(
   requireRoleMiddleware('tenant_admin'),
   rateLimit('write'),
   async (c): Promise<Response> => {
-    const { db } = getDeps();
+    const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
     const ctx = c.get('tenantContext');
     if (!ctx) throw new AuthorizationError('Authentication required');
@@ -760,6 +772,18 @@ settingsRouter.patch(
       ch.channel === channelName ? { ...ch, enabled: parsed.data.enabled } : ch,
     );
     await patchTenantSettings(db, ctx.tenantId, { channelConfig: updated });
+
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'system.config_change',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'tenant_settings',
+      resourceId: ctx.tenantId,
+      action: 'toggle_channel',
+      details: { channel: channelName, enabled: parsed.data.enabled },
+      timestamp: new Date(),
+    });
 
     const entry = updated[idx];
     return c.json({ success: true as const, data: entry });

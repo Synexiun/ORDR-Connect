@@ -854,6 +854,19 @@ integrationsRouter.post(
 
     // SECURITY: code is exchanged server-side — never returned to client
     const result = await adapter.exchangeToken(parsed.data.code);
+    const ctx = ensureTenantContext(c);
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'integration.connected',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'integration',
+      resourceId: provider,
+      action: 'oauth_callback',
+      details: { provider, expiresAt: result.credentials.expiresAt },
+      timestamp: new Date(),
+    });
 
     return c.json({
       success: true as const,

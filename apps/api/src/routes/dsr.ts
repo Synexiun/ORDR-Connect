@@ -310,7 +310,13 @@ dsrRouter.get('/:id', requirePermissionMiddleware('dsr', 'read'), async (c) => {
     }
     if (exp.downloadUrl === undefined || exp.downloadUrl === '') {
       console.error(
-        `[ORDR:API:DSR] downloadUrl not generated for DSR ${dsrId} (correlationId=${c.get('requestId')})`,
+        JSON.stringify({
+          level: 'error',
+          component: 'dsr',
+          event: 'download_url_missing',
+          dsrId,
+          correlationId: c.get('requestId'),
+        }),
       );
       return c.json(
         {

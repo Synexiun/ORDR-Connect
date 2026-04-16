@@ -22,6 +22,7 @@ import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermissionMiddleware } from '../middleware/auth.js';
 import { requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
 
@@ -106,6 +107,7 @@ schedulerRouter.get('/jobs', async (c): Promise<Response> => {
 schedulerRouter.post(
   '/jobs/once',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Scheduler routes not configured');
 
