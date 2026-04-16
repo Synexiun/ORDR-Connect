@@ -41,6 +41,7 @@ import {
   Search,
   DollarSign,
   Network,
+  ToggleRight,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -88,6 +89,7 @@ const navSections: NavSection[] = [
       { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
       { to: '/sla', label: 'SLA Monitor', icon: Clock },
       { to: '/dsr', label: 'DSR Management', icon: FileText },
+      { to: '/feature-flags', label: 'Feature Flags', icon: ToggleRight },
     ],
   },
   {

@@ -86,6 +86,9 @@ const SlaMonitor = lazy(() =>
 const DsrManagement = lazy(() =>
   import('./pages/DsrManagement').then((m) => ({ default: m.DsrManagement })),
 );
+const FeatureFlags = lazy(() =>
+  import('./pages/FeatureFlags').then((m) => ({ default: m.FeatureFlags })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -210,6 +213,7 @@ export function App(): ReactNode {
                 <Route path="/search" element={<Search />} />
                 <Route path="/sla" element={<SlaMonitor />} />
                 <Route path="/dsr" element={<DsrManagement />} />
+                <Route path="/feature-flags" element={<FeatureFlags />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
