@@ -47,6 +47,7 @@ import {
 import type { FhirPatient, FhirBundle, FhirBundleEntry } from '@ordr/fhir';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import { AuthorizationError, NotFoundError, PAGINATION } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
 
@@ -333,90 +334,99 @@ fhirRouter.get('/Patient/:id', requirePermissionMiddleware('customers', 'read'),
 
 // ─── POST /Patient — import patient from EHR ─────────────────────
 
-fhirRouter.post('/Patient', requirePermissionMiddleware('customers', 'create'), async (c) => {
-  const { db, auditLogger, baseUrl } = ensureDeps();
-  const ctx = ensureCtx(c);
+fhirRouter.post(
+  '/Patient',
+  requirePermissionMiddleware('customers', 'create'),
+  rateLimit('write'),
+  async (c) => {
+    const { db, auditLogger, baseUrl } = ensureDeps();
+    const ctx = ensureCtx(c);
 
-  const body: unknown = await c.req.json().catch(() => null);
-  if (
-    body === null ||
-    typeof body !== 'object' ||
-    (body as Record<string, unknown>)['resourceType'] !== 'Patient'
-  ) {
-    return fhirJson(
-      buildOperationOutcome('error', 'invalid', 'Body must be a FHIR R4 Patient resource'),
-      400,
-    );
-  }
+    const body: unknown = await c.req.json().catch(() => null);
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      (body as Record<string, unknown>)['resourceType'] !== 'Patient'
+    ) {
+      return fhirJson(
+        buildOperationOutcome('error', 'invalid', 'Body must be a FHIR R4 Patient resource'),
+        400,
+      );
+    }
 
-  const patient = body as FhirPatient;
-  const importPayload = fhirPatientToCustomerImport(patient);
+    const patient = body as FhirPatient;
+    const importPayload = fhirPatientToCustomerImport(patient);
 
-  if (!importPayload.externalId) {
-    return fhirJson(
-      buildOperationOutcome('error', 'invalid', 'Patient must have at least one identifier'),
-      422,
-    );
-  }
+    if (!importPayload.externalId) {
+      return fhirJson(
+        buildOperationOutcome('error', 'invalid', 'Patient must have at least one identifier'),
+        422,
+      );
+    }
 
-  const { fieldEncryptor } = ensureDeps();
-  const encryptedPhi = encryptImportPhi(importPayload.phi, fieldEncryptor);
-  const newId = randomUUID();
-  const rows = await db
-    .insert(customers)
-    .values({
-      id: newId,
+    const { fieldEncryptor } = ensureDeps();
+    const encryptedPhi = encryptImportPhi(importPayload.phi, fieldEncryptor);
+    const newId = randomUUID();
+    const rows = await db
+      .insert(customers)
+      .values({
+        id: newId,
+        tenantId: ctx.tenantId,
+        externalId: importPayload.externalId,
+        type: importPayload.type,
+        status: 'active',
+        name: encryptedPhi.name,
+        ...(encryptedPhi.email !== undefined && { email: encryptedPhi.email }),
+        ...(encryptedPhi.phone !== undefined && { phone: encryptedPhi.phone }),
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    const created = rows[0];
+
+    await auditLogger.log({
       tenantId: ctx.tenantId,
-      externalId: importPayload.externalId,
-      type: importPayload.type,
-      status: 'active',
-      name: encryptedPhi.name,
-      ...(encryptedPhi.email !== undefined && { email: encryptedPhi.email }),
-      ...(encryptedPhi.phone !== undefined && { phone: encryptedPhi.phone }),
-    })
-    .onConflictDoNothing()
-    .returning();
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'fhir:Patient',
+      resourceId: created?.id ?? newId,
+      action: 'import',
+      details: {
+        externalId: importPayload.externalId,
+        externalSystem: importPayload.externalSystem,
+        conflict: created === undefined,
+      },
+      timestamp: new Date(),
+    });
 
-  const created = rows[0];
+    if (created === undefined) {
+      return fhirJson(
+        buildOperationOutcome(
+          'information',
+          'conflict',
+          'Patient already exists (externalId match)',
+        ),
+        200,
+      );
+    }
 
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'fhir:Patient',
-    resourceId: created?.id ?? newId,
-    action: 'import',
-    details: {
-      externalId: importPayload.externalId,
-      externalSystem: importPayload.externalSystem,
-      conflict: created === undefined,
-    },
-    timestamp: new Date(),
-  });
-
-  if (created === undefined) {
-    return fhirJson(
-      buildOperationOutcome('information', 'conflict', 'Patient already exists (externalId match)'),
-      200,
+    const responsePatient = customerToFhirPatient(
+      {
+        id: created.id,
+        tenantId: created.tenantId,
+        type: created.type,
+        status: created.status,
+        lifecycleStage: created.lifecycleStage ?? 'lead',
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+      },
+      baseUrl,
     );
-  }
 
-  const responsePatient = customerToFhirPatient(
-    {
-      id: created.id,
-      tenantId: created.tenantId,
-      type: created.type,
-      status: created.status,
-      lifecycleStage: created.lifecycleStage ?? 'lead',
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
-    },
-    baseUrl,
-  );
-
-  return fhirJson(responsePatient, 201);
-});
+    return fhirJson(responsePatient, 201);
+  },
+);
 
 // ─── GET /Patient/:id/$everything — all data for a patient ───────
 
@@ -652,103 +662,108 @@ fhirRouter.get('/Communication/:id', requirePermissionMiddleware('messages', 're
 
 // ─── POST / — FHIR transaction bundle (bulk import) ──────────────
 
-fhirRouter.post('/', requirePermissionMiddleware('customers', 'create'), async (c) => {
-  const { db, auditLogger, baseUrl } = ensureDeps();
-  const ctx = ensureCtx(c);
-  const requestId = c.get('requestId');
+fhirRouter.post(
+  '/',
+  requirePermissionMiddleware('customers', 'create'),
+  rateLimit('write'),
+  async (c) => {
+    const { db, auditLogger, baseUrl } = ensureDeps();
+    const ctx = ensureCtx(c);
+    const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json().catch(() => null);
-  if (
-    body === null ||
-    typeof body !== 'object' ||
-    (body as Record<string, unknown>)['resourceType'] !== 'Bundle' ||
-    (body as Record<string, unknown>)['type'] !== 'transaction'
-  ) {
-    return fhirJson(
-      buildOperationOutcome(
-        'error',
-        'invalid',
-        'Body must be a FHIR R4 Bundle with type=transaction',
-      ),
-      400,
-    );
-  }
-
-  // Cast as generic Bundle so entry.resource union includes all resource types,
-  // allowing the runtime resourceType guard below to narrow correctly.
-  const bundle = body as FhirBundle;
-  const entries = bundle.entry ?? [];
-
-  let imported = 0;
-  let skipped = 0;
-  const responseEntries: Array<{
-    readonly response: { readonly status: string; readonly location?: string };
-  }> = [];
-
-  for (const entry of entries) {
-    const resource = entry.resource;
-    if (!resource || resource.resourceType !== 'Patient') {
-      responseEntries.push({ response: { status: '422 Unprocessable Entity' } });
-      continue;
+    const body: unknown = await c.req.json().catch(() => null);
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      (body as Record<string, unknown>)['resourceType'] !== 'Bundle' ||
+      (body as Record<string, unknown>)['type'] !== 'transaction'
+    ) {
+      return fhirJson(
+        buildOperationOutcome(
+          'error',
+          'invalid',
+          'Body must be a FHIR R4 Bundle with type=transaction',
+        ),
+        400,
+      );
     }
 
-    const importPayload = fhirPatientToCustomerImport(resource);
-    if (!importPayload.externalId) {
-      responseEntries.push({ response: { status: '422 Unprocessable Entity' } });
-      continue;
+    // Cast as generic Bundle so entry.resource union includes all resource types,
+    // allowing the runtime resourceType guard below to narrow correctly.
+    const bundle = body as FhirBundle;
+    const entries = bundle.entry ?? [];
+
+    let imported = 0;
+    let skipped = 0;
+    const responseEntries: Array<{
+      readonly response: { readonly status: string; readonly location?: string };
+    }> = [];
+
+    for (const entry of entries) {
+      const resource = entry.resource;
+      if (!resource || resource.resourceType !== 'Patient') {
+        responseEntries.push({ response: { status: '422 Unprocessable Entity' } });
+        continue;
+      }
+
+      const importPayload = fhirPatientToCustomerImport(resource);
+      if (!importPayload.externalId) {
+        responseEntries.push({ response: { status: '422 Unprocessable Entity' } });
+        continue;
+      }
+
+      const encPhi = encryptImportPhi(importPayload.phi, ensureDeps().fieldEncryptor);
+      const newId = randomUUID();
+      const rows = await db
+        .insert(customers)
+        .values({
+          id: newId,
+          tenantId: ctx.tenantId,
+          externalId: importPayload.externalId,
+          type: importPayload.type,
+          status: 'active',
+          name: encPhi.name,
+          ...(encPhi.email !== undefined && { email: encPhi.email }),
+          ...(encPhi.phone !== undefined && { phone: encPhi.phone }),
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (rows[0]) {
+        imported++;
+        responseEntries.push({
+          response: {
+            status: '201 Created',
+            location: `${baseUrl}/fhir/r4/Patient/${rows[0].id}`,
+          },
+        });
+      } else {
+        skipped++;
+        responseEntries.push({ response: { status: '200 OK (conflict — already exists)' } });
+      }
     }
 
-    const encPhi = encryptImportPhi(importPayload.phi, ensureDeps().fieldEncryptor);
-    const newId = randomUUID();
-    const rows = await db
-      .insert(customers)
-      .values({
-        id: newId,
-        tenantId: ctx.tenantId,
-        externalId: importPayload.externalId,
-        type: importPayload.type,
-        status: 'active',
-        name: encPhi.name,
-        ...(encPhi.email !== undefined && { email: encPhi.email }),
-        ...(encPhi.phone !== undefined && { phone: encPhi.phone }),
-      })
-      .onConflictDoNothing()
-      .returning();
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'fhir:Bundle',
+      resourceId: requestId,
+      action: 'transaction',
+      details: { total: entries.length, imported, skipped },
+      timestamp: new Date(),
+    });
 
-    if (rows[0]) {
-      imported++;
-      responseEntries.push({
-        response: {
-          status: '201 Created',
-          location: `${baseUrl}/fhir/r4/Patient/${rows[0].id}`,
-        },
-      });
-    } else {
-      skipped++;
-      responseEntries.push({ response: { status: '200 OK (conflict — already exists)' } });
-    }
-  }
+    const responseBundle: FhirBundle = {
+      resourceType: 'Bundle',
+      type: 'transaction-response',
+      timestamp: new Date().toISOString(),
+      entry: responseEntries,
+    };
 
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'fhir:Bundle',
-    resourceId: requestId,
-    action: 'transaction',
-    details: { total: entries.length, imported, skipped },
-    timestamp: new Date(),
-  });
-
-  const responseBundle: FhirBundle = {
-    resourceType: 'Bundle',
-    type: 'transaction-response',
-    timestamp: new Date().toISOString(),
-    entry: responseEntries,
-  };
-
-  return fhirJson(responseBundle);
-});
+    return fhirJson(responseBundle);
+  },
+);
 
 export { fhirRouter };

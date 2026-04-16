@@ -31,6 +31,7 @@ import { hashPassword, randomHex } from '@ordr/crypto';
 import { AuthorizationError, ValidationError, NotFoundError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -138,82 +139,88 @@ teamRouter.get('/members', async (c): Promise<Response> => {
 
 // ── POST /invite ──────────────────────────────────────────────────
 
-teamRouter.post('/invite', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
-  const { db, auditLogger } = getDeps();
-  const requestId = c.get('requestId');
-  const ctx = c.get('tenantContext');
-  if (!ctx) throw new AuthorizationError('Authentication required');
+teamRouter.post(
+  '/invite',
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const { db, auditLogger } = getDeps();
+    const requestId = c.get('requestId');
+    const ctx = c.get('tenantContext');
+    if (!ctx) throw new AuthorizationError('Authentication required');
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const body = await c.req.json().catch(() => null);
-  const parsed = inviteSchema.safeParse(body);
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path.join('.');
-      const existing = fieldErrors[field];
-      if (existing) existing.push(issue.message);
-      else fieldErrors[field] = [issue.message];
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const body = await c.req.json().catch(() => null);
+    const parsed = inviteSchema.safeParse(body);
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string[]> = {};
+      for (const issue of parsed.error.issues) {
+        const field = issue.path.join('.');
+        const existing = fieldErrors[field];
+        if (existing) existing.push(issue.message);
+        else fieldErrors[field] = [issue.message];
+      }
+      throw new ValidationError('Invalid invite data', fieldErrors, requestId);
     }
-    throw new ValidationError('Invalid invite data', fieldErrors, requestId);
-  }
 
-  // Generate a secure temporary password — user must reset on first login
-  const tempPassword = randomHex(16);
-  const passwordHash = await hashPassword(tempPassword);
+    // Generate a secure temporary password — user must reset on first login
+    const tempPassword = randomHex(16);
+    const passwordHash = await hashPassword(tempPassword);
 
-  const inserted = await db
-    .insert(schema.users)
-    .values({
+    const inserted = await db
+      .insert(schema.users)
+      .values({
+        tenantId: ctx.tenantId,
+        email: parsed.data.email,
+        name: parsed.data.name,
+        role: parsed.data.role,
+        passwordHash,
+        status: 'active',
+        mfaEnabled: false,
+      })
+      .returning({
+        id: schema.users.id,
+        name: schema.users.name,
+        email: schema.users.email,
+        role: schema.users.role,
+        status: schema.users.status,
+        lastLoginAt: schema.users.lastLoginAt,
+        mfaEnabled: schema.users.mfaEnabled,
+      });
+
+    const row = inserted[0];
+    if (row === undefined) {
+      throw new Error('[ORDR:API] User insert returned no rows');
+    }
+
+    await auditLogger.log({
       tenantId: ctx.tenantId,
-      email: parsed.data.email,
-      name: parsed.data.name,
-      role: parsed.data.role,
-      passwordHash,
-      status: 'active',
-      mfaEnabled: false,
-    })
-    .returning({
-      id: schema.users.id,
-      name: schema.users.name,
-      email: schema.users.email,
-      role: schema.users.role,
-      status: schema.users.status,
-      lastLoginAt: schema.users.lastLoginAt,
-      mfaEnabled: schema.users.mfaEnabled,
+      eventType: 'user.invited',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'user',
+      resourceId: row.id,
+      action: 'invite',
+      details: { email: parsed.data.email, role: parsed.data.role },
+      timestamp: new Date(),
     });
 
-  const row = inserted[0];
-  if (row === undefined) {
-    throw new Error('[ORDR:API] User insert returned no rows');
-  }
-
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'user.invited',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'user',
-    resourceId: row.id,
-    action: 'invite',
-    details: { email: parsed.data.email, role: parsed.data.role },
-    timestamp: new Date(),
-  });
-
-  return c.json(
-    {
-      success: true as const,
-      data: toMemberResponse(row),
-    },
-    201,
-  );
-});
+    return c.json(
+      {
+        success: true as const,
+        data: toMemberResponse(row),
+      },
+      201,
+    );
+  },
+);
 
 // ── PATCH /members/:id — update role ─────────────────────────────
 
 teamRouter.patch(
   '/members/:id',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
@@ -274,6 +281,7 @@ teamRouter.patch(
 teamRouter.patch(
   '/members/:id/suspend',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');
@@ -339,6 +347,7 @@ teamRouter.patch(
 teamRouter.delete(
   '/members/:id',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { db, auditLogger } = getDeps();
     const requestId = c.get('requestId');

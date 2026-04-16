@@ -20,6 +20,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import { featureGate, FEATURES } from '../middleware/plan-gate.js';
 import { jsonErr } from '../lib/http.js';
 
@@ -160,7 +161,7 @@ ssoRouter.get('/callback', async (c): Promise<Response> => {
 ssoRouter.get(
   '/connections',
   requireAuth(),
-  featureGate(FEATURES.SSO), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+  featureGate(FEATURES.SSO),
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] SSO routes not configured');
@@ -190,8 +191,9 @@ ssoRouter.get(
 ssoRouter.post(
   '/connections',
   requireAuth(),
-  featureGate(FEATURES.SSO), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+  featureGate(FEATURES.SSO),
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] SSO routes not configured');
@@ -259,8 +261,9 @@ ssoRouter.post(
 ssoRouter.delete(
   '/connections/:id',
   requireAuth(),
-  featureGate(FEATURES.SSO), // eslint-disable-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+  featureGate(FEATURES.SSO),
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] SSO routes not configured');

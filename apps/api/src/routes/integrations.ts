@@ -796,6 +796,7 @@ integrationsRouter.get('/:provider', async (c): Promise<Response> => {
 integrationsRouter.post(
   '/:provider/authorize',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
@@ -832,6 +833,7 @@ integrationsRouter.post(
 integrationsRouter.post(
   '/:provider/callback',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
@@ -953,6 +955,7 @@ integrationsRouter.post(
 integrationsRouter.delete(
   '/:provider/contacts/:id',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
@@ -1017,41 +1020,45 @@ integrationsRouter.get('/:provider/deals', async (c): Promise<Response> => {
 // ─── POST /:provider/webhook/test — Verify connectivity (JWT-required) ────────
 // Registered after auth middleware so it requires valid JWT + integrations:read.
 
-integrationsRouter.post('/:provider/webhook/test', async (c): Promise<Response> => {
-  if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
+integrationsRouter.post(
+  '/:provider/webhook/test',
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
-  const ctx = ensureTenantContext(c);
-  const provider = c.req.param('provider');
-  const adapter = resolveAdapter(provider, deps.adapters);
+    const ctx = ensureTenantContext(c);
+    const provider = c.req.param('provider');
+    const adapter = resolveAdapter(provider, deps.adapters);
 
-  const oauthConfig = deps.oauthConfigs.get(provider);
-  if (!oauthConfig) {
-    return c.json({ valid: false, error: 'unknown_provider' }, 404);
-  }
-
-  try {
-    const credentials = await ensureFreshCredentials(
-      deps.credManagerDeps,
-      ctx.tenantId,
-      provider,
-      adapter,
-      oauthConfig,
-      deps.fieldEncryptor,
-    );
-    const start = Date.now();
-    const health = await adapter.getHealth(credentials);
-    return c.json({
-      valid: health.status !== 'error' && health.status !== 'disconnected',
-      provider,
-      latencyMs: Date.now() - start,
-    });
-  } catch (err: unknown) {
-    if (err instanceof IntegrationNotConnectedError) {
-      return c.json({ valid: false, error: 'integration_not_connected' }, 403);
+    const oauthConfig = deps.oauthConfigs.get(provider);
+    if (!oauthConfig) {
+      return c.json({ valid: false, error: 'unknown_provider' }, 404);
     }
-    return c.json({ valid: false, error: 'connectivity_check_failed' }, 200);
-  }
-});
+
+    try {
+      const credentials = await ensureFreshCredentials(
+        deps.credManagerDeps,
+        ctx.tenantId,
+        provider,
+        adapter,
+        oauthConfig,
+        deps.fieldEncryptor,
+      );
+      const start = Date.now();
+      const health = await adapter.getHealth(credentials);
+      return c.json({
+        valid: health.status !== 'error' && health.status !== 'disconnected',
+        provider,
+        latencyMs: Date.now() - start,
+      });
+    } catch (err: unknown) {
+      if (err instanceof IntegrationNotConnectedError) {
+        return c.json({ valid: false, error: 'integration_not_connected' }, 403);
+      }
+      return c.json({ valid: false, error: 'connectivity_check_failed' }, 200);
+    }
+  },
+);
 
 // ─── Credential middleware for activity routes ────────────────────
 // Must be registered before the activity route handlers so that
@@ -1257,6 +1264,7 @@ integrationsRouter.get('/:provider/field-mappings', async (c): Promise<Response>
 integrationsRouter.put(
   '/:provider/field-mappings',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
     const ctx = ensureTenantContext(c);
@@ -1304,6 +1312,7 @@ integrationsRouter.put(
 integrationsRouter.post(
   '/:provider/sync',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
     const ctx = ensureTenantContext(c);
@@ -1527,6 +1536,7 @@ integrationsRouter.post(
 integrationsRouter.post(
   '/:provider/sync/outbound',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
     const enc = deps.fieldEncryptor; // capture for closure safety (module-level let)
@@ -1749,6 +1759,7 @@ integrationsRouter.get('/:provider/sync/history', async (c): Promise<Response> =
 integrationsRouter.delete(
   '/:provider',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
     const ctx = ensureTenantContext(c);

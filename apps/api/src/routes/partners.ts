@@ -27,6 +27,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { ValidationError, NotFoundError, AuthorizationError, ConflictError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Input Schemas ──────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ const partnersRouter = new Hono<Env>();
 
 // ─── POST /register — Register as partner ───────────────────────
 
-partnersRouter.post('/register', requireAuth(), async (c) => {
+partnersRouter.post('/register', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
   const requestId = c.get('requestId');
@@ -263,7 +264,7 @@ partnersRouter.get('/me', requireAuth(), async (c) => {
 
 // ─── PUT /me — Update partner profile ───────────────────────────
 
-partnersRouter.put('/me', requireAuth(), async (c) => {
+partnersRouter.put('/me', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
   const requestId = c.get('requestId');
@@ -330,7 +331,7 @@ partnersRouter.put('/me', requireAuth(), async (c) => {
 
 // ─── PATCH /me — Update partner profile (frontend alias for PUT) ─
 
-partnersRouter.patch('/me', requireAuth(), async (c) => {
+partnersRouter.patch('/me', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Partner routes not configured');
 
   const requestId = c.get('requestId');

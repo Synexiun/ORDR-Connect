@@ -21,6 +21,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 import { jsonErr } from '../lib/http.js';
 
 // ─── Input Schemas ────────────────────────────────────────────────
@@ -92,6 +93,7 @@ organizationsRouter.get('/', async (c): Promise<Response> => {
 organizationsRouter.post(
   '/',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Organization routes not configured');
@@ -186,6 +188,7 @@ organizationsRouter.get('/:id', async (c): Promise<Response> => {
 organizationsRouter.patch(
   '/:id',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Organization routes not configured');
@@ -254,6 +257,7 @@ organizationsRouter.patch(
 organizationsRouter.delete(
   '/:id',
   requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     if (!deps) {
       throw new Error('[ORDR:API] Organization routes not configured');

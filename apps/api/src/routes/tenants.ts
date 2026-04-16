@@ -29,6 +29,7 @@ import { AuthorizationError, ValidationError, NotFoundError } from '@ordr/core';
 import type { AuditLogger } from '@ordr/audit';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Row shape (excludes settings to prevent security config leakage) ─────────
 
@@ -156,35 +157,40 @@ tenantsRouter.get('/me', async (c): Promise<Response> => {
 // SOC2 CC6.3 — Requires tenant_admin role.
 // Slug changes are platform-admin only — name is the only self-service field.
 
-tenantsRouter.patch('/me', requireRoleMiddleware('tenant_admin'), async (c): Promise<Response> => {
-  const { updateTenant, auditLogger } = getDeps();
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined) throw new AuthorizationError('Tenant context required');
-  const requestId = c.get('requestId');
+tenantsRouter.patch(
+  '/me',
+  requireRoleMiddleware('tenant_admin'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const { updateTenant, auditLogger } = getDeps();
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined) throw new AuthorizationError('Tenant context required');
+    const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json().catch(() => null);
-  const parsed = updateNameSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid update request', parseZodErrors(parsed.error), requestId);
-  }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = updateNameSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid update request', parseZodErrors(parsed.error), requestId);
+    }
 
-  const updated = await updateTenant(ctx.tenantId, { name: parsed.data.name });
-  if (updated === undefined) throw new NotFoundError('Tenant not found');
+    const updated = await updateTenant(ctx.tenantId, { name: parsed.data.name });
+    if (updated === undefined) throw new NotFoundError('Tenant not found');
 
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.updated',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'tenant',
-    resourceId: ctx.tenantId,
-    action: 'update_name',
-    details: {},
-    timestamp: new Date(),
-  });
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'tenant',
+      resourceId: ctx.tenantId,
+      action: 'update_name',
+      details: {},
+      timestamp: new Date(),
+    });
 
-  return c.json({ success: true as const, data: updated, requestId });
-});
+    return c.json({ success: true as const, data: updated, requestId });
+  },
+);
 
 // ─── GET / — List all tenants ────────────────────────────────────────────────
 // SOC2 CC6.1 — Platform admin access only. Supports status + plan filtering.
@@ -217,34 +223,39 @@ tenantsRouter.get('/', requireRoleMiddleware('super_admin'), async (c): Promise<
 // SOC2 CC6.1 — Platform admin only. Creates tenant record + audits provisioning.
 // ISO 27001 A.9.1 — Provisioning is an access control event requiring full audit trail.
 
-tenantsRouter.post('/', requireRoleMiddleware('super_admin'), async (c): Promise<Response> => {
-  const { createTenant, auditLogger } = getDeps();
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined) throw new AuthorizationError('Tenant context required');
-  const requestId = c.get('requestId');
+tenantsRouter.post(
+  '/',
+  requireRoleMiddleware('super_admin'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const { createTenant, auditLogger } = getDeps();
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined) throw new AuthorizationError('Tenant context required');
+    const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json().catch(() => null);
-  const parsed = createTenantSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid tenant request', parseZodErrors(parsed.error), requestId);
-  }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = createTenantSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid tenant request', parseZodErrors(parsed.error), requestId);
+    }
 
-  const tenant = await createTenant(parsed.data);
+    const tenant = await createTenant(parsed.data);
 
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.created',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'tenant',
-    resourceId: tenant.id,
-    action: 'provision',
-    details: { plan: tenant.plan, isolationTier: tenant.isolationTier },
-    timestamp: new Date(),
-  });
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.created',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'tenant',
+      resourceId: tenant.id,
+      action: 'provision',
+      details: { plan: tenant.plan, isolationTier: tenant.isolationTier },
+      timestamp: new Date(),
+    });
 
-  return c.json({ success: true as const, data: tenant, requestId }, 201);
-});
+    return c.json({ success: true as const, data: tenant, requestId }, 201);
+  },
+);
 
 // ─── GET /:id — Get tenant by ID ─────────────────────────────────────────────
 // SOC2 CC6.1 — Super admin can read any tenant; others can only read own.
@@ -271,40 +282,45 @@ tenantsRouter.get('/:id', async (c): Promise<Response> => {
 // ─── PATCH /:id — Update tenant name/slug ───────────────────────────────────
 // SOC2 CC6.3 — Super admin only. Slug changes affect routing + must be unique.
 
-tenantsRouter.patch('/:id', requireRoleMiddleware('super_admin'), async (c): Promise<Response> => {
-  const { updateTenant, auditLogger } = getDeps();
-  const ctx = c.get('tenantContext');
-  if (ctx === undefined) throw new AuthorizationError('Tenant context required');
-  const requestId = c.get('requestId');
-  const tenantId = c.req.param('id');
+tenantsRouter.patch(
+  '/:id',
+  requireRoleMiddleware('super_admin'),
+  rateLimit('write'),
+  async (c): Promise<Response> => {
+    const { updateTenant, auditLogger } = getDeps();
+    const ctx = c.get('tenantContext');
+    if (ctx === undefined) throw new AuthorizationError('Tenant context required');
+    const requestId = c.get('requestId');
+    const tenantId = c.req.param('id');
 
-  const body: unknown = await c.req.json().catch(() => null);
-  const parsed = updateTenantSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('Invalid update request', parseZodErrors(parsed.error), requestId);
-  }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = updateTenantSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('Invalid update request', parseZodErrors(parsed.error), requestId);
+    }
 
-  if (parsed.data.name === undefined && parsed.data.slug === undefined) {
-    return c.json({ success: true as const, message: 'No changes', requestId });
-  }
+    if (parsed.data.name === undefined && parsed.data.slug === undefined) {
+      return c.json({ success: true as const, message: 'No changes', requestId });
+    }
 
-  const updated = await updateTenant(tenantId, parsed.data as { name?: string; slug?: string });
-  if (updated === undefined) throw new NotFoundError('Tenant not found');
+    const updated = await updateTenant(tenantId, parsed.data as { name?: string; slug?: string });
+    if (updated === undefined) throw new NotFoundError('Tenant not found');
 
-  await auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'data.updated',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'tenant',
-    resourceId: tenantId,
-    action: 'update',
-    details: {},
-    timestamp: new Date(),
-  });
+    await auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'data.updated',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'tenant',
+      resourceId: tenantId,
+      action: 'update',
+      details: {},
+      timestamp: new Date(),
+    });
 
-  return c.json({ success: true as const, data: updated, requestId });
-});
+    return c.json({ success: true as const, data: updated, requestId });
+  },
+);
 
 // ─── PATCH /:id/status — Tenant status transition ────────────────────────────
 // SOC2 CC6.1 — Platform admin only. Suspension blocks all tenant API access.
@@ -314,6 +330,7 @@ tenantsRouter.patch('/:id', requireRoleMiddleware('super_admin'), async (c): Pro
 tenantsRouter.patch(
   '/:id/status',
   requireRoleMiddleware('super_admin'),
+  rateLimit('write'),
   async (c): Promise<Response> => {
     const { updateTenantStatus, auditLogger } = getDeps();
     const ctx = c.get('tenantContext');

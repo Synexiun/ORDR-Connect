@@ -81,7 +81,7 @@ onboardingRouter.get('/', async (c) => {
 
 // ── PUT /step — advance step ──────────────────────────────────────────────────
 
-onboardingRouter.put('/step', async (c) => {
+onboardingRouter.put('/step', rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Onboarding routes not configured');
   const ctx = getTenantContext(c);
   const requestId = c.get('requestId');
@@ -116,7 +116,7 @@ onboardingRouter.put('/step', async (c) => {
 
 // ── POST /complete — finish wizard ────────────────────────────────────────────
 
-onboardingRouter.post('/complete', async (c) => {
+onboardingRouter.post('/complete', rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Onboarding routes not configured');
   const ctx = getTenantContext(c);
 

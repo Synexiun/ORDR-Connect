@@ -492,7 +492,7 @@ marketplaceRouter.post(
 
 // ─── DELETE /:agentId/install — Uninstall agent ─────────────────
 
-marketplaceRouter.delete('/:agentId/install', requireAuth(), async (c) => {
+marketplaceRouter.delete('/:agentId/install', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
   const requestId = c.get('requestId');
@@ -525,7 +525,7 @@ marketplaceRouter.delete('/:agentId/install', requireAuth(), async (c) => {
 
 // ─── POST /:agentId/review — Submit review ──────────────────────
 
-marketplaceRouter.post('/:agentId/review', requireAuth(), async (c) => {
+marketplaceRouter.post('/:agentId/review', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace routes not configured');
 
   const requestId = c.get('requestId');
