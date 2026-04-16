@@ -115,7 +115,23 @@ export type AuditEventType =
   | 'search.index_deleted'
   | 'search.reindex'
   // Realtime (Phase 89)
-  | 'realtime.event_published';
+  | 'realtime.event_published'
+  // RBAC — Custom Roles (Phase 96)
+  | 'role.created'
+  | 'role.updated'
+  | 'role.deleted'
+  | 'role.assigned'
+  | 'role.revoked'
+  // Security (Phase 96)
+  | 'security.key_rotation'
+  // Workflow — Definitions, Triggers, Scheduler (Phase 96)
+  | 'workflow.definition_created'
+  | 'workflow.definition_updated'
+  | 'workflow.definition_deleted'
+  | 'workflow.schedule_executed'
+  | 'workflow.trigger_deduplicated'
+  | 'workflow.trigger_fired'
+  | 'workflow.trigger_failed';
 
 /** Who performed the action. */
 export type ActorType = 'user' | 'agent' | 'system';

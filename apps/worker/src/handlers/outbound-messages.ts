@@ -116,7 +116,15 @@ export function createOutboundMessagesHandler(
           metadata: { messageId, customerId, channel },
         })
         .catch((notifErr: unknown) => {
-          console.error('[ORDR:WORKER] Failed to write consent_denied notification:', notifErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'outbound-messages',
+              event: 'notification_write_failed',
+              type: 'consent_denied',
+              error: notifErr instanceof Error ? notifErr.message : String(notifErr),
+            }),
+          );
         });
 
       return;
@@ -169,7 +177,15 @@ export function createOutboundMessagesHandler(
           metadata: { messageId, customerId, channel },
         })
         .catch((notifErr: unknown) => {
-          console.error('[ORDR:WORKER] Failed to write compliance_blocked notification:', notifErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'outbound-messages',
+              event: 'notification_write_failed',
+              type: 'compliance_blocked',
+              error: notifErr instanceof Error ? notifErr.message : String(notifErr),
+            }),
+          );
         });
 
       return;
@@ -266,7 +282,15 @@ export function createOutboundMessagesHandler(
       await deps.eventProducer
         .publish(TOPICS.INTERACTION_EVENTS, interactionEvent)
         .catch((publishErr: unknown) => {
-          console.error('[ORDR:WORKER] Failed to publish interaction.logged event:', publishErr);
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              component: 'outbound-messages',
+              event: 'publish_failed',
+              topic: 'interaction_events',
+              error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+            }),
+          );
         });
     }
   };

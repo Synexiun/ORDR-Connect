@@ -216,7 +216,9 @@ export async function startWorker(
   // Start consuming
   await consumer.start();
 
-  console.warn('[ORDR:WORKER] Worker started — consuming from Kafka topics');
+  console.warn(
+    JSON.stringify({ level: 'info', component: 'worker-server', event: 'worker_started' }),
+  );
 
   // Audit log worker startup
   await auditLogger.log({
@@ -242,7 +244,9 @@ export async function startWorker(
 
   // Graceful shutdown
   const stop = async (): Promise<void> => {
-    console.warn('[ORDR:WORKER] Shutting down gracefully...');
+    console.warn(
+      JSON.stringify({ level: 'info', component: 'worker-server', event: 'shutdown_start' }),
+    );
     await consumer.stop();
 
     await auditLogger.log({
@@ -257,13 +261,22 @@ export async function startWorker(
       timestamp: new Date(),
     });
 
-    console.warn('[ORDR:WORKER] Worker stopped');
+    console.warn(
+      JSON.stringify({ level: 'info', component: 'worker-server', event: 'worker_stopped' }),
+    );
   };
 
   // Register signal handlers
   const onSignal = (): void => {
     stop().catch((shutdownErr: unknown) => {
-      console.error('[ORDR:WORKER] Error during shutdown:', shutdownErr);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'worker-server',
+          event: 'shutdown_error',
+          error: shutdownErr instanceof Error ? shutdownErr.message : String(shutdownErr),
+        }),
+      );
       process.exit(1);
     });
   };

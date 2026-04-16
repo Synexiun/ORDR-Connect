@@ -41,14 +41,21 @@ export function createCustomerEventsHandler(
           customerId: data.customerId,
           name: data.name,
           email: data.email,
-          type: (data.type === 'company' ? 'company' : 'person') as 'person' | 'company',
+          type: data.type === 'company' ? 'company' : 'person',
           tenantId,
         });
 
         if (!result.success) {
           console.error(
-            `[ORDR:WORKER] Graph enrichment failed for customer.created (tenant=${tenantId}, customer=${data.customerId}):`,
-            result.error.message,
+            JSON.stringify({
+              level: 'error',
+              component: 'customer-events',
+              event: 'graph_enrichment_failed',
+              tenantId,
+              customerId: data.customerId,
+              eventType: 'customer.created',
+              error: result.error.message,
+            }),
           );
         }
 
@@ -87,8 +94,15 @@ export function createCustomerEventsHandler(
 
         if (!result.success) {
           console.error(
-            `[ORDR:WORKER] Graph enrichment failed for customer.updated (tenant=${tenantId}, customer=${data.customerId}):`,
-            result.error.message,
+            JSON.stringify({
+              level: 'error',
+              component: 'customer-events',
+              event: 'graph_enrichment_failed',
+              tenantId,
+              customerId: data.customerId,
+              eventType: 'customer.updated',
+              error: result.error.message,
+            }),
           );
         }
 
@@ -114,7 +128,14 @@ export function createCustomerEventsHandler(
       }
 
       default:
-        console.warn(`[ORDR:WORKER] Unknown customer event type: ${type}`);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            component: 'customer-events',
+            event: 'unknown_event_type',
+            type,
+          }),
+        );
     }
   };
 }

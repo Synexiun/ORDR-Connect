@@ -107,7 +107,14 @@ export function createDsrExportHandler(
     } catch (err) {
       const code = (err as { code?: string }).code ?? '';
       if (code === 'DSR_ALREADY_PROCESSING') {
-        console.warn(`[ORDR:WORKER:DSR] Skipping already-processing DSR ${dsrId}`);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            component: 'dsr-export',
+            event: 'dsr_already_processing',
+            dsrId,
+          }),
+        );
         return;
       }
       throw err;
@@ -253,7 +260,15 @@ export function createDsrExportHandler(
           /* audit failure must not throw */
         });
 
-      console.error(`[ORDR:WORKER:DSR] DSR ${dsrId} failed:`, (err as Error).message);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'dsr-export',
+          event: 'dsr_failed',
+          dsrId,
+          error: (err as Error).message,
+        }),
+      );
       // Status remains 'processing' for retry (Kafka consumer will retry)
     }
   };

@@ -67,8 +67,14 @@ export function createAgentEventsHandler(
 
         if (!sessionResult.success) {
           console.error(
-            `[ORDR:WORKER] Failed to start agent session (tenant=${tenantId}, role=${data.agentRole}):`,
-            sessionResult.error.message,
+            JSON.stringify({
+              level: 'error',
+              component: 'agent-events',
+              event: 'session_start_failed',
+              tenantId,
+              agentRole: data.agentRole,
+              error: sessionResult.error.message,
+            }),
           );
 
           // Audit log failure
@@ -105,8 +111,13 @@ export function createAgentEventsHandler(
             })
             .catch((notifErr: unknown) => {
               console.error(
-                '[ORDR:WORKER] Failed to write session_start_failed notification:',
-                notifErr,
+                JSON.stringify({
+                  level: 'error',
+                  component: 'agent-events',
+                  event: 'notification_write_failed',
+                  type: 'session_start_failed',
+                  error: notifErr instanceof Error ? notifErr.message : String(notifErr),
+                }),
               );
             });
 
@@ -120,8 +131,14 @@ export function createAgentEventsHandler(
 
         if (!outcomeResult.success) {
           console.error(
-            `[ORDR:WORKER] Agent loop failed (tenant=${tenantId}, session=${context.sessionId}):`,
-            outcomeResult.error.message,
+            JSON.stringify({
+              level: 'error',
+              component: 'agent-events',
+              event: 'agent_loop_failed',
+              tenantId,
+              sessionId: context.sessionId,
+              error: outcomeResult.error.message,
+            }),
           );
           return;
         }
@@ -161,7 +178,15 @@ export function createAgentEventsHandler(
               metadata: { sessionId: context.sessionId, agentRole: data.agentRole },
             })
             .catch((notifErr: unknown) => {
-              console.error('[ORDR:WORKER] Failed to write escalated notification:', notifErr);
+              console.error(
+                JSON.stringify({
+                  level: 'error',
+                  component: 'agent-events',
+                  event: 'notification_write_failed',
+                  type: 'escalated',
+                  error: notifErr instanceof Error ? notifErr.message : String(notifErr),
+                }),
+              );
             });
         } else if (outcome.result === 'failed') {
           await deps.notificationWriter
@@ -176,7 +201,15 @@ export function createAgentEventsHandler(
               metadata: { sessionId: context.sessionId, agentRole: data.agentRole },
             })
             .catch((notifErr: unknown) => {
-              console.error('[ORDR:WORKER] Failed to write failed notification:', notifErr);
+              console.error(
+                JSON.stringify({
+                  level: 'error',
+                  component: 'agent-events',
+                  event: 'notification_write_failed',
+                  type: 'session_failed',
+                  error: notifErr instanceof Error ? notifErr.message : String(notifErr),
+                }),
+              );
             });
         } else if (outcome.result === 'timeout') {
           await deps.notificationWriter
@@ -191,7 +224,15 @@ export function createAgentEventsHandler(
               metadata: { sessionId: context.sessionId, agentRole: data.agentRole },
             })
             .catch((notifErr: unknown) => {
-              console.error('[ORDR:WORKER] Failed to write timeout notification:', notifErr);
+              console.error(
+                JSON.stringify({
+                  level: 'error',
+                  component: 'agent-events',
+                  event: 'notification_write_failed',
+                  type: 'timeout',
+                  error: notifErr instanceof Error ? notifErr.message : String(notifErr),
+                }),
+              );
             });
         }
 
@@ -217,7 +258,15 @@ export function createAgentEventsHandler(
         await deps.eventProducer
           .publish(TOPICS.AGENT_EVENTS, outcomeEvent)
           .catch((publishErr: unknown) => {
-            console.error('[ORDR:WORKER] Failed to publish agent outcome event:', publishErr);
+            console.error(
+              JSON.stringify({
+                level: 'error',
+                component: 'agent-events',
+                event: 'publish_failed',
+                topic: 'agent_events',
+                error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+              }),
+            );
           });
 
         break;
@@ -237,8 +286,14 @@ export function createAgentEventsHandler(
 
         if (!result.success) {
           console.error(
-            `[ORDR:WORKER] Graph enrichment failed for agent.action_executed (tenant=${tenantId}, action=${data.actionId}):`,
-            result.error.message,
+            JSON.stringify({
+              level: 'error',
+              component: 'agent-events',
+              event: 'graph_enrichment_failed',
+              tenantId,
+              actionId: data.actionId,
+              error: result.error.message,
+            }),
           );
         }
 
@@ -264,7 +319,14 @@ export function createAgentEventsHandler(
       }
 
       default:
-        console.warn(`[ORDR:WORKER] Unknown agent event type: ${type}`);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            component: 'agent-events',
+            event: 'unknown_event_type',
+            type,
+          }),
+        );
     }
   };
 }

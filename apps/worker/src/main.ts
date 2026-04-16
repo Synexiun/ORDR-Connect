@@ -485,7 +485,14 @@ if (
     process.argv[1].replace(/\\/g, '/').endsWith('/main.js'))
 ) {
   bootstrap().catch((startErr: unknown) => {
-    console.error('[ORDR:WORKER] Fatal startup error:', startErr);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'worker-main',
+        event: 'startup_fatal',
+        error: startErr instanceof Error ? startErr.message : String(startErr),
+      }),
+    );
     process.exit(1);
   });
 }

@@ -135,7 +135,14 @@ export function createInteractionEventsHandler(
     const { type, tenantId, payload, metadata } = event;
 
     if (type !== 'interaction.logged') {
-      console.warn(`[ORDR:WORKER] Unexpected interaction event type: ${type}`);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'interaction-events',
+          event: 'unexpected_event_type',
+          type,
+        }),
+      );
       return;
     }
 
@@ -152,8 +159,14 @@ export function createInteractionEventsHandler(
 
     if (!graphResult.success) {
       console.error(
-        `[ORDR:WORKER] Graph enrichment failed for interaction.logged (tenant=${tenantId}, interaction=${data.interactionId}):`,
-        graphResult.error.message,
+        JSON.stringify({
+          level: 'error',
+          component: 'interaction-events',
+          event: 'graph_enrichment_failed',
+          tenantId,
+          interactionId: data.interactionId,
+          error: graphResult.error.message,
+        }),
       );
     }
 
@@ -218,8 +231,14 @@ export function createInteractionEventsHandler(
 
     if (!nbaResult.success) {
       console.error(
-        `[ORDR:WORKER] NBA evaluation failed (tenant=${tenantId}, customer=${data.customerId}):`,
-        nbaResult.error.message,
+        JSON.stringify({
+          level: 'error',
+          component: 'interaction-events',
+          event: 'nba_evaluation_failed',
+          tenantId,
+          customerId: data.customerId,
+          error: nbaResult.error.message,
+        }),
       );
       await deps.auditLogger.log({
         tenantId,
@@ -283,8 +302,14 @@ export function createInteractionEventsHandler(
 
     if (!dispatchResult.success) {
       console.error(
-        `[ORDR:WORKER] Agent dispatch failed (tenant=${tenantId}, action=${decision.action}):`,
-        dispatchResult.error.message,
+        JSON.stringify({
+          level: 'error',
+          component: 'interaction-events',
+          event: 'agent_dispatch_failed',
+          tenantId,
+          action: decision.action,
+          error: dispatchResult.error.message,
+        }),
       );
       await deps.auditLogger.log({
         tenantId,
@@ -348,7 +373,15 @@ export function createInteractionEventsHandler(
     await deps.eventProducer
       .publish(TOPICS.AGENT_EVENTS, actionEvent)
       .catch((publishErr: unknown) => {
-        console.error('[ORDR:WORKER] Failed to publish agent action event:', publishErr);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'interaction-events',
+            event: 'publish_failed',
+            topic: 'agent_events',
+            error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+          }),
+        );
       });
   };
 }
