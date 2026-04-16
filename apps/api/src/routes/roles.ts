@@ -19,6 +19,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { CustomRoleManager } from '@ordr/auth';
+import type { AuditLogger } from '@ordr/audit';
 import { AuthenticationError, ValidationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
@@ -62,6 +63,7 @@ const assignRevokeSchema = z.object({
 
 interface RoleDependencies {
   readonly roleManager: CustomRoleManager;
+  readonly auditLogger?: Pick<AuditLogger, 'log'>;
 }
 
 let deps: RoleDependencies | null = null;
@@ -141,6 +143,20 @@ rolesRouter.post(
 
     if (!result.success) {
       return jsonErr(c, result.error);
+    }
+
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'settings.role_created',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'custom_role',
+        resourceId: result.data.id,
+        action: 'create',
+        details: { name: result.data.name, baseRole: parsed.data.baseRole },
+        timestamp: new Date(),
+      });
     }
 
     return c.json(
@@ -225,6 +241,20 @@ rolesRouter.patch(
       return jsonErr(c, result.error);
     }
 
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'settings.role_updated',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'custom_role',
+        resourceId: roleId,
+        action: 'update',
+        details: {},
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({
       success: true as const,
       data: result.data,
@@ -254,6 +284,20 @@ rolesRouter.delete(
 
     if (!result.success) {
       return jsonErr(c, result.error);
+    }
+
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'settings.role_deleted',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'custom_role',
+        resourceId: roleId,
+        action: 'delete',
+        details: {},
+        timestamp: new Date(),
+      });
     }
 
     return c.json({ success: true as const });
@@ -297,6 +341,20 @@ rolesRouter.post(
       return jsonErr(c, result.error);
     }
 
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'settings.role_assigned',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'custom_role',
+        resourceId: roleId,
+        action: 'assign',
+        details: { targetUserId: parsed.data.userId },
+        timestamp: new Date(),
+      });
+    }
+
     return c.json({ success: true as const });
   },
 );
@@ -336,6 +394,20 @@ rolesRouter.post(
 
     if (!result.success) {
       return jsonErr(c, result.error);
+    }
+
+    if (deps.auditLogger) {
+      await deps.auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'settings.role_revoked',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'custom_role',
+        resourceId: roleId,
+        action: 'revoke',
+        details: { targetUserId: parsed.data.userId },
+        timestamp: new Date(),
+      });
     }
 
     return c.json({ success: true as const });

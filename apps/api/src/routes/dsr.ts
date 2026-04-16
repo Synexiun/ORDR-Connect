@@ -340,136 +340,151 @@ dsrRouter.get('/:id', requirePermissionMiddleware('dsr', 'read'), async (c) => {
 
 // ── POST /:id/approve ─────────────────────────────────────────────
 
-dsrRouter.post('/:id/approve', requirePermissionMiddleware('dsr', 'write'), async (c) => {
-  const d = ensureDeps();
-  const ctx = ensureTenantContext(c);
-  const dsrId = c.req.param('id');
+dsrRouter.post(
+  '/:id/approve',
+  requirePermissionMiddleware('dsr', 'write'),
+  rateLimit('write'),
+  async (c) => {
+    const d = ensureDeps();
+    const ctx = ensureTenantContext(c);
+    const dsrId = c.req.param('id');
 
-  let updated: DsrRecord;
-  try {
-    updated = await d.approveDsr({ tenantId: ctx.tenantId, dsrId });
-  } catch (err) {
-    const code = (err as { code?: string }).code ?? '';
-    const safeMessage =
-      code === 'DSR_STATE_ERROR'
-        ? 'DSR is not in a valid state for this operation.'
-        : code === 'DSR_NOT_FOUND'
-          ? 'DSR not found.'
-          : 'An unexpected error occurred.';
-    return c.json(
-      { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
-      dsrErrorStatus(code),
-    );
-  }
+    let updated: DsrRecord;
+    try {
+      updated = await d.approveDsr({ tenantId: ctx.tenantId, dsrId });
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? '';
+      const safeMessage =
+        code === 'DSR_STATE_ERROR'
+          ? 'DSR is not in a valid state for this operation.'
+          : code === 'DSR_NOT_FOUND'
+            ? 'DSR not found.'
+            : 'An unexpected error occurred.';
+      return c.json(
+        { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
+        dsrErrorStatus(code),
+      );
+    }
 
-  // Publish Kafka — idempotency key = dsrId
-  await d.publishApproved({
-    dsrId: updated.id,
-    tenantId: ctx.tenantId,
-    customerId: updated.customerId,
-    type: updated.type,
-  });
+    // Publish Kafka — idempotency key = dsrId
+    await d.publishApproved({
+      dsrId: updated.id,
+      tenantId: ctx.tenantId,
+      customerId: updated.customerId,
+      type: updated.type,
+    });
 
-  await d.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'dsr.approved',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'data_subject_request',
-    resourceId: dsrId,
-    action: 'approved',
-    details: { dsr_type: updated.type },
-    timestamp: new Date(),
-  });
+    await d.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'dsr.approved',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'data_subject_request',
+      resourceId: dsrId,
+      action: 'approved',
+      details: { dsr_type: updated.type },
+      timestamp: new Date(),
+    });
 
-  return c.json({ id: updated.id, status: updated.status }, 200);
-});
+    return c.json({ id: updated.id, status: updated.status }, 200);
+  },
+);
 
 // ── POST /:id/reject ──────────────────────────────────────────────
 
-dsrRouter.post('/:id/reject', requirePermissionMiddleware('dsr', 'write'), async (c) => {
-  const d = ensureDeps();
-  const ctx = ensureTenantContext(c);
-  const dsrId = c.req.param('id');
-  const requestId = c.get('requestId');
+dsrRouter.post(
+  '/:id/reject',
+  requirePermissionMiddleware('dsr', 'write'),
+  rateLimit('write'),
+  async (c) => {
+    const d = ensureDeps();
+    const ctx = ensureTenantContext(c);
+    const dsrId = c.req.param('id');
+    const requestId = c.get('requestId');
 
-  const body: unknown = await c.req.json().catch(() => null);
-  const parsed = rejectDsrSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ValidationError('reason is required', parseZodErrors(parsed.error), requestId);
-  }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = rejectDsrSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ValidationError('reason is required', parseZodErrors(parsed.error), requestId);
+    }
 
-  let updated: DsrRecord;
-  try {
-    updated = await d.rejectDsr({
+    let updated: DsrRecord;
+    try {
+      updated = await d.rejectDsr({
+        tenantId: ctx.tenantId,
+        dsrId,
+        rejectionReason: parsed.data.reason,
+      });
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? '';
+      const safeMessage =
+        code === 'DSR_STATE_ERROR'
+          ? 'DSR is not in a valid state for this operation.'
+          : code === 'DSR_NOT_FOUND'
+            ? 'DSR not found.'
+            : 'An unexpected error occurred.';
+      return c.json(
+        { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
+        dsrErrorStatus(code),
+      );
+    }
+
+    await d.auditLogger.log({
       tenantId: ctx.tenantId,
-      dsrId,
-      rejectionReason: parsed.data.reason,
+      eventType: 'dsr.rejected',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'data_subject_request',
+      resourceId: dsrId,
+      action: 'rejected',
+      details: {},
+      timestamp: new Date(),
     });
-  } catch (err) {
-    const code = (err as { code?: string }).code ?? '';
-    const safeMessage =
-      code === 'DSR_STATE_ERROR'
-        ? 'DSR is not in a valid state for this operation.'
-        : code === 'DSR_NOT_FOUND'
-          ? 'DSR not found.'
-          : 'An unexpected error occurred.';
-    return c.json(
-      { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
-      dsrErrorStatus(code),
-    );
-  }
 
-  await d.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'dsr.rejected',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'data_subject_request',
-    resourceId: dsrId,
-    action: 'rejected',
-    details: {},
-    timestamp: new Date(),
-  });
-
-  return c.json({ id: updated.id, status: updated.status }, 200);
-});
+    return c.json({ id: updated.id, status: updated.status }, 200);
+  },
+);
 
 // ── DELETE /:id — cancel DSR ──────────────────────────────────────
 
-dsrRouter.delete('/:id', requirePermissionMiddleware('dsr', 'write'), async (c) => {
-  const d = ensureDeps();
-  const ctx = ensureTenantContext(c);
-  const dsrId = c.req.param('id');
+dsrRouter.delete(
+  '/:id',
+  requirePermissionMiddleware('dsr', 'write'),
+  rateLimit('write'),
+  async (c) => {
+    const d = ensureDeps();
+    const ctx = ensureTenantContext(c);
+    const dsrId = c.req.param('id');
 
-  let updated: DsrRecord;
-  try {
-    updated = await d.cancelDsr({ tenantId: ctx.tenantId, dsrId });
-  } catch (err) {
-    const code = (err as { code?: string }).code ?? '';
-    const safeMessage =
-      code === 'DSR_STATE_ERROR'
-        ? 'DSR is not in a valid state for this operation.'
-        : code === 'DSR_NOT_FOUND'
-          ? 'DSR not found.'
-          : 'An unexpected error occurred.';
-    return c.json(
-      { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
-      dsrErrorStatus(code),
-    );
-  }
+    let updated: DsrRecord;
+    try {
+      updated = await d.cancelDsr({ tenantId: ctx.tenantId, dsrId });
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? '';
+      const safeMessage =
+        code === 'DSR_STATE_ERROR'
+          ? 'DSR is not in a valid state for this operation.'
+          : code === 'DSR_NOT_FOUND'
+            ? 'DSR not found.'
+            : 'An unexpected error occurred.';
+      return c.json(
+        { error: 'state_error', message: safeMessage, correlationId: c.get('requestId') },
+        dsrErrorStatus(code),
+      );
+    }
 
-  await d.auditLogger.log({
-    tenantId: ctx.tenantId,
-    eventType: 'dsr.cancelled',
-    actorType: 'user',
-    actorId: ctx.userId,
-    resource: 'data_subject_request',
-    resourceId: dsrId,
-    action: 'cancelled',
-    details: {},
-    timestamp: new Date(),
-  });
+    await d.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'dsr.cancelled',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'data_subject_request',
+      resourceId: dsrId,
+      action: 'cancelled',
+      details: {},
+      timestamp: new Date(),
+    });
 
-  return c.json({ id: updated.id, status: updated.status }, 200);
-});
+    return c.json({ id: updated.id, status: updated.status }, 200);
+  },
+);

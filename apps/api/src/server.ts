@@ -237,7 +237,9 @@ export function getLlmClient(): LLMClient {
 // ---- Bootstrap -------------------------------------------------------------
 
 async function bootstrap(): Promise<void> {
-  console.warn('[ORDR:API] Starting ORDR-Connect API...');
+  console.warn(
+    JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'startup_begin' }),
+  );
 
   // ── 0. Synexiun Kernel — register limb with Core & start heartbeat ─────
   // Required before any other subsystem: Rule 2 (Auth) — limbs must be
@@ -261,15 +263,32 @@ async function bootstrap(): Promise<void> {
       };
       limbInstance = await Limb.boot(limbEnv);
       console.warn(
-        `[ORDR:API] Synexiun kernel booted — limb=${limbInstance.identity.limbId} registered with Core`,
+        JSON.stringify({
+          level: 'info',
+          component: 'api-bootstrap',
+          event: 'kernel_booted',
+          limbId: limbInstance.identity.limbId,
+        }),
       );
     } catch (error: unknown) {
-      console.error('[ORDR:API] FATAL: Synexiun kernel registration failed:', error);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-bootstrap',
+          event: 'kernel_boot_failed',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       process.exit(1);
     }
   } else {
     console.warn(
-      '[ORDR:API] Synexiun kernel skipped — SYNEX_LIMB_PRIVATE_KEY / SYNEX_CORE_URL / SYNEX_CORE_ADMIN_TOKEN not set',
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'kernel_skipped',
+        reason: 'env_vars_not_set',
+      }),
     );
   }
 
@@ -277,9 +296,24 @@ async function bootstrap(): Promise<void> {
   let config: ParsedConfig;
   try {
     config = loadConfig();
-    console.warn(`[ORDR:API] Config loaded — env=${config.nodeEnv}, port=${String(config.port)}`);
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'config_loaded',
+        env: config.nodeEnv,
+        port: config.port,
+      }),
+    );
   } catch (error: unknown) {
-    console.error('[ORDR:API] FATAL: Configuration validation failed:', error);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'api-bootstrap',
+        event: 'config_load_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     process.exit(1);
   }
 
@@ -289,18 +323,37 @@ async function bootstrap(): Promise<void> {
   try {
     await vaultClient.authenticate();
     await initSecretStore(vaultClient, [...TRACKED_SECRET_KEYS]);
-    console.warn('[ORDR:API] Secret store initialized (Vault enabled:', vaultClient.isEnabled, ')');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'secret_store_initialized',
+        vaultEnabled: vaultClient.isEnabled,
+      }),
+    );
   } catch (error: unknown) {
     console.error(
-      '[ORDR:API] FATAL: Vault secret store initialization failed:',
-      error instanceof Error ? error.message : error,
+      JSON.stringify({
+        level: 'error',
+        component: 'api-bootstrap',
+        event: 'vault_init_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }),
     );
     process.exit(1);
   }
 
   // ── 1.6. Hot-reload callbacks ──────────────────────────────────────────
   secretStore.onRotate('JWT_PRIVATE_KEY', (val: string) => {
-    console.warn('[ORDR:API] JWT_PRIVATE_KEY rotated — reloading key pair');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'secret_rotated',
+        key: 'JWT_PRIVATE_KEY',
+        action: 'reloading_keypair',
+      }),
+    );
     void loadKeyPair(val, config.auth.jwtPublicKey, {
       issuer: 'ordr-connect',
       audience: 'ordr-connect',
@@ -308,32 +361,74 @@ async function bootstrap(): Promise<void> {
       .then(setJwtConfig)
       .catch((err: unknown) => {
         console.error(
-          '[ORDR:API] JWT_PRIVATE_KEY rotation failed:',
-          err instanceof Error ? err.message : err,
+          JSON.stringify({
+            level: 'error',
+            component: 'api-bootstrap',
+            event: 'jwt_key_rotation_failed',
+            error: err instanceof Error ? err.message : String(err),
+          }),
         );
       });
   });
 
   secretStore.onRotate('ENCRYPTION_MASTER_KEY', (_val: string) => {
     console.warn(
-      '[ORDR:API] ENCRYPTION_MASTER_KEY rotated — pod restart recommended for full re-init',
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'secret_rotated',
+        key: 'ENCRYPTION_MASTER_KEY',
+        action: 'pod_restart_recommended',
+      }),
     );
   });
 
   secretStore.onRotate('STRIPE_SECRET_KEY', (_val: string) => {
-    console.warn('[ORDR:API] STRIPE_SECRET_KEY rotated — pod restart recommended');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'secret_rotated',
+        key: 'STRIPE_SECRET_KEY',
+        action: 'pod_restart_recommended',
+      }),
+    );
   });
 
   secretStore.onRotate('TWILIO_AUTH_TOKEN', (_val: string) => {
-    console.warn('[ORDR:API] TWILIO_AUTH_TOKEN rotated — pod restart recommended');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'secret_rotated',
+        key: 'TWILIO_AUTH_TOKEN',
+        action: 'pod_restart_recommended',
+      }),
+    );
   });
 
   secretStore.onRotate('SENDGRID_API_KEY', (_val: string) => {
-    console.warn('[ORDR:API] SENDGRID_API_KEY rotated — pod restart recommended');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'secret_rotated',
+        key: 'SENDGRID_API_KEY',
+        action: 'pod_restart_recommended',
+      }),
+    );
   });
 
   secretStore.onRotate('OPENAI_API_KEY', (_val: string) => {
-    console.warn('[ORDR:API] OPENAI_API_KEY rotated — pod restart recommended');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'secret_rotated',
+        key: 'OPENAI_API_KEY',
+        action: 'pod_restart_recommended',
+      }),
+    );
   });
 
   // ── 2. Database connection ─────────────────────────────────────────────
@@ -345,9 +440,18 @@ async function bootstrap(): Promise<void> {
       poolMax: config.database.poolMax,
     });
     db = createDrizzle(dbConnection, schema);
-    console.warn('[ORDR:API] Database connection established');
+    console.warn(
+      JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'db_connected' }),
+    );
   } catch (error: unknown) {
-    console.error('[ORDR:API] FATAL: Database connection failed:', error);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'api-bootstrap',
+        event: 'db_connect_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     process.exit(1);
   }
 
@@ -360,9 +464,18 @@ async function bootstrap(): Promise<void> {
     });
     kafkaProducer = createProducer(kafka);
     await kafkaProducer.connect();
-    console.warn('[ORDR:API] Kafka producer connected');
+    console.warn(
+      JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'kafka_connected' }),
+    );
   } catch (error: unknown) {
-    console.error('[ORDR:API] FATAL: Kafka connection failed:', error);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'api-bootstrap',
+        event: 'kafka_connect_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     process.exit(1);
   }
 
@@ -396,10 +509,21 @@ async function bootstrap(): Promise<void> {
       // Re-assign the module-level variable so all subsequent constructors
       // share one client (and one warm cache).
       confluentRegistry = schemaRegistryClient;
-      console.warn('[ORDR:API] Confluent Schema Registry: all schemas registered');
+      console.warn(
+        JSON.stringify({
+          level: 'info',
+          component: 'api-bootstrap',
+          event: 'schema_registry_connected',
+        }),
+      );
     } else {
       console.warn(
-        '[ORDR:API] Confluent Schema Registry: not configured (CONFLUENT_SCHEMA_REGISTRY_URL unset)',
+        JSON.stringify({
+          level: 'warn',
+          component: 'api-bootstrap',
+          event: 'schema_registry_skipped',
+          reason: 'CONFLUENT_SCHEMA_REGISTRY_URL not set',
+        }),
       );
     }
   }
@@ -408,7 +532,13 @@ async function bootstrap(): Promise<void> {
   const auditStore = new DrizzleAuditStore(db);
   const auditLogger = new AuditLogger(auditStore);
   configureAudit(auditLogger);
-  console.warn('[ORDR:API] Audit logger initialized');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'audit_logger_initialized',
+    }),
+  );
 
   // ── 4.4. Military-grade threat detection ───────────────────────────────
   // All security components are singletons — initialized here and wired into
@@ -458,7 +588,13 @@ async function bootstrap(): Promise<void> {
       ipIntelligence: new IPIntelligence(),
       dlpEnabled: config.nodeEnv === 'production',
     });
-    console.warn('[ORDR:API] Military-grade threat detection initialized');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'threat_detection_initialized',
+      }),
+    );
   }
 
   // ── 4.5. Billing / Plan Gate ───────────────────────────────────────────
@@ -480,7 +616,12 @@ async function bootstrap(): Promise<void> {
   );
   if (!fieldEncryptionKeyEnv) {
     console.warn(
-      '[ORDR:API] Using dev-only FIELD_ENCRYPTION_KEY — set FIELD_ENCRYPTION_KEY for production',
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'dev_key_in_use',
+        key: 'FIELD_ENCRYPTION_KEY',
+      }),
     );
   }
   const stripeSecretKey = process.env['STRIPE_SECRET_KEY'];
@@ -498,24 +639,57 @@ async function bootstrap(): Promise<void> {
   });
   configureBillingGate(subscriptionManager);
   console.warn(
-    `[ORDR:API] Billing gate initialized — stripe=${stripeSecretKey !== undefined ? 'real' : 'mock'}`,
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'billing_initialized',
+      stripe: stripeSecretKey !== undefined ? 'real' : 'mock',
+    }),
   );
 
   // ── 4.6. Notifications route ───────────────────────────────────────────
   configureNotificationsRoute(db, auditLogger);
-  console.warn('[ORDR:API] Notifications route configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'notifications',
+    }),
+  );
 
   // ── 4.6.1. Audit logs route ────────────────────────────────────────────
   configureAuditLogsRoute(db);
-  console.warn('[ORDR:API] Audit logs route configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'audit-logs',
+    }),
+  );
 
   // ── 4.6.2. Messaging routes — wire Drizzle stores (channel + message persistence) ──
   configureMessagingRoutes(db, auditLogger);
-  console.warn('[ORDR:API] Messaging routes configured (Drizzle stores active)');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'messaging',
+    }),
+  );
 
   // ── 4.7. Healthcare routes ─────────────────────────────────────────────
   configureHealthcareRoutes(db);
-  console.warn('[ORDR:API] Healthcare routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'healthcare',
+    }),
+  );
 
   // ── 4.7b. FHIR R4 routes ──────────────────────────────────────────────
   // Mounted at /api/v1/fhir/r4 — Patient import/export + Communication
@@ -527,15 +701,36 @@ async function bootstrap(): Promise<void> {
     baseUrl:
       process.env['FHIR_BASE_URL'] ?? process.env['API_BASE_URL'] ?? 'http://localhost:3000/api/v1',
   });
-  console.warn('[ORDR:API] FHIR R4 routes configured — /api/v1/fhir/r4');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'fhir-r4',
+    }),
+  );
 
   // ── 4.8. Developer usage route ─────────────────────────────────────────
   configureDevUsageRoute(db);
-  console.warn('[ORDR:API] Developer usage route configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'developer-usage',
+    }),
+  );
 
   // ── 4.9. Partner stats route ───────────────────────────────────────────
   configurePartnerStatsRoute(db);
-  console.warn('[ORDR:API] Partner stats route configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'partner-stats',
+    }),
+  );
 
   // ── 4.9b. Partner CRUD routes (register, me, earnings, payouts) ───────────
   configurePartnerRoutes({
@@ -622,7 +817,14 @@ async function bootstrap(): Promise<void> {
         .orderBy(schema.partnerPayouts.createdAt);
     },
   });
-  console.warn('[ORDR:API] Partner routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'partners',
+    }),
+  );
 
   // ── 4.10. SLA checker — periodic background scan for breach notifications ──
   slaChecker = new SlaChecker(db);
@@ -631,27 +833,69 @@ async function bootstrap(): Promise<void> {
 
   // ── 4.11. Team management routes ──────────────────────────────────────────
   configureTeamRoutes({ db, auditLogger });
-  console.warn('[ORDR:API] Team routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'team',
+    }),
+  );
 
   // ── 4.12. Profile routes (user self-service) ───────────────────────────────
   configureProfileRoutes({ db, auditLogger });
-  console.warn('[ORDR:API] Profile routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'profile',
+    }),
+  );
 
   // ── 4.13. Settings routes (tenant config, SSO, roles, agents, channels) ────
   configureSettingsRoutes({ db, auditLogger });
-  console.warn('[ORDR:API] Settings routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'settings',
+    }),
+  );
 
   // ── 4.14. Tickets routes (support ticketing system) ────────────────────────
   configureTicketRoutes({ db, auditLogger });
-  console.warn('[ORDR:API] Ticket routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'tickets',
+    }),
+  );
 
   // ── 4.15. Reports routes (generation, scheduling, export) ──────────────────
   configureReportRoutes({ db, auditLogger });
-  console.warn('[ORDR:API] Report routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'reports',
+    }),
+  );
 
   // ── 4.15b. Cobrowse routes (remote assistance sessions) ──────────────────
   configureCobrowseRoutes({ auditLogger });
-  console.warn('[ORDR:API] Cobrowse routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'cobrowse',
+    }),
+  );
 
   // ── 4.16. Marketplace routes (agent marketplace CRUD, installs, reviews) ───
   configureMarketplaceRoutes({
@@ -850,7 +1094,14 @@ async function bootstrap(): Promise<void> {
       return rows.map((r) => ({ ...r, comment: r.comment ?? null }));
     },
   });
-  console.warn('[ORDR:API] Marketplace routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'marketplace',
+    }),
+  );
 
   // ── 4.17. Customer routes (CRUD with PII encryption + Kafka events) ─────────
   const customerEventProducer = new EventProducer(kafkaProducer, undefined, confluentRegistry);
@@ -1006,7 +1257,14 @@ async function bootstrap(): Promise<void> {
       return rows.length > 0;
     },
   });
-  console.warn('[ORDR:API] Customer routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'customers',
+    }),
+  );
 
   // ── 4.18. Analytics routes ────────────────────────────────────────────────
   // Use real ClickHouse when CLICKHOUSE_URL is set; fall back to in-memory for
@@ -1023,11 +1281,25 @@ async function bootstrap(): Promise<void> {
     });
     await chClient.connect();
     analyticsStore = chClient;
-    console.warn('[ORDR:API] Analytics routes configured — ClickHouse connected');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'analytics',
+        store: 'clickhouse',
+      }),
+    );
   } else {
     analyticsStore = new InMemoryAnalyticsStore();
     console.warn(
-      '[ORDR:API] Analytics routes configured — in-memory store (set CLICKHOUSE_URL for production)',
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'analytics',
+        store: 'in-memory',
+      }),
     );
   }
   // Counter store — Redis in production (shared across pod replicas), in-memory otherwise.
@@ -1038,13 +1310,34 @@ async function bootstrap(): Promise<void> {
   if (counterRedisUrl !== undefined && counterRedisUrl !== '') {
     const counterRedisClient = new Redis(counterRedisUrl, { lazyConnect: true });
     counterRedisClient.on('error', (err: Error) => {
-      console.error('[ORDR:API] Redis counter store error:', err.message);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-bootstrap',
+          event: 'redis_counter_error',
+          error: err.message,
+        }),
+      );
     });
     counterStore = new RedisCounterStore(counterRedisClient);
-    console.warn('[ORDR:API] Counter store initialized (Redis)');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'counter_store_initialized',
+        store: 'redis',
+      }),
+    );
   } else {
     counterStore = new InMemoryCounterStore();
-    console.warn('[ORDR:API] Counter store initialized (InMemory — set REDIS_URL for production)');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'counter_store_initialized',
+        store: 'in-memory',
+      }),
+    );
   }
   configureAnalyticsRoutes({
     queries: new AnalyticsQueries(analyticsStore),
@@ -1056,7 +1349,12 @@ async function bootstrap(): Promise<void> {
   const complianceEngine = new ComplianceEngine();
   complianceEngine.registerRules(ALL_RULES);
   console.warn(
-    `[ORDR:API] Compliance engine initialized — ${String(complianceEngine.getRules().length)} rules loaded`,
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'compliance_engine_initialized',
+      rulesLoaded: complianceEngine.getRules().length,
+    }),
   );
 
   // Map lowercase engine regulation → uppercase DB enum value.
@@ -1112,12 +1410,31 @@ async function bootstrap(): Promise<void> {
       maxRetries: 3,
     });
     configureAiRoutes({ llmClient });
-    console.warn('[ORDR:API] LLM client initialized — model: claude-sonnet-4-6 (standard tier)');
     console.warn(
-      '[ORDR:API] AI routes configured — /v1/ai/sentiment, /v1/ai/insights, /v1/ai/route',
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'llm_initialized',
+        model: 'claude-sonnet-4-6',
+      }),
+    );
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'ai',
+      }),
     );
   } else {
-    console.warn('[ORDR:API] LLM client skipped — ANTHROPIC_API_KEY not set (agents disabled)');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'llm_skipped',
+        reason: 'ANTHROPIC_API_KEY not set',
+      }),
+    );
   }
 
   // ── 5.6. Agent routes (sessions, HITL queue, kill switch) ─────────────────
@@ -1428,7 +1745,14 @@ async function bootstrap(): Promise<void> {
         }));
       },
     });
-    console.warn('[ORDR:API] Agent routes configured (NBA pipeline wired)');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'agents',
+      }),
+    );
   }
 
   // ── 6. JWT key pair ────────────────────────────────────────────────────
@@ -1437,9 +1761,18 @@ async function bootstrap(): Promise<void> {
       issuer: 'ordr-connect',
       audience: 'ordr-connect',
     });
-    console.warn('[ORDR:API] JWT key pair loaded');
+    console.warn(
+      JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'jwt_keypair_loaded' }),
+    );
   } catch (error: unknown) {
-    console.error('[ORDR:API] FATAL: JWT key pair loading failed:', error);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'api-bootstrap',
+        event: 'jwt_keypair_load_failed',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
     process.exit(1);
   }
 
@@ -1455,15 +1788,36 @@ async function bootstrap(): Promise<void> {
   if (redisUrl !== undefined && redisUrl !== '') {
     const redisClient = new Redis(redisUrl, { lazyConnect: true });
     redisClient.on('error', (err: Error) => {
-      console.error('[ORDR:API] Redis connection error:', err.message);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-bootstrap',
+          event: 'redis_rate_limit_error',
+          error: err.message,
+        }),
+      );
     });
     authRateLimiter = new RedisRateLimiter(redisClient);
     configureRateLimit(authRateLimiter);
-    console.warn('[ORDR:API] Rate limiter initialized (Redis sliding window)');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'rate_limiter_initialized',
+        store: 'redis',
+      }),
+    );
   } else {
     authRateLimiter = new InMemoryRateLimiter();
     configureRateLimit(authRateLimiter);
-    console.warn('[ORDR:API] Rate limiter initialized (InMemory -- set REDIS_URL for production)');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'api-bootstrap',
+        event: 'rate_limiter_initialized',
+        store: 'in-memory',
+      }),
+    );
   }
 
   // ── 7.0. Auth routes — wire DB lookups + session manager + rate limiter ──
@@ -1523,7 +1877,14 @@ async function bootstrap(): Promise<void> {
           .where(eq(schema.users.id, userId));
       },
     });
-    console.warn('[ORDR:API] Auth routes configured (DrizzleSessionStore, Redis rate limiter)');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'auth',
+      }),
+    );
   }
 
   configureEventsRoute({ jwtConfig: activeJwtConfig });
@@ -1673,7 +2034,14 @@ async function bootstrap(): Promise<void> {
       return result.length > 0;
     },
   });
-  console.warn('[ORDR:API] Developer portal routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'developers',
+    }),
+  );
 
   // ── 7.2. Developer webhook routes (Phase 53) ──────────────────────────────
   const fieldEncryptor = new FieldEncryptor(fieldEncryptionKey);
@@ -1753,7 +2121,14 @@ async function bootstrap(): Promise<void> {
       return row;
     },
   });
-  console.warn('[ORDR:API] Developer webhook routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'developer-webhooks',
+    }),
+  );
 
   // ── 7.3. Developer agent submission routes (Phase 53) ─────────────────────
   configureDeveloperAgentRoutes({
@@ -1801,7 +2176,14 @@ async function bootstrap(): Promise<void> {
       return row;
     },
   });
-  console.warn('[ORDR:API] Developer agent routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'developer-agents',
+    }),
+  );
 
   configureHealthChecks({
     checkDb: async () => {
@@ -1908,7 +2290,14 @@ async function bootstrap(): Promise<void> {
       },
     });
 
-    console.warn('[ORDR:API] Branding routes configured');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'branding',
+      }),
+    );
   }
 
   // ── 8.1a Onboarding wizard ────────────────────────────────────────────────
@@ -1970,7 +2359,14 @@ async function bootstrap(): Promise<void> {
       },
     });
 
-    console.warn('[ORDR:API] Onboarding routes configured');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'onboarding',
+      }),
+    );
   }
 
   // ── 8.1b Feature flags ────────────────────────────────────────────────────
@@ -2052,7 +2448,14 @@ async function bootstrap(): Promise<void> {
       },
     });
 
-    console.warn('[ORDR:API] Feature flag routes configured');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'feature-flags',
+      }),
+    );
   }
 
   // ── 8.1 Organizations ──────────────────────────────────────────────────
@@ -2061,7 +2464,14 @@ async function bootstrap(): Promise<void> {
     orgManager: new OrganizationManager(new DrizzleOrgStore(db)),
     auditLogger,
   });
-  console.warn('[ORDR:API] Organization routes configured (DrizzleOrgStore)');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'organizations',
+    }),
+  );
 
   // ── 8.2 SSO ────────────────────────────────────────────────────────────
   // DrizzleSSOConnectionStore persists SSO connections to PostgreSQL.
@@ -2076,7 +2486,12 @@ async function bootstrap(): Promise<void> {
       workosApiKey && workosClientId ? new RealWorkOSClient(workosApiKey) : new InMemorySSOClient();
     if (!(workosApiKey && workosClientId)) {
       console.warn(
-        '[ORDR:API] WorkOS not configured — SSO will be stubbed (set WORKOS_API_KEY + WORKOS_CLIENT_ID)',
+        JSON.stringify({
+          level: 'warn',
+          component: 'api-bootstrap',
+          event: 'workos_skipped',
+          reason: 'WORKOS_API_KEY or WORKOS_CLIENT_ID not set',
+        }),
       );
     }
     configureSSORoutes({
@@ -2093,7 +2508,13 @@ async function bootstrap(): Promise<void> {
       auditLogger,
     });
     console.warn(
-      `[ORDR:API] SSO routes configured (${workosApiKey ? 'RealWorkOSClient' : 'InMemorySSOClient'}, DrizzleSSOConnectionStore)`,
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'sso',
+        client: workosApiKey ? 'real' : 'stub',
+      }),
     );
   }
 
@@ -2120,7 +2541,12 @@ async function bootstrap(): Promise<void> {
           };
     if (!(twilioAccountSid && twilioAuthToken)) {
       console.warn(
-        '[ORDR:API] Twilio not configured — SMS/voice will be stubbed (set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN)',
+        JSON.stringify({
+          level: 'warn',
+          component: 'api-bootstrap',
+          event: 'twilio_skipped',
+          reason: 'TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN not set',
+        }),
       );
     }
 
@@ -2131,7 +2557,12 @@ async function bootstrap(): Promise<void> {
       : { send: async () => ({ statusCode: 202, headers: {} }) };
     if (!sendgridApiKey) {
       console.warn(
-        '[ORDR:API] SendGrid not configured — email will be stubbed (set SENDGRID_API_KEY)',
+        JSON.stringify({
+          level: 'warn',
+          component: 'api-bootstrap',
+          event: 'sendgrid_skipped',
+          reason: 'SENDGRID_API_KEY not set',
+        }),
       );
     }
 
@@ -2248,7 +2679,14 @@ async function bootstrap(): Promise<void> {
 
       insertViolation: insertComplianceViolation,
     });
-    console.warn('[ORDR:API] Message routes configured');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'messages',
+      }),
+    );
   }
 
   // ── Phase 6: Operational Completeness ─────────────────────────────────
@@ -2262,7 +2700,14 @@ async function bootstrap(): Promise<void> {
     stripeWebhookSecret: process.env['STRIPE_WEBHOOK_SECRET'] ?? '',
     auditLogger,
   });
-  console.warn('[ORDR:API] Billing routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'billing',
+    }),
+  );
 
   // ── P6.2. Realtime SSE routes (ChannelManager + EventPublisher) ─────
   const channelManager = new ChannelManager();
@@ -2287,7 +2732,14 @@ async function bootstrap(): Promise<void> {
     jwtConfig: activeJwtConfig,
     auditLogger,
   });
-  console.warn('[ORDR:API] Realtime routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'realtime',
+    }),
+  );
 
   // ── P6.3. Workflow engine routes ──────────────────────────────────────
   const workflowAuditLogger = {
@@ -2331,7 +2783,13 @@ async function bootstrap(): Promise<void> {
     auditLogger,
   });
   console.warn(
-    `[ORDR:API] Workflow routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'workflow',
+      store: isProduction ? 'drizzle' : 'in-memory',
+    }),
   );
 
   // ── P6.4. Search engine routes ────────────────────────────────────────
@@ -2346,7 +2804,13 @@ async function bootstrap(): Promise<void> {
     auditLogger,
   });
   console.warn(
-    `[ORDR:API] Search routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'search',
+      store: isProduction ? 'drizzle' : 'in-memory',
+    }),
   );
 
   // ── P6.5. Scheduler routes ────────────────────────────────────────────
@@ -2410,7 +2874,14 @@ async function bootstrap(): Promise<void> {
         timestamp: alert.timestamp,
       })
       .catch((auditErr: unknown) => {
-        console.error('[ORDR:Scheduler] Failed to audit alert:', auditErr);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'scheduler',
+            event: 'audit_alert_failed',
+            error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          }),
+        );
       });
   };
   const schedulerDb = createDrizzle(
@@ -2423,7 +2894,13 @@ async function bootstrap(): Promise<void> {
   const jobScheduler = new JobScheduler(schedulerStore, schedulerAuditLog, schedulerAlert);
   configureSchedulerRoutes({ scheduler: jobScheduler, store: schedulerStore, auditLogger });
   console.warn(
-    `[ORDR:API] Scheduler routes configured (${isProduction ? 'Drizzle' : 'InMemory'} store)`,
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'scheduler',
+      store: isProduction ? 'drizzle' : 'in-memory',
+    }),
   );
 
   // ── Key Rotation Check job (Phase 55) ─────────────────────────────────
@@ -2576,7 +3053,14 @@ async function bootstrap(): Promise<void> {
       createKeyRotationCheckDefinition(),
       createKeyRotationCheckHandler(keyRotationDeps),
     );
-    console.warn('[ORDR:API] Key rotation check job registered');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'job_registered',
+        job: 'key-rotation-check',
+      }),
+    );
   }
 
   // ── P6.5b. DSR Routes (GDPR Art. 12, 15, 17, 20) ────────────────────────
@@ -2739,7 +3223,14 @@ async function bootstrap(): Promise<void> {
       },
       auditLogger,
     });
-    console.warn('[ORDR:API] DSR routes configured');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'dsr',
+      }),
+    );
   }
 
   // ── P6.5c. Compliance dashboard routes (Phase 58) ────────────────────────
@@ -2872,7 +3363,14 @@ async function bootstrap(): Promise<void> {
         return rows[0]?.ts ?? null;
       },
     });
-    console.warn('[ORDR:API] Compliance dashboard routes configured');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'compliance-dashboard',
+      }),
+    );
   }
 
   // ── P6.6. CRM integration routes ────────────────────────────────────────
@@ -3365,7 +3863,14 @@ async function bootstrap(): Promise<void> {
     eventProducer: integrationEventProducer,
     auditLogger,
   });
-  console.warn('[ORDR:API] Integration routes configured (salesforce, hubspot)');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'integrations',
+    }),
+  );
 
   // ── P6.7. Tenant management routes ──────────────────────────────────────
   configureTenantRoutes({
@@ -3473,7 +3978,14 @@ async function bootstrap(): Promise<void> {
     },
     auditLogger,
   });
-  console.warn('[ORDR:API] Tenant routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'tenants',
+    }),
+  );
 
   // ── 8.9. SCIM stores + handler (Phase 56) ─────────────────────────────
   // Wires the DrizzleUserStore, DrizzleGroupStore, and DrizzleTokenStore into
@@ -3495,7 +4007,14 @@ async function bootstrap(): Promise<void> {
     auditLogger,
   });
   configureSCIMRoutes({ scimHandler, tokenStore: scimTokenStore });
-  console.warn('[ORDR:API] SCIM routes configured');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'scim',
+    }),
+  );
 
   // ── 9. Create and start Hono app ───────────────────────────────────────
   // MetricsRegistry collects Node.js runtime defaults + ORDR-specific metrics.
@@ -3523,7 +4042,14 @@ async function bootstrap(): Promise<void> {
         db: scimDb,
       }),
     );
-    console.warn('[ORDR:API] WorkOS webhook route configured — POST /webhooks/workos');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'workos-webhook',
+      }),
+    );
   }
 
   server = serve(
@@ -3532,9 +4058,14 @@ async function bootstrap(): Promise<void> {
       port: config.port,
     },
     (info) => {
-      console.warn(`[ORDR:API] Server listening on port ${String(info.port)}`);
-      console.warn(`[ORDR:API] Health check: http://localhost:${String(info.port)}/health`);
-      console.warn(`[ORDR:API] Metrics:      http://localhost:${String(info.port)}/metrics`);
+      console.warn(
+        JSON.stringify({
+          level: 'info',
+          component: 'api-bootstrap',
+          event: 'server_listening',
+          port: info.port,
+        }),
+      );
     },
   );
 }
@@ -3542,12 +4073,16 @@ async function bootstrap(): Promise<void> {
 // ---- Graceful Shutdown -----------------------------------------------------
 
 async function shutdown(signal: string): Promise<void> {
-  console.warn(`[ORDR:API] Received ${signal} — initiating graceful shutdown...`);
+  console.warn(
+    JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'shutdown_begin', signal }),
+  );
 
   // 1. Stop accepting new requests
   if (server !== null) {
     server.close();
-    console.warn('[ORDR:API] HTTP server closed');
+    console.warn(
+      JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'shutdown_http_closed' }),
+    );
   }
 
   // 2. Stop SLA checker loop
@@ -3558,38 +4093,80 @@ async function shutdown(signal: string): Promise<void> {
   // 3. Shut down Synexiun kernel (stops heartbeat loop)
   if (limbInstance !== null) {
     limbInstance.shutdown();
-    console.warn('[ORDR:API] Synexiun kernel shut down');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'shutdown_kernel_stopped',
+      }),
+    );
   }
 
   // 4. Disconnect Kafka producer (flush pending messages)
   if (kafkaProducer !== null) {
     try {
       await kafkaProducer.disconnect();
-      console.warn('[ORDR:API] Kafka producer disconnected');
+      console.warn(
+        JSON.stringify({
+          level: 'info',
+          component: 'api-bootstrap',
+          event: 'shutdown_kafka_disconnected',
+        }),
+      );
     } catch (error: unknown) {
-      console.error('[ORDR:API] Error disconnecting Kafka producer:', error);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-bootstrap',
+          event: 'shutdown_kafka_disconnect_failed',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
 
   // 5. Stop Vault token renewal timer and SecretStore polling interval
   if (vaultClientInstance !== null) {
     vaultClientInstance.destroy();
-    console.warn('[ORDR:API] Vault client token renewal timer cleared');
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'shutdown_vault_destroyed',
+      }),
+    );
   }
   secretStore.destroy();
-  console.warn('[ORDR:API] SecretStore polling interval cleared');
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'shutdown_secret_store_destroyed',
+    }),
+  );
 
   // 6. Close database connection pool
   if (dbConnection !== null) {
     try {
       await closeConnection(dbConnection);
-      console.warn('[ORDR:API] Database connection closed');
+      console.warn(
+        JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'shutdown_db_closed' }),
+      );
     } catch (error: unknown) {
-      console.error('[ORDR:API] Error closing database connection:', error);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          component: 'api-bootstrap',
+          event: 'shutdown_db_close_failed',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   }
 
-  console.warn('[ORDR:API] Shutdown complete');
+  console.warn(
+    JSON.stringify({ level: 'info', component: 'api-bootstrap', event: 'shutdown_complete' }),
+  );
   process.exit(0);
 }
 
@@ -3606,12 +4183,26 @@ process.on('SIGINT', () => {
 // ---- Unhandled errors — last resort logging --------------------------------
 
 process.on('unhandledRejection', (reason: unknown) => {
-  console.error('[ORDR:API] Unhandled rejection:', reason);
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      component: 'api-bootstrap',
+      event: 'unhandled_rejection',
+      error: String(reason),
+    }),
+  );
   // Do NOT exit — let the process continue if possible
 });
 
 process.on('uncaughtException', (error: Error) => {
-  console.error('[ORDR:API] Uncaught exception:', error);
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      component: 'api-bootstrap',
+      event: 'uncaught_exception',
+      error: error.message,
+    }),
+  );
   // Uncaught exceptions leave the process in an undefined state — exit
   process.exit(1);
 });

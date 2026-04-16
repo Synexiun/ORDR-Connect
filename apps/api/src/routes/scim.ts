@@ -33,6 +33,7 @@ import { AuthenticationError } from '@ordr/core';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { Context } from 'hono';
 import type { Env } from '../types.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── SCIM Schema URNs (local const — not imported from @ordr/auth) ─
 
@@ -211,7 +212,7 @@ scimRouter.get('/Users/:id', async (c): Promise<Response> => {
 
 // ─── POST /Users ──────────────────────────────────────────────────
 
-scimRouter.post('/Users', async (c): Promise<Response> => {
+scimRouter.post('/Users', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -276,7 +277,7 @@ scimRouter.post('/Users', async (c): Promise<Response> => {
 // RFC 7644 §3.5.2: PATCH body MUST be a PatchOp with an Operations array.
 // Flat-object PATCH is not spec-compliant and is silently ignored by real IdPs.
 
-scimRouter.patch('/Users/:id', async (c): Promise<Response> => {
+scimRouter.patch('/Users/:id', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -333,7 +334,7 @@ scimRouter.patch('/Users/:id', async (c): Promise<Response> => {
 
 // ─── DELETE /Users/:id ────────────────────────────────────────────
 
-scimRouter.delete('/Users/:id', async (c): Promise<Response> => {
+scimRouter.delete('/Users/:id', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -394,7 +395,7 @@ scimRouter.get('/Groups/:id', async (c): Promise<Response> => {
 
 // ─── POST /Groups ─────────────────────────────────────────────────
 
-scimRouter.post('/Groups', async (c): Promise<Response> => {
+scimRouter.post('/Groups', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -434,7 +435,7 @@ scimRouter.post('/Groups', async (c): Promise<Response> => {
 
 // ─── PUT /Groups/:id ──────────────────────────────────────────────
 
-scimRouter.put('/Groups/:id', async (c): Promise<Response> => {
+scimRouter.put('/Groups/:id', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -471,7 +472,7 @@ scimRouter.put('/Groups/:id', async (c): Promise<Response> => {
 
 // ─── PATCH /Groups/:id ────────────────────────────────────────────
 
-scimRouter.patch('/Groups/:id', async (c): Promise<Response> => {
+scimRouter.patch('/Groups/:id', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }
@@ -501,7 +502,7 @@ scimRouter.patch('/Groups/:id', async (c): Promise<Response> => {
 
 // ─── DELETE /Groups/:id ───────────────────────────────────────────
 
-scimRouter.delete('/Groups/:id', async (c): Promise<Response> => {
+scimRouter.delete('/Groups/:id', rateLimit('write'), async (c): Promise<Response> => {
   if (!deps) {
     throw new Error('[ORDR:API] SCIM routes not configured');
   }

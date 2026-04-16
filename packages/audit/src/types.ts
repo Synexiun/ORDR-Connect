@@ -88,6 +88,10 @@ export type AuditEventType =
   | 'messaging.message_deleted'
   // Settings (Phase 84)
   | 'settings.role_created'
+  | 'settings.role_updated'
+  | 'settings.role_deleted'
+  | 'settings.role_assigned'
+  | 'settings.role_revoked'
   // Billing (Phase 85)
   | 'billing.subscription_created'
   | 'billing.subscription_upgraded'

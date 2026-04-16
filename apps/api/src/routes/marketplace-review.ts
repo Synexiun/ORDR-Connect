@@ -31,6 +31,7 @@ import type { AuditLogger } from '@ordr/audit';
 import { ValidationError, NotFoundError, AuthorizationError } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -246,7 +247,7 @@ marketplaceReviewRouter.get('/queue', requireAuth(), async (c) => {
 
 // ─── POST /:agentId/approve — Approve agent for publishing ──────
 
-marketplaceReviewRouter.post('/:agentId/approve', requireAuth(), async (c) => {
+marketplaceReviewRouter.post('/:agentId/approve', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace review routes not configured');
 
   const requestId = c.get('requestId');
@@ -301,7 +302,7 @@ marketplaceReviewRouter.post('/:agentId/approve', requireAuth(), async (c) => {
 
 // ─── POST /:agentId/reject — Reject with reason ────────────────
 
-marketplaceReviewRouter.post('/:agentId/reject', requireAuth(), async (c) => {
+marketplaceReviewRouter.post('/:agentId/reject', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace review routes not configured');
 
   const requestId = c.get('requestId');
@@ -354,7 +355,7 @@ marketplaceReviewRouter.post('/:agentId/reject', requireAuth(), async (c) => {
 
 // ─── POST /:agentId/suspend — Suspend published agent ───────────
 
-marketplaceReviewRouter.post('/:agentId/suspend', requireAuth(), async (c) => {
+marketplaceReviewRouter.post('/:agentId/suspend', requireAuth(), rateLimit('write'), async (c) => {
   if (!deps) throw new Error('[ORDR:API] Marketplace review routes not configured');
 
   const requestId = c.get('requestId');
