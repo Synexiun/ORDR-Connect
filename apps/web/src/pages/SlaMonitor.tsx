@@ -162,12 +162,13 @@ interface PolicyModalProps {
 }
 
 function PolicyModal({ editing, onClose, onSave }: PolicyModalProps): ReactNode {
-  const [form, setForm] = useState({
+  const initForm: PolicyFormState = {
     channel: editing?.channel ?? '',
     priorityTier: editing?.priorityTier ?? '',
     thresholdMinutes: editing?.thresholdMinutes ?? 240,
     enabled: editing?.enabled ?? true,
-  });
+  };
+  const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = useCallback(

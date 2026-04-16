@@ -83,6 +83,9 @@ const Search = lazy(() => import('./pages/Search').then((m) => ({ default: m.Sea
 const SlaMonitor = lazy(() =>
   import('./pages/SlaMonitor').then((m) => ({ default: m.SlaMonitor })),
 );
+const DsrManagement = lazy(() =>
+  import('./pages/DsrManagement').then((m) => ({ default: m.DsrManagement })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -206,6 +209,7 @@ export function App(): ReactNode {
                 <Route path="/billing" element={<Billing />} />
                 <Route path="/search" element={<Search />} />
                 <Route path="/sla" element={<SlaMonitor />} />
+                <Route path="/dsr" element={<DsrManagement />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

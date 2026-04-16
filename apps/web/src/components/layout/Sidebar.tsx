@@ -87,6 +87,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/compliance', label: 'Compliance', icon: ShieldCheck },
       { to: '/sla', label: 'SLA Monitor', icon: Clock },
+      { to: '/dsr', label: 'DSR Management', icon: FileText },
     ],
   },
   {
