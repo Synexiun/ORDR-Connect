@@ -186,7 +186,14 @@ const isDirectRun =
 if (isDirectRun) {
   const url = process.env['DATABASE_URL'];
   if (url === undefined || url.length === 0) {
-    console.error('[ORDR:DB] DATABASE_URL is required');
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'db-migrate',
+        event: 'missing_env',
+        var: 'DATABASE_URL',
+      }),
+    );
     process.exit(1);
   }
 
@@ -194,34 +201,83 @@ if (isDirectRun) {
 
   if (command === 'status') {
     const status = await getMigrationStatus(url);
-    console.warn('\n=== Migration Status ===');
-    console.warn(`Applied: ${String(status.applied.length)}`);
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'db-migrate',
+        event: 'migration_status',
+        applied: status.applied.length,
+        pending: status.pending.length,
+      }),
+    );
     for (const m of status.applied) {
       console.warn(
-        `  [x] ${m.name} (${m.checksum.slice(0, 8)}...) @ ${m.applied_at.toISOString()}`,
+        JSON.stringify({
+          level: 'warn',
+          component: 'db-migrate',
+          event: 'migration_applied',
+          name: m.name,
+          checksum: m.checksum.slice(0, 8),
+          appliedAt: m.applied_at.toISOString(),
+        }),
       );
     }
-    console.warn(`Pending: ${String(status.pending.length)}`);
     for (const name of status.pending) {
-      console.warn(`  [ ] ${name}`);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'db-migrate',
+          event: 'migration_pending',
+          name,
+        }),
+      );
     }
   } else {
-    console.warn('[ORDR:DB] Running migrations...');
+    console.warn(
+      JSON.stringify({ level: 'warn', component: 'db-migrate', event: 'migrations_start' }),
+    );
     const result = await runMigrations(url);
-    console.warn(`Applied: ${String(result.applied.length)}`);
     for (const name of result.applied) {
-      console.warn(`  [+] ${name}`);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'db-migrate',
+          event: 'migration_applied',
+          name,
+        }),
+      );
     }
     if (result.skipped.length > 0) {
-      console.warn(`Skipped: ${String(result.skipped.length)}`);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'db-migrate',
+          event: 'migrations_skipped',
+          count: result.skipped.length,
+        }),
+      );
     }
     if (result.errors.length > 0) {
-      console.error(`Errors: ${String(result.errors.length)}`);
       for (const e of result.errors) {
-        console.error(`  [!] ${e.name}: ${e.error}`);
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            component: 'db-migrate',
+            event: 'migration_error',
+            name: e.name,
+            error: e.error,
+          }),
+        );
       }
       process.exit(1);
     }
-    console.warn('[ORDR:DB] Migrations complete.');
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'db-migrate',
+        event: 'migrations_complete',
+        applied: result.applied.length,
+      }),
+    );
   }
 }

@@ -275,10 +275,12 @@ export async function seedDatabase(connectionUrl: string): Promise<void> {
         ON CONFLICT DO NOTHING
       `;
 
-      console.log('[ORDR:DB] Development test data seeded.');
+      console.warn(
+        JSON.stringify({ level: 'info', component: 'db-seed', event: 'dev_data_seeded' }),
+      );
     }
 
-    console.log('[ORDR:DB] Seed complete.');
+    console.warn(JSON.stringify({ level: 'info', component: 'db-seed', event: 'seed_complete' }));
   } finally {
     await sql.end();
   }
@@ -289,14 +291,21 @@ export async function seedDatabase(connectionUrl: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const isDirectRun =
-  process.argv[1] &&
-  (process.argv[1].endsWith('seed.ts') ||
-    process.argv[1].endsWith('seed.js'));
+  process.argv[1] !== undefined &&
+  process.argv[1] !== '' &&
+  (process.argv[1].endsWith('seed.ts') || process.argv[1].endsWith('seed.js'));
 
 if (isDirectRun) {
   const url = process.env['DATABASE_URL'];
-  if (!url) {
-    console.error('[ORDR:DB] DATABASE_URL is required');
+  if (url === undefined || url.length === 0) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'db-seed',
+        event: 'missing_env',
+        var: 'DATABASE_URL',
+      }),
+    );
     process.exit(1);
   }
 

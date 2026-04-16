@@ -939,7 +939,7 @@ integrationsRouter.post(
   async (c): Promise<Response> => {
     if (!deps) throw new Error('[ORDR:API] Integration routes not configured');
 
-    ensureTenantContext(c);
+    const ctx = ensureTenantContext(c);
     const requestId = c.get('requestId');
     const provider = c.req.param('provider');
     const adapter = resolveAdapter(provider, deps.adapters);
@@ -951,6 +951,18 @@ integrationsRouter.post(
     }
 
     const contact = await adapter.upsertContact(parsed.data);
+
+    await deps.auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'integration.contact_upserted',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'integration_contact',
+      resourceId: parsed.data.id ?? provider,
+      action: 'upsert',
+      details: { provider },
+      timestamp: new Date(),
+    });
 
     return c.json(
       {
