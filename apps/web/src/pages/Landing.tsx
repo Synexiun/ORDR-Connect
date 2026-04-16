@@ -21,6 +21,13 @@ import {
   Target,
   Eye,
   FileText,
+  HeartPulse,
+  Database,
+  Code2,
+  Webhook,
+  Terminal,
+  BookOpen,
+  Stethoscope,
 } from '../components/icons';
 
 // ---------------------------------------------------------------------------
@@ -539,8 +546,248 @@ function TechSpecsTable(): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Integration Hub Diagram — hub-and-spoke SVG
+// ---------------------------------------------------------------------------
+
+function IntegrationHubDiagram(): ReactNode {
+  const id = useId();
+  const integrations = [
+    { label: 'WorkOS / SCIM', x: 240, y: 45, color: '#8b5cf6' },
+    { label: 'Salesforce', x: 314, y: 76, color: '#3b82f6' },
+    { label: 'HubSpot', x: 345, y: 150, color: '#f97316' },
+    { label: 'Stripe', x: 314, y: 224, color: '#6366f1' },
+    { label: 'SendGrid', x: 240, y: 255, color: '#22d3ee' },
+    { label: 'Twilio', x: 166, y: 224, color: '#e11d48' },
+    { label: 'FHIR R4', x: 135, y: 150, color: '#ef4444' },
+    { label: 'Webhooks', x: 166, y: 76, color: '#f59e0b' },
+  ];
+  const cx = 240;
+  const cy = 150;
+
+  return (
+    <svg viewBox="0 0 480 300" className="w-full" aria-label="ORDR integration hub topology">
+      <defs>
+        <radialGradient id={`${id}-center`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#6366f1" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.04" />
+        </radialGradient>
+      </defs>
+      {integrations.map((int) => (
+        <line
+          key={int.label}
+          x1={cx}
+          y1={cy}
+          x2={int.x}
+          y2={int.y}
+          stroke={`${int.color}22`}
+          strokeWidth="1.5"
+          strokeDasharray="4,3"
+        />
+      ))}
+      <circle
+        cx={cx}
+        cy={cy}
+        r="46"
+        fill={`url(#${id}-center)`}
+        stroke="rgba(99,102,241,0.3)"
+        strokeWidth="1.5"
+      />
+      <text
+        x={cx}
+        y={cy - 8}
+        textAnchor="middle"
+        fill="#c4b5fd"
+        fontSize="11"
+        fontWeight="bold"
+        fontFamily="Inter, system-ui, sans-serif"
+      >
+        ORDR Core
+      </text>
+      <text
+        x={cx}
+        y={cy + 7}
+        textAnchor="middle"
+        fill="#64748b"
+        fontSize="7.5"
+        fontFamily="JetBrains Mono, monospace"
+      >
+        Kafka · Postgres
+      </text>
+      <text
+        x={cx}
+        y={cy + 19}
+        textAnchor="middle"
+        fill="#64748b"
+        fontSize="7.5"
+        fontFamily="JetBrains Mono, monospace"
+      >
+        Neo4j · ClickHouse
+      </text>
+      {integrations.map((int) => {
+        const parts = int.label.split(' / ');
+        return (
+          <g key={int.label}>
+            <circle
+              cx={int.x}
+              cy={int.y}
+              r="24"
+              fill={`${int.color}07`}
+              stroke={`${int.color}28`}
+              strokeWidth="1"
+            />
+            <circle cx={int.x} cy={int.y} r="2.5" fill={int.color} opacity="0.5" />
+            {parts.map((part, i) => (
+              <text
+                key={i}
+                x={int.x}
+                y={int.y + (parts.length > 1 ? -5 + i * 11 : 4)}
+                textAnchor="middle"
+                fill="#94a3b8"
+                fontSize="6.5"
+                fontFamily="Inter, system-ui, sans-serif"
+              >
+                {part}
+              </text>
+            ))}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FHIR R4 Resource Mapping Diagram
+// ---------------------------------------------------------------------------
+
+function FHIRFlowDiagram(): ReactNode {
+  const mappings = [
+    {
+      fhir: 'Patient',
+      ordr: 'Customer',
+      desc: 'demographics + relationship graph',
+      color: '#ef4444',
+    },
+    {
+      fhir: 'Communication',
+      ordr: 'Message / Conversation',
+      desc: 'channel + thread + audit trail',
+      color: '#f97316',
+    },
+    {
+      fhir: 'Bundle',
+      ordr: 'Bulk Import Transaction',
+      desc: 'atomic multi-resource write',
+      color: '#f59e0b',
+    },
+    {
+      fhir: 'CapabilityStatement',
+      ordr: 'Platform Metadata',
+      desc: 'GET /fhir/metadata',
+      color: '#10b981',
+    },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {mappings.map((m) => (
+        <div key={m.fhir} className="flex items-center gap-3">
+          <div
+            className="flex w-36 shrink-0 flex-col items-start justify-center rounded-lg border px-3 py-2"
+            style={{ borderColor: `${m.color}25`, background: `${m.color}06` }}
+          >
+            <span className="font-mono text-2xs font-bold" style={{ color: m.color }}>
+              {m.fhir}
+            </span>
+            <span className="font-mono text-2xs text-content-tertiary">FHIR R4</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="h-px w-5 bg-white/10" />
+            <span className="text-xs" style={{ color: `${m.color}60` }}>
+              {'\u2192'}
+            </span>
+            <div className="h-px w-5 bg-white/10" />
+          </div>
+          <div className="flex-1 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+            <p className="text-xs font-semibold text-content">{m.ordr}</p>
+            <p className="text-2xs text-content-tertiary">{m.desc}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
+
+const features = [
+  {
+    icon: Bot,
+    title: 'Multi-Agent Runtime',
+    sub: 'LangGraph + Claude API',
+    desc: '8 specialized agent types with 5-level graduated autonomy. Budget enforcement, kill switches at 4 levels, and 4-layer hallucination containment.',
+    color: '#8b5cf6',
+    tag: 'AI NATIVE',
+  },
+  {
+    icon: Globe,
+    title: 'Omnichannel Execution',
+    sub: 'SMS · Email · Voice · WhatsApp',
+    desc: 'Unified delivery across 8 channels with dynamic selection, provider failover, and intelligent routing based on customer preferences.',
+    color: '#ec4899',
+    tag: 'MULTI-CHANNEL',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Compliance Engine',
+    sub: '9 regulatory frameworks',
+    desc: 'Regulatory rules enforced at runtime. Automated quiet hours, consent tracking, frequency limits, and right-to-erasure via cryptographic key destruction.',
+    color: '#10b981',
+    tag: 'REGULATORY',
+  },
+  {
+    icon: HeartPulse,
+    title: 'FHIR R4 Healthcare',
+    sub: 'HL7 FHIR 4.0.1',
+    desc: 'Native FHIR R4 endpoints — Patient, Communication, Bundle. PHI field-level encryption, de-identification controls, and BAA-ready compliance.',
+    color: '#ef4444',
+    tag: 'HEALTHCARE',
+  },
+  {
+    icon: Database,
+    title: 'CRM Integrations',
+    sub: 'Salesforce · HubSpot',
+    desc: 'Bidirectional contact sync with field-level mapping, OAuth 2.1 flows, and WORM-logged connection events with full audit trail.',
+    color: '#3b82f6',
+    tag: 'INTEGRATIONS',
+  },
+  {
+    icon: Code2,
+    title: 'Developer Platform',
+    sub: 'REST API · Webhooks · Marketplace',
+    desc: 'Fully documented REST API, event webhook subscriptions, scoped API keys with SHA-256 storage, and an agent marketplace with sandboxed installs.',
+    color: '#f59e0b',
+    tag: 'DEVELOPER',
+  },
+  {
+    icon: FileText,
+    title: 'DSR Lifecycle',
+    sub: 'GDPR Art. 15 / 17 / 20',
+    desc: 'End-to-end data subject request management — access, erasure, portability — with 30-day deadline tracking and cryptographic erasure.',
+    color: '#06b6d4',
+    tag: 'PRIVACY',
+  },
+  {
+    icon: Users,
+    title: 'Enterprise Directory',
+    sub: 'SCIM 2.0 · WorkOS · SAML',
+    desc: 'RFC 7644 SCIM 2.0 user and group provisioning, WorkOS SSO with SAML/OIDC, and tenant-scoped RBAC with 19 permission scopes.',
+    color: '#64748b',
+    tag: 'ENTERPRISE',
+  },
+];
 
 const primitives = [
   {
@@ -630,9 +877,12 @@ const complianceBadges = [
   { label: 'SOC 2 Type II', sub: 'CC1–CC9, A1, PI1, C1, P1' },
   { label: 'ISO 27001:2022', sub: '93 Annex A Controls' },
   { label: 'HIPAA', sub: '§164.308 / .310 / .312' },
-  { label: 'GDPR', sub: 'Right to erasure via key destruction' },
+  { label: 'GDPR', sub: 'Art. 15/17/20 + DSR lifecycle' },
   { label: 'FDCPA / TCPA', sub: 'Quiet hours + frequency limits' },
   { label: 'PCI DSS', sub: 'Payment data isolation' },
+  { label: 'LGPD', sub: 'Brazilian data protection' },
+  { label: 'PIPEDA', sub: 'Canadian privacy law' },
+  { label: 'FEC', sub: 'Political campaign compliance' },
 ];
 
 const channelIcons: Record<string, typeof Mail> = {
@@ -674,10 +924,22 @@ export function Landing(): ReactNode {
           </div>
           <div className="hidden items-center gap-8 lg:flex">
             <a
+              href="#features"
+              className="text-sm text-content-secondary transition-colors hover:text-content"
+            >
+              Features
+            </a>
+            <a
               href="#architecture"
               className="text-sm text-content-secondary transition-colors hover:text-content"
             >
               Architecture
+            </a>
+            <a
+              href="#integrations"
+              className="text-sm text-content-secondary transition-colors hover:text-content"
+            >
+              Integrations
             </a>
             <a
               href="#security"
@@ -759,25 +1021,89 @@ export function Landing(): ReactNode {
             </button>
             <button
               onClick={() =>
-                document.getElementById('architecture')?.scrollIntoView({ behavior: 'smooth' })
+                document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
               }
               className="flex items-center gap-2 rounded-xl border border-white/10 px-8 py-3.5 text-base font-medium text-content-secondary transition-all hover:border-white/20 hover:text-content"
             >
-              Technical Overview
+              Explore Features
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
           {/* Trust strip */}
-          <div className="mt-20 flex flex-wrap items-center justify-center gap-8 text-xs font-medium text-content-tertiary">
-            {['SOC 2 Type II', 'ISO 27001:2022', 'HIPAA', 'GDPR', 'Zero Trust Architecture'].map(
-              (b) => (
-                <div key={b} className="flex items-center gap-1.5">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500/60" />
-                  <span>{b}</span>
+          <div className="mt-20 flex flex-wrap items-center justify-center gap-6 text-xs font-medium text-content-tertiary">
+            {[
+              'SOC 2 Type II',
+              'ISO 27001:2022',
+              'HIPAA',
+              'GDPR',
+              'FDCPA / TCPA',
+              'LGPD',
+              'Zero Trust',
+            ].map((b) => (
+              <div key={b} className="flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500/60" />
+                <span>{b}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PLATFORM FEATURES ── */}
+      <section id="features" className="py-32 px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
+              PLATFORM FEATURES
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              Everything customer operations needs.
+              <br />
+              <span className="text-content-tertiary">Nothing it doesn&apos;t.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              Eight integrated capabilities — AI agents, omnichannel delivery, compliance
+              automation, healthcare standards, CRM integrations, developer tools, privacy
+              management, and enterprise directory — built as one coherent platform.
+            </p>
+          </div>
+
+          <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {features.map((f) => {
+              const Icon = f.icon;
+              return (
+                <div
+                  key={f.title}
+                  className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.015] p-6 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <div
+                      className="flex h-9 w-9 items-center justify-center rounded-xl"
+                      style={{
+                        background: `${f.color}14`,
+                        border: `1px solid ${f.color}22`,
+                      }}
+                    >
+                      <Icon className="h-4 w-4" style={{ color: f.color }} />
+                    </div>
+                    <span
+                      className="font-mono text-2xs font-bold"
+                      style={{ color: `${f.color}80` }}
+                    >
+                      {f.tag}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-semibold">{f.title}</h3>
+                  <p className="mt-0.5 font-mono text-2xs text-content-tertiary">{f.sub}</p>
+                  <p className="mt-3 text-xs leading-relaxed text-content-secondary">{f.desc}</p>
+                  <div
+                    className="absolute -bottom-20 -right-20 h-40 w-40 rounded-full opacity-0 blur-[60px] transition-opacity duration-500 group-hover:opacity-10"
+                    style={{ background: f.color }}
+                  />
                 </div>
-              ),
-            )}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -867,6 +1193,109 @@ export function Landing(): ReactNode {
         </div>
       </section>
 
+      {/* ── INTEGRATIONS HUB ── */}
+      <section id="integrations" className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute left-1/4 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-blue-500/4 blur-[130px]" />
+        </div>
+        <div className="relative mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-blue-400">
+              INTEGRATIONS
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              Connects to everything already in your stack.
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              Bidirectional CRM sync, SCIM 2.0 directory provisioning, payment webhooks, and FHIR R4
+              healthcare interoperability — all authenticated, all audit-logged.
+            </p>
+          </div>
+
+          <div className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-2">
+            {/* Hub diagram */}
+            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+              <div className="mb-4 flex items-center gap-2">
+                <Database className="h-4 w-4 text-blue-400" />
+                <h3 className="text-sm font-semibold">Integration Topology</h3>
+                <span className="font-mono text-2xs text-content-tertiary">8 providers</span>
+              </div>
+              <IntegrationHubDiagram />
+            </div>
+
+            {/* Integration categories */}
+            <div className="space-y-3">
+              {[
+                {
+                  category: 'CRM & Sales',
+                  integrations: ['Salesforce', 'HubSpot'],
+                  desc: 'Bidirectional contact sync, field mapping, OAuth 2.1',
+                  color: '#3b82f6',
+                },
+                {
+                  category: 'Identity & Directory',
+                  integrations: ['WorkOS', 'SCIM 2.0', 'SAML / OIDC'],
+                  desc: 'Enterprise SSO, user/group provisioning, tenant RBAC',
+                  color: '#8b5cf6',
+                },
+                {
+                  category: 'Communications',
+                  integrations: ['Twilio SMS', 'Voice', 'SendGrid', 'WhatsApp'],
+                  desc: 'HMAC-validated webhooks, multi-provider failover',
+                  color: '#ec4899',
+                },
+                {
+                  category: 'Healthcare',
+                  integrations: ['FHIR R4', 'HL7 4.0.1'],
+                  desc: 'Patient/Communication/Bundle resources, PHI-safe',
+                  color: '#ef4444',
+                },
+                {
+                  category: 'Payments',
+                  integrations: ['Stripe'],
+                  desc: 'Billing webhooks, subscription event handling',
+                  color: '#10b981',
+                },
+                {
+                  category: 'Developer',
+                  integrations: ['REST API', 'Webhooks', 'Agent Marketplace'],
+                  desc: 'Scoped API keys, event subscriptions, sandbox installs',
+                  color: '#f59e0b',
+                },
+              ].map((cat) => (
+                <div
+                  key={cat.category}
+                  className="rounded-xl border border-white/5 bg-white/[0.015] p-4"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h4 className="text-xs font-semibold" style={{ color: cat.color }}>
+                        {cat.category}
+                      </h4>
+                      <p className="mt-0.5 text-xs text-content-tertiary">{cat.desc}</p>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      {cat.integrations.map((int) => (
+                        <span
+                          key={int}
+                          className="rounded-md border px-2 py-0.5 font-mono text-2xs"
+                          style={{
+                            borderColor: `${cat.color}22`,
+                            color: `${cat.color}90`,
+                          }}
+                        >
+                          {int}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── AUDIT & GOVERNANCE ── */}
       <section id="security" className="relative py-32 px-6">
         <div className="absolute inset-0 overflow-hidden">
@@ -884,8 +1313,8 @@ export function Landing(): ReactNode {
             </h2>
           </div>
 
-          {/* Compliance grid */}
-          <div className="mt-16 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {/* Compliance grid — 9 badges, 3×3 */}
+          <div className="mt-16 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {complianceBadges.map((b) => (
               <div
                 key={b.label}
@@ -1039,6 +1468,228 @@ export function Landing(): ReactNode {
         </div>
       </section>
 
+      {/* ── HEALTHCARE & FHIR ── */}
+      <section id="healthcare" className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute right-1/4 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-red-500/4 blur-[130px]" />
+        </div>
+        <div className="relative mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-red-400">
+              HEALTHCARE
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              FHIR R4 native.
+              <br />
+              <span className="text-content-tertiary">HIPAA-enforced by default.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              The only customer operations platform with HL7 FHIR 4.0.1 endpoints built in. Patient
+              records, clinical communications, and bulk transactions — all with PHI field-level
+              encryption and HIPAA audit trails.
+            </p>
+          </div>
+
+          <div className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-2">
+            {/* FHIR resource mapping */}
+            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+              <div className="mb-6 flex items-center gap-2">
+                <HeartPulse className="h-4 w-4 text-red-400" />
+                <h3 className="text-sm font-semibold">FHIR R4 Resource Mapping</h3>
+                <span className="font-mono text-2xs text-content-tertiary">HL7 4.0.1</span>
+              </div>
+              <FHIRFlowDiagram />
+              <div className="mt-6 rounded-lg border border-red-500/10 bg-red-500/[0.03] p-4">
+                <p className="font-mono text-xs text-red-400/80">GET /fhir/metadata</p>
+                <p className="mt-1 text-xs text-content-tertiary">
+                  CapabilityStatement auto-exposes supported resources and conformance level for
+                  FHIR client discovery
+                </p>
+              </div>
+            </div>
+
+            {/* Healthcare security features */}
+            <div className="space-y-4">
+              {[
+                {
+                  icon: Lock,
+                  title: 'Field-Level PHI Encryption',
+                  desc: 'Every PHI field encrypted with AES-256-GCM before database write. HSM-backed keys, 90-day automated rotation, cryptographic erasure for right-to-deletion.',
+                },
+                {
+                  icon: Eye,
+                  title: 'PHI Access Controls',
+                  desc: 'Dedicated fhir:read:phi permission scope. Every PHI access logged to WORM audit trail with accessor identity, timestamp, and business justification.',
+                },
+                {
+                  icon: Stethoscope,
+                  title: 'Clinical Workflow Automation',
+                  desc: 'Appointment reminders, medication adherence, discharge follow-ups — HIPAA-safe agent workflows with de-identification toggles and BAA compliance.',
+                },
+                {
+                  icon: ShieldCheck,
+                  title: 'HIPAA Technical Safeguards',
+                  desc: '§164.312 access controls, audit controls, integrity protection, and transmission security. Breach notification workflow with 60-day HIPAA deadline tracking.',
+                },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.title}
+                    className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-4 w-4 text-red-400" />
+                      <h4 className="text-sm font-semibold">{item.title}</h4>
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-content-secondary">
+                      {item.desc}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── DEVELOPER PLATFORM ── */}
+      <section id="developers" className="py-32 px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-amber-400">
+              DEVELOPER PLATFORM
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              Built for engineers.
+              <br />
+              <span className="text-content-tertiary">Loved by operations teams.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              REST API, webhook subscriptions, scoped API keys, and an agent marketplace —
+              everything needed to extend, integrate, and build on top of ORDR-Connect.
+            </p>
+          </div>
+
+          <div className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                icon: Code2,
+                title: 'REST API',
+                desc: 'Fully documented REST API with typed responses, cursor-based pagination, and filtering across all resource types.',
+                color: '#f59e0b',
+                badge: '10K req/s',
+              },
+              {
+                icon: Webhook,
+                title: 'Event Webhooks',
+                desc: 'Subscribe to any platform event. HMAC-SHA256 signed payloads, automatic retry with exponential backoff, and dead-letter queue.',
+                color: '#3b82f6',
+                badge: '100+ events',
+              },
+              {
+                icon: Terminal,
+                title: 'Scoped API Keys',
+                desc: 'Granular permission scoping per key. SHA-256 hashed storage. Zero-downtime rotation. Per-key rate limits and audit logs.',
+                color: '#10b981',
+                badge: 'SHA-256 stored',
+              },
+              {
+                icon: BookOpen,
+                title: 'Agent Marketplace',
+                desc: 'Tenant-scoped agent installs. Review system, version management, and isolated execution sandboxes per tenant.',
+                color: '#8b5cf6',
+                badge: 'Sandboxed',
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.title}
+                  className="rounded-2xl border border-white/5 bg-white/[0.015] p-6 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div
+                      className="flex h-10 w-10 items-center justify-center rounded-xl"
+                      style={{
+                        background: `${item.color}12`,
+                        border: `1px solid ${item.color}22`,
+                      }}
+                    >
+                      <Icon className="h-5 w-5" style={{ color: item.color }} />
+                    </div>
+                    <span
+                      className="font-mono text-2xs font-bold"
+                      style={{ color: `${item.color}70` }}
+                    >
+                      {item.badge}
+                    </span>
+                  </div>
+                  <h3 className="mt-4 text-sm font-semibold">{item.title}</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* DSR + SCIM panel */}
+          <div className="mt-8 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-cyan-400" />
+                  <h3 className="text-sm font-semibold">DSR Lifecycle Management</h3>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-content-secondary">
+                  End-to-end GDPR Data Subject Request management. Access, erasure, and portability
+                  requests with 30-day deadline tracking, Kafka-published approval events, and
+                  cryptographic erasure — destroy the key, not the data.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {[
+                    'Access (Art. 15)',
+                    'Erasure (Art. 17)',
+                    'Portability (Art. 20)',
+                    '30-day SLA',
+                    'Crypto Erasure',
+                  ].map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 px-2.5 py-1 text-2xs text-cyan-400/70"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-violet-400" />
+                  <h3 className="text-sm font-semibold">SCIM 2.0 Provisioning</h3>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-content-secondary">
+                  RFC 7644 compliant SCIM 2.0 server for enterprise directory integration. Full user
+                  and group CRUD, PatchOps support, tenant-scoped isolation, and WorkOS webhook
+                  processing.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {['RFC 7644', 'User CRUD', 'Group CRUD', 'PatchOps', 'WorkOS Webhooks'].map(
+                    (tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-lg border border-violet-500/15 bg-violet-500/5 px-2.5 py-1 text-2xs text-violet-400/70"
+                      >
+                        {tag}
+                      </span>
+                    ),
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── TECHNICAL SPECIFICATIONS ── */}
       <section id="specs" ref={statsRef} className="relative py-32 px-6">
         <div className="absolute inset-0 overflow-hidden">
@@ -1128,6 +1779,153 @@ export function Landing(): ReactNode {
                   </div>
                   <h3 className="mt-4 text-sm font-semibold">{ind.name}</h3>
                   <p className="mt-1 text-xs text-content-tertiary">{ind.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── USE CASES ── */}
+      <section className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-violet-500/3 blur-[150px]" />
+        </div>
+        <div className="relative mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
+              USE CASES
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              From signal to resolution.
+              <br />
+              <span className="text-content-tertiary">Autonomously.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              Real workflows running in production — deterministic pipelines that handle exceptions,
+              enforce compliance, and close the loop without manual intervention.
+            </p>
+          </div>
+
+          <div className="mt-16 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            {[
+              {
+                industry: 'Collections & Finance',
+                workflow: 'Delinquency Recovery',
+                icon: Building2,
+                color: '#f59e0b',
+                steps: [
+                  {
+                    label: 'Payment missed',
+                    desc: 'Event published to Kafka within 15ms of system update',
+                  },
+                  {
+                    label: 'Rules evaluated',
+                    desc: 'FDCPA quiet hours + attempt count verified in <10ms',
+                  },
+                  {
+                    label: 'Agent dispatched',
+                    desc: 'Dynamic channel selection: SMS → Voice → Letter',
+                  },
+                  {
+                    label: 'Outcome recorded',
+                    desc: 'Promise logged, follow-up scheduled, WORM audit written',
+                  },
+                ],
+                compliance: 'FDCPA + Reg F + TCPA',
+              },
+              {
+                industry: 'Healthcare & Clinics',
+                workflow: 'Appointment Adherence',
+                icon: HeartPulse,
+                color: '#ef4444',
+                steps: [
+                  {
+                    label: 'Appointment created',
+                    desc: 'Patient record synced via FHIR R4 Bundle endpoint',
+                  },
+                  {
+                    label: 'Reminder sequence',
+                    desc: 'PHI-safe SMS/email at 7 days, 3 days, 1 day prior',
+                  },
+                  {
+                    label: 'No-show detected',
+                    desc: 'Real-time trigger fires on missed check-in event',
+                  },
+                  {
+                    label: 'Reschedule outreach',
+                    desc: 'Agent calls, HIPAA audit logged, slot freed immediately',
+                  },
+                ],
+                compliance: 'HIPAA + HITECH',
+              },
+              {
+                industry: 'B2B SaaS',
+                workflow: 'Churn Prevention',
+                icon: Bot,
+                color: '#8b5cf6',
+                steps: [
+                  {
+                    label: 'Usage drop detected',
+                    desc: 'ClickHouse analytics trigger fires in <100ms',
+                  },
+                  {
+                    label: 'Health score updated',
+                    desc: 'Neo4j relationship graph re-scored with decay model',
+                  },
+                  {
+                    label: 'CS agent activated',
+                    desc: 'LangGraph orchestration, 0.8+ confidence required',
+                  },
+                  {
+                    label: 'Renewal defended',
+                    desc: 'Outcome tracked, playbook refined by ML feedback loop',
+                  },
+                ],
+                compliance: 'SOC 2 + ISO 27001',
+              },
+            ].map((uc) => {
+              const Icon = uc.icon;
+              return (
+                <div
+                  key={uc.workflow}
+                  className="rounded-2xl border border-white/5 bg-white/[0.015] p-6"
+                >
+                  <div className="flex items-center justify-between">
+                    <div
+                      className="flex h-9 w-9 items-center justify-center rounded-xl"
+                      style={{
+                        background: `${uc.color}12`,
+                        border: `1px solid ${uc.color}22`,
+                      }}
+                    >
+                      <Icon className="h-4 w-4" style={{ color: uc.color }} />
+                    </div>
+                    <span className="font-mono text-2xs" style={{ color: `${uc.color}70` }}>
+                      {uc.compliance}
+                    </span>
+                  </div>
+                  <h3 className="mt-4 text-sm font-semibold">{uc.workflow}</h3>
+                  <p className="font-mono text-2xs text-content-tertiary">{uc.industry}</p>
+                  <div className="mt-5 space-y-3">
+                    {uc.steps.map((s, i) => (
+                      <div key={s.label} className="flex gap-3">
+                        <div
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-mono text-2xs font-bold"
+                          style={{
+                            background: `${uc.color}14`,
+                            color: uc.color,
+                          }}
+                        >
+                          {i + 1}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-content">{s.label}</p>
+                          <p className="text-2xs text-content-tertiary">{s.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -1252,7 +2050,15 @@ export function Landing(): ReactNode {
                 COMPLIANCE
               </h4>
               <div className="mt-3 space-y-1.5">
-                {['SOC 2 Type II', 'ISO 27001:2022', 'HIPAA', 'GDPR', 'PCI DSS'].map((c) => (
+                {[
+                  'SOC 2 Type II',
+                  'ISO 27001:2022',
+                  'HIPAA',
+                  'GDPR',
+                  'PCI DSS',
+                  'LGPD',
+                  'FDCPA / TCPA',
+                ].map((c) => (
                   <div key={c} className="flex items-center gap-1.5 text-xs text-content-secondary">
                     <ShieldCheck className="h-3 w-3 text-emerald-500/60" />
                     {c}
