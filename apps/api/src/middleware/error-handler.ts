@@ -61,10 +61,24 @@ export const globalErrorHandler: ErrorHandler<Env> = (error, c) => {
   };
 
   if (appError.isOperational) {
-    console.warn('[ORDR:ERROR] Operational error:', JSON.stringify(logPayload));
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'error-handler',
+        event: 'operational_error',
+        ...logPayload,
+      }),
+    );
   } else {
     // Non-operational = unexpected / programmer error — critical log
-    console.error('[ORDR:ERROR] Unexpected error:', JSON.stringify(logPayload));
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        component: 'error-handler',
+        event: 'unexpected_error',
+        ...logPayload,
+      }),
+    );
   }
 
   // ---- Return safe response to client ---------------------------------------
