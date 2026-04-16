@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 
-type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+export type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 type BadgeSize = 'sm' | 'md';
 
 interface BadgeProps {

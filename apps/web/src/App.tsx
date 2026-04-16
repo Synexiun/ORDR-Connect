@@ -89,6 +89,9 @@ const DsrManagement = lazy(() =>
 const FeatureFlags = lazy(() =>
   import('./pages/FeatureFlags').then((m) => ({ default: m.FeatureFlags })),
 );
+const RolesManagement = lazy(() =>
+  import('./pages/RolesManagement').then((m) => ({ default: m.RolesManagement })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -214,6 +217,7 @@ export function App(): ReactNode {
                 <Route path="/sla" element={<SlaMonitor />} />
                 <Route path="/dsr" element={<DsrManagement />} />
                 <Route path="/feature-flags" element={<FeatureFlags />} />
+                <Route path="/roles" element={<RolesManagement />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
