@@ -1322,6 +1322,562 @@ function ROIBarChart(): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Compliance Penalty Reference Table
+// ---------------------------------------------------------------------------
+
+function CompliancePenaltyTable(): ReactNode {
+  const penalties = [
+    {
+      reg: 'FDCPA',
+      color: '#f59e0b',
+      perViolation: '$1,000–$3,500',
+      maxExposure: '$500K or 1% net worth (class action)',
+      trigger: 'Contact outside 8am–9pm local, calls after cease-and-desist, >7 calls in 7 days',
+      gate: 'Rules Engine — 14-condition gate, <10ms deterministic block',
+    },
+    {
+      reg: 'TCPA',
+      color: '#ef4444',
+      perViolation: '$500–$1,500 per call',
+      maxExposure: 'Uncapped — $500 × millions of calls = existential class action',
+      trigger: 'ATDS calls/texts to cell phone without prior express written consent',
+      gate: 'Consent store validated before every channel dispatch — no consent = blocked',
+    },
+    {
+      reg: 'HIPAA',
+      color: '#ec4899',
+      perViolation: '$100–$50,000 per violation',
+      maxExposure: '$1.9M per violation category per year',
+      trigger: 'PHI in logs or error messages, unencrypted storage, missing access audit trail',
+      gate: 'AES-256-GCM field encryption + WORM PHI access log with accessor identity',
+    },
+    {
+      reg: 'GDPR',
+      color: '#3b82f6',
+      perViolation: '€10M or 2% global revenue (standard)',
+      maxExposure: '€20M or 4% global revenue (severe) + data subject damages',
+      trigger: 'No lawful basis, failed Art. 17 erasure, no records of processing (Art. 30)',
+      gate: 'DSR lifecycle + cryptographic erasure (DEK destroy) + consent management',
+    },
+    {
+      reg: 'RESPA',
+      color: '#10b981',
+      perViolation: '$10,000–$50,000 per regulatory finding',
+      maxExposure: 'Triple actual damages + attorney fees (private right of action)',
+      trigger: 'Missed LE/CD disclosure windows, no SPOC assignment, unreported kickbacks',
+      gate: 'Workflow engine enforces disclosure timing gates — next stage blocked until delivered',
+    },
+    {
+      reg: 'FEC',
+      color: '#8b5cf6',
+      perViolation: '$25,000–$275,000 civil penalty',
+      maxExposure: 'Criminal: up to 5 years imprisonment + fines for knowing violations',
+      trigger: 'Missing paid-for-by disclaimer, prohibited source, unreported disbursements',
+      gate: 'Pre-send 6-rule FEC gate — message blocked if any rule fails, all checked <10ms',
+    },
+    {
+      reg: 'CCPA / CPRA',
+      color: '#06b6d4',
+      perViolation: '$100–$750 per consumer per incident',
+      maxExposure: '$7,500 per intentional violation (CPRA) + private right of action for breaches',
+      trigger: 'No opt-out of sale link, ignored GPC signal, failed deletion requests',
+      gate: 'GPC signal detection + right-to-delete DSR automation + opt-out enforcement',
+    },
+  ];
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-white/5">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-white/5 bg-white/[0.02]">
+            <th className="px-4 py-3 text-left font-semibold text-content-tertiary">REGULATION</th>
+            <th className="px-4 py-3 text-left font-semibold text-content-tertiary">
+              PER-VIOLATION
+            </th>
+            <th className="hidden px-4 py-3 text-left font-semibold text-content-tertiary lg:table-cell">
+              MAX EXPOSURE
+            </th>
+            <th className="hidden px-4 py-3 text-left font-semibold text-content-tertiary xl:table-cell">
+              COMMON TRIGGER
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-content-tertiary">
+              ORDR PREVENTION
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/[0.03]">
+          {penalties.map((p) => (
+            <tr key={p.reg} className="transition-colors hover:bg-white/[0.02]">
+              <td className="px-4 py-3">
+                <span className="font-mono text-xs font-bold" style={{ color: p.color }}>
+                  {p.reg}
+                </span>
+              </td>
+              <td className="px-4 py-3 font-mono font-semibold text-red-400/80">
+                {p.perViolation}
+              </td>
+              <td className="hidden px-4 py-3 text-content-tertiary lg:table-cell">
+                {p.maxExposure}
+              </td>
+              <td className="hidden px-4 py-3 text-content-tertiary xl:table-cell">{p.trigger}</td>
+              <td className="px-4 py-3 text-emerald-400/70">{p.gate}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Standards Control Mapping — SOC2 / ISO 27001 / HIPAA / GDPR
+// ---------------------------------------------------------------------------
+
+function SecurityControlsTable(): ReactNode {
+  const frameworkColors: Record<string, string> = {
+    'SOC 2': '#22c55e',
+    'ISO 27001': '#64748b',
+    HIPAA: '#ec4899',
+    GDPR: '#3b82f6',
+  };
+
+  const controls = [
+    {
+      framework: 'SOC 2',
+      control: 'CC6.1',
+      requirement: 'Logical access controls',
+      implementation:
+        'RBAC + ABAC per endpoint, JWT claims server-side only, PostgreSQL Row-Level Security, per-tenant DEK',
+    },
+    {
+      framework: 'SOC 2',
+      control: 'CC6.3',
+      requirement: 'Prevent unauthorized access',
+      implementation:
+        'Argon2id passwords (64MB/3iter/4par), mandatory MFA, mTLS service mesh, OAuth 2.1 + PKCE, API key SHA-256',
+    },
+    {
+      framework: 'SOC 2',
+      control: 'CC7.2',
+      requirement: 'System monitoring',
+      implementation:
+        'Structured JSON logs → Loki, Prometheus metrics → Grafana, real-time audit chain hash verification',
+    },
+    {
+      framework: 'SOC 2',
+      control: 'CC9.2',
+      requirement: 'Vendor risk management',
+      implementation:
+        'CycloneDX SBOM per release, Snyk + Dependabot dependency scan, 48-hour critical CVE SLA, OSI-only licenses',
+    },
+    {
+      framework: 'ISO 27001',
+      control: 'A.8.24',
+      requirement: 'Use of cryptography',
+      implementation:
+        'AES-256-GCM at rest, TLS 1.3 + mTLS in transit, HSM-backed HashiCorp Vault, 90-day automated DEK rotation',
+    },
+    {
+      framework: 'ISO 27001',
+      control: 'A.5.33',
+      requirement: 'Protection of records',
+      implementation:
+        'Append-only PostgreSQL triggers blocking UPDATE/DELETE, S3 Object Lock (Compliance mode), 7-year retention',
+    },
+    {
+      framework: 'ISO 27001',
+      control: 'A.8.16',
+      requirement: 'Activity monitoring',
+      implementation:
+        'Every API call, agent decision, data access → immutable audit event with SHA-256 chain link',
+    },
+    {
+      framework: 'HIPAA',
+      control: '§164.312(a)',
+      requirement: 'Access controls',
+      implementation:
+        'Unique user ID, emergency access procedure, AES-256-GCM encryption per §164.312(a)(2)(iv)',
+    },
+    {
+      framework: 'HIPAA',
+      control: '§164.312(b)',
+      requirement: 'Audit controls',
+      implementation:
+        'WORM PHI access log: accessor identity, timestamp, business justification, Merkle root verification',
+    },
+    {
+      framework: 'HIPAA',
+      control: '§164.312(e)',
+      requirement: 'Transmission security',
+      implementation:
+        'TLS 1.3 minimum external, mTLS all internal services, PHI field-level encrypted before any network write',
+    },
+    {
+      framework: 'GDPR',
+      control: 'Art. 17',
+      requirement: 'Right to erasure',
+      implementation:
+        'Cryptographic erasure: DEK destroyed → data permanently unreadable without physical deletion of records',
+    },
+    {
+      framework: 'GDPR',
+      control: 'Art. 30',
+      requirement: 'Records of processing',
+      implementation:
+        'WORM audit trail with full data access history satisfies records-of-processing-activities obligation',
+    },
+  ];
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-white/5">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-white/5 bg-white/[0.02]">
+            <th className="px-4 py-3 text-left font-semibold text-content-tertiary">FRAMEWORK</th>
+            <th className="px-4 py-3 text-left font-mono font-semibold text-content-tertiary">
+              CONTROL
+            </th>
+            <th className="hidden px-4 py-3 text-left font-semibold text-content-tertiary md:table-cell">
+              REQUIREMENT
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-content-tertiary">
+              ORDR-CONNECT IMPLEMENTATION
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/[0.03]">
+          {controls.map((c) => (
+            <tr
+              key={`${c.framework}-${c.control}`}
+              className="transition-colors hover:bg-white/[0.02]"
+            >
+              <td className="px-4 py-3">
+                <span
+                  className="rounded-md border px-2 py-0.5 font-mono text-2xs font-semibold"
+                  style={{
+                    borderColor: `${frameworkColors[c.framework] ?? '#94a3b8'}25`,
+                    color: frameworkColors[c.framework] ?? '#94a3b8',
+                  }}
+                >
+                  {c.framework}
+                </span>
+              </td>
+              <td className="px-4 py-3 font-mono text-content-secondary">{c.control}</td>
+              <td className="hidden px-4 py-3 font-semibold text-content md:table-cell">
+                {c.requirement}
+              </td>
+              <td className="px-4 py-3 text-content-secondary">{c.implementation}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Kafka Topic Architecture Table
+// ---------------------------------------------------------------------------
+
+function KafkaTopologyTable(): ReactNode {
+  const topics = [
+    {
+      topic: 'customer-events',
+      partitions: 24,
+      throughput: '5K msg/s',
+      retention: '7 days',
+      keyEvents: ['customer.created', 'customer.updated', 'customer.deleted'],
+      consumers: ['Customer handler', 'Integration sync', 'Graph enricher'],
+      color: '#3b82f6',
+    },
+    {
+      topic: 'interaction-events',
+      partitions: 48,
+      throughput: '20K msg/s',
+      retention: '7 days',
+      keyEvents: ['interaction.logged', 'outbound.delivered', 'outbound.failed'],
+      consumers: ['Interaction handler', 'NBA pipeline', 'Agent dispatcher'],
+      color: '#10b981',
+    },
+    {
+      topic: 'agent-events',
+      partitions: 12,
+      throughput: '2K msg/s',
+      retention: '14 days',
+      keyEvents: ['agent.triggered', 'agent.action_executed', 'agent.killed'],
+      consumers: ['Agent handler', 'Notification writer', 'Audit logger'],
+      color: '#8b5cf6',
+    },
+    {
+      topic: 'outbound-messages',
+      partitions: 96,
+      throughput: '50K msg/s',
+      retention: '3 days',
+      keyEvents: ['outbound.message', 'outbound.consent_denied', 'outbound.blocked'],
+      consumers: ['Outbound handler', 'Channel router', 'Compliance gate'],
+      color: '#ec4899',
+    },
+    {
+      topic: 'dsr-events',
+      partitions: 6,
+      throughput: '100 msg/s',
+      retention: '30 days',
+      keyEvents: ['dsr.requested', 'dsr.approved', 'dsr.erasure_executed'],
+      consumers: ['DSR export handler', 'Erasure worker', 'Audit logger'],
+      color: '#06b6d4',
+    },
+    {
+      topic: 'integration-events',
+      partitions: 24,
+      throughput: '3K msg/s',
+      retention: '7 days',
+      keyEvents: [
+        'integration.webhook_received',
+        'integration.sync_completed',
+        'integration.conflict_detected',
+      ],
+      consumers: ['Integration sync', 'Conflict resolver', 'Audit logger'],
+      color: '#f59e0b',
+    },
+  ];
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-white/5">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-white/5 bg-white/[0.02]">
+            <th className="px-4 py-3 text-left font-mono font-semibold text-content-tertiary">
+              TOPIC
+            </th>
+            <th className="px-4 py-3 text-center font-semibold text-content-tertiary">
+              PARTITIONS
+            </th>
+            <th className="px-4 py-3 text-center font-semibold text-content-tertiary">
+              THROUGHPUT
+            </th>
+            <th className="hidden px-4 py-3 text-center font-semibold text-content-tertiary md:table-cell">
+              RETENTION
+            </th>
+            <th className="hidden px-4 py-3 text-left font-semibold text-content-tertiary lg:table-cell">
+              KEY EVENT TYPES
+            </th>
+            <th className="hidden px-4 py-3 text-left font-semibold text-content-tertiary xl:table-cell">
+              CONSUMERS
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/[0.03]">
+          {topics.map((t) => (
+            <tr key={t.topic} className="transition-colors hover:bg-white/[0.02]">
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 shrink-0 rounded-full" style={{ background: t.color }} />
+                  <span className="font-mono font-semibold text-content">{t.topic}</span>
+                </div>
+              </td>
+              <td className="px-4 py-3 text-center font-mono text-content-secondary">
+                {t.partitions}
+              </td>
+              <td className="px-4 py-3 text-center">
+                <span className="font-mono font-bold" style={{ color: t.color }}>
+                  {t.throughput}
+                </span>
+              </td>
+              <td className="hidden px-4 py-3 text-center font-mono text-content-tertiary md:table-cell">
+                {t.retention}
+              </td>
+              <td className="hidden px-4 py-3 lg:table-cell">
+                <div className="flex flex-wrap gap-1">
+                  {t.keyEvents.map((e) => (
+                    <span
+                      key={e}
+                      className="rounded border border-white/5 px-1.5 py-0.5 font-mono text-2xs text-content-tertiary"
+                    >
+                      {e}
+                    </span>
+                  ))}
+                </div>
+              </td>
+              <td className="hidden px-4 py-3 xl:table-cell">
+                <div className="space-y-0.5">
+                  {t.consumers.map((c) => (
+                    <div key={c} className="text-2xs text-content-tertiary">
+                      {c}
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Competitive Differentiation Matrix
+// ---------------------------------------------------------------------------
+
+function CompetitorMatrix(): ReactNode {
+  type Score = 'full' | 'partial' | 'none';
+  const capabilities = [
+    'Multi-agent orchestration',
+    'Native compliance rules engine',
+    'FHIR R4 / Healthcare interop',
+    'Omnichannel (8+ channels)',
+    'Bidirectional CRM sync',
+    'WORM cryptographic audit chain',
+    'SCIM 2.0 provisioning',
+    'DSR lifecycle management',
+    'Event sourcing / Kafka backbone',
+    'Field-level PHI / PII encryption',
+  ];
+
+  const competitors: {
+    name: string;
+    short: string;
+    color: string;
+    scores: Score[];
+  }[] = [
+    {
+      name: 'ORDR-Connect',
+      short: 'ORDR',
+      color: '#22c55e',
+      scores: ['full', 'full', 'full', 'full', 'full', 'full', 'full', 'full', 'full', 'full'],
+    },
+    {
+      name: 'Salesforce + Agentforce',
+      short: 'SF + AF',
+      color: '#3b82f6',
+      scores: [
+        'partial',
+        'none',
+        'none',
+        'partial',
+        'full',
+        'none',
+        'partial',
+        'none',
+        'none',
+        'none',
+      ],
+    },
+    {
+      name: 'Five9 / CCaaS',
+      short: 'Five9',
+      color: '#f59e0b',
+      scores: ['none', 'none', 'none', 'partial', 'none', 'none', 'none', 'none', 'none', 'none'],
+    },
+    {
+      name: 'Zendesk + AI',
+      short: 'ZD+AI',
+      color: '#ec4899',
+      scores: [
+        'partial',
+        'none',
+        'none',
+        'partial',
+        'partial',
+        'none',
+        'none',
+        'none',
+        'none',
+        'none',
+      ],
+    },
+    {
+      name: 'Vanta (Compliance)',
+      short: 'Vanta',
+      color: '#8b5cf6',
+      scores: [
+        'none',
+        'partial',
+        'none',
+        'none',
+        'none',
+        'partial',
+        'none',
+        'partial',
+        'none',
+        'none',
+      ],
+    },
+  ];
+
+  const scoreCell = (score: Score, color: string): ReactNode => {
+    if (score === 'full')
+      return (
+        <span className="text-base leading-none" style={{ color }} title="Native, built-in">
+          ●
+        </span>
+      );
+    if (score === 'partial')
+      return (
+        <span
+          className="text-base leading-none text-content-tertiary/60"
+          title="Partial / requires add-on"
+        >
+          ◑
+        </span>
+      );
+    return (
+      <span className="text-base leading-none text-content-tertiary/20" title="Not available">
+        ○
+      </span>
+    );
+  };
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-white/5">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-white/5 bg-white/[0.02]">
+            <th className="px-4 py-3 text-left font-semibold text-content-tertiary">CAPABILITY</th>
+            {competitors.map((c) => (
+              <th key={c.name} className="px-3 py-3 text-center">
+                <span className="text-xs font-semibold" style={{ color: c.color }}>
+                  {c.short}
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/[0.03]">
+          {capabilities.map((cap, i) => (
+            <tr key={cap} className="transition-colors hover:bg-white/[0.02]">
+              <td className="px-4 py-3 font-medium text-content-secondary">{cap}</td>
+              {competitors.map((c) => (
+                <td key={c.name} className="px-3 py-3 text-center">
+                  {scoreCell(c.scores[i] ?? 'none', c.color)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-white/5">
+            <td colSpan={competitors.length + 1} className="px-4 py-3">
+              <div className="flex flex-wrap items-center gap-6 font-mono text-2xs text-content-tertiary">
+                <span>
+                  <span className="text-emerald-400">●</span> Native, built-in
+                </span>
+                <span>
+                  <span className="text-content-tertiary/60">◑</span> Partial / requires add-on
+                </span>
+                <span>
+                  <span className="text-content-tertiary/20">○</span> Not available
+                </span>
+              </div>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
 
@@ -1803,6 +2359,12 @@ export function Landing(): ReactNode {
             >
               Specifications
             </a>
+            <a
+              href="#compare"
+              className="text-sm text-content-secondary transition-colors hover:text-content"
+            >
+              Compare
+            </a>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -2135,6 +2697,18 @@ export function Landing(): ReactNode {
               </div>
             ))}
           </div>
+
+          {/* Kafka topic topology */}
+          <div className="mt-8">
+            <div className="mb-4 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-emerald-400" />
+              <h3 className="text-sm font-semibold">Kafka Topic Architecture</h3>
+              <span className="font-mono text-2xs text-content-tertiary">
+                6 topics · 210 total partitions · 80K msg/s aggregate
+              </span>
+            </div>
+            <KafkaTopologyTable />
+          </div>
         </div>
       </section>
 
@@ -2290,6 +2864,18 @@ export function Landing(): ReactNode {
             <ComplianceMatrixTable />
           </div>
 
+          {/* Compliance penalty reference */}
+          <div className="mt-10">
+            <div className="mb-4 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <h3 className="text-sm font-semibold">Regulatory Penalty Exposure</h3>
+              <span className="font-mono text-2xs text-content-tertiary">
+                what non-compliance actually costs
+              </span>
+            </div>
+            <CompliancePenaltyTable />
+          </div>
+
           {/* Merkle audit diagram */}
           <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
@@ -2402,6 +2988,18 @@ export function Landing(): ReactNode {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Standards control mapping */}
+          <div className="mt-10">
+            <div className="mb-4 flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <h3 className="text-sm font-semibold">Standards Control Mapping</h3>
+              <span className="font-mono text-2xs text-content-tertiary">
+                SOC 2 · ISO 27001 · HIPAA · GDPR
+              </span>
+            </div>
+            <SecurityControlsTable />
           </div>
         </div>
       </section>
@@ -3073,6 +3671,66 @@ export function Landing(): ReactNode {
                   className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
                 >
                   <Icon className="h-5 w-5 mb-3" style={{ color: item.color }} />
+                  <h4 className="text-sm font-semibold text-content">{item.title}</h4>
+                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── COMPETITIVE DIFFERENTIATION ── */}
+      <section id="compare" className="py-32 px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
+              WHY ORDR-CONNECT
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              No other platform does all of this.
+              <br />
+              <span className="text-content-tertiary">Natively. In one product.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              Point solutions solve one problem. ORDR-Connect solves the entire customer operations
+              stack — with compliance, AI, encryption, and audit chain built in from the start, not
+              bolted on as add-ons.
+            </p>
+          </div>
+
+          <div className="mt-16">
+            <CompetitorMatrix />
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {[
+              {
+                icon: Layers,
+                title: 'Compliance is architecture, not a feature flag',
+                desc: 'In Salesforce, compliance is a third-party app. In Five9, there is no compliance layer. In ORDR-Connect, FDCPA, TCPA, HIPAA, and GDPR gates run on every single event — before any action executes — without configuration.',
+                color: '#22c55e',
+              },
+              {
+                icon: Brain,
+                title: "AI that's bounded, not unbounded",
+                desc: 'Agentforce gives you a general-purpose agent. ORDR-Connect gives you 8 specialized agents with confidence thresholds, kill switches, budget enforcement, and hallucination containment. The difference is whether your AI can cause compliance violations.',
+                color: '#8b5cf6',
+              },
+              {
+                icon: Database,
+                title: 'Event sourcing as a first principle',
+                desc: 'No other platform on this list uses Kafka as the primary source of truth. Every other platform is a database with an API. ORDR-Connect is an event stream that projects to databases — giving you infinite replay, zero data loss, and a complete causal history.',
+                color: '#3b82f6',
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.title}
+                  className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
+                >
+                  <Icon className="mb-3 h-5 w-5" style={{ color: item.color }} />
                   <h4 className="text-sm font-semibold text-content">{item.title}</h4>
                   <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
                 </div>
