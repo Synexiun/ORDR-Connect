@@ -7,6 +7,8 @@ import {
   Zap,
   Lock,
   Globe,
+  LayoutDashboard,
+  Clock,
   Building2,
   Briefcase,
   Users,
@@ -1322,6 +1324,257 @@ function ROIBarChart(): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Live Demo Preview — 7-module grid linking to /demo/*
+// ---------------------------------------------------------------------------
+
+function DemoPreviewCards(): ReactNode {
+  const modules = [
+    {
+      path: '/demo',
+      label: 'Operations',
+      badge: 'CORE',
+      icon: LayoutDashboard,
+      desc: 'AI agent queue, real-time signal feed, autonomous action log, compliance alert panel',
+      color: '#f59e0b',
+    },
+    {
+      path: '/demo/agents',
+      label: 'Agent Runtime',
+      badge: 'AI',
+      icon: Bot,
+      desc: 'Active agent sessions, reasoning chains, confidence scores, 4-scope kill switch controls',
+      color: '#8b5cf6',
+    },
+    {
+      path: '/demo/customers',
+      label: 'Customer Intel',
+      badge: 'DATA',
+      icon: Users,
+      desc: 'Temporal knowledge graph, full interaction history, NBA decision trace, relationship map',
+      color: '#3b82f6',
+    },
+    {
+      path: '/demo/channels',
+      label: 'Channel Command',
+      badge: 'DELIVERY',
+      icon: MessageSquare,
+      desc: 'Unified omnichannel inbox, delivery status, consent state, per-channel performance metrics',
+      color: '#ec4899',
+    },
+    {
+      path: '/demo/compliance',
+      label: 'Compliance',
+      badge: 'GOVERNANCE',
+      icon: ShieldCheck,
+      desc: 'Live violation feed, regulation coverage heatmap, WORM audit chain verifier',
+      color: '#10b981',
+    },
+    {
+      path: '/demo/events',
+      label: 'Event Stream',
+      badge: 'INFRA',
+      icon: Activity,
+      desc: 'Real-time Kafka event viewer, topic throughput, consumer lag, schema registry browser',
+      color: '#06b6d4',
+    },
+    {
+      path: '/demo/analytics',
+      label: 'Analytics',
+      badge: 'INTELLIGENCE',
+      icon: BarChart3,
+      desc: 'ClickHouse-powered dashboards, cohort analysis, agent ROI, funnel and retention metrics',
+      color: '#f59e0b',
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {modules.slice(0, 4).map((m) => {
+        const Icon = m.icon;
+        return (
+          <a
+            key={m.path}
+            href={m.path}
+            className="group relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.015] p-5 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                style={{ background: `${m.color}14`, border: `1px solid ${m.color}22` }}
+              >
+                <Icon className="h-4 w-4" style={{ color: m.color }} />
+              </div>
+              <span className="font-mono text-2xs font-bold" style={{ color: `${m.color}70` }}>
+                {m.badge}
+              </span>
+            </div>
+            <h4 className="mt-3 text-sm font-semibold text-content">{m.label}</h4>
+            <p className="mt-1 text-2xs leading-relaxed text-content-secondary">{m.desc}</p>
+            <div
+              className="mt-3 flex items-center gap-1 font-mono text-2xs"
+              style={{ color: m.color }}
+            >
+              <span>Explore →</span>
+            </div>
+            <div
+              className="absolute -bottom-16 -right-16 h-32 w-32 rounded-full opacity-0 blur-[50px] transition-opacity duration-500 group-hover:opacity-10"
+              style={{ background: m.color }}
+            />
+          </a>
+        );
+      })}
+      {modules.slice(4).map((m) => {
+        const Icon = m.icon;
+        return (
+          <a
+            key={m.path}
+            href={m.path}
+            className="group relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.015] p-5 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                style={{ background: `${m.color}14`, border: `1px solid ${m.color}22` }}
+              >
+                <Icon className="h-4 w-4" style={{ color: m.color }} />
+              </div>
+              <span className="font-mono text-2xs font-bold" style={{ color: `${m.color}70` }}>
+                {m.badge}
+              </span>
+            </div>
+            <h4 className="mt-3 text-sm font-semibold text-content">{m.label}</h4>
+            <p className="mt-1 text-2xs leading-relaxed text-content-secondary">{m.desc}</p>
+            <div
+              className="mt-3 flex items-center gap-1 font-mono text-2xs"
+              style={{ color: m.color }}
+            >
+              <span>Explore →</span>
+            </div>
+            <div
+              className="absolute -bottom-16 -right-16 h-32 w-32 rounded-full opacity-0 blur-[50px] transition-opacity duration-500 group-hover:opacity-10"
+              style={{ background: m.color }}
+            />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Implementation Timeline — 5 milestones from Day 1 to Month 6
+// ---------------------------------------------------------------------------
+
+function ImplementationTimeline(): ReactNode {
+  const stages = [
+    {
+      stage: 'Day 1',
+      label: 'Foundation',
+      color: '#06b6d4',
+      items: [
+        'Tenant provisioned, SSO via WorkOS',
+        'First API keys scoped and issued',
+        'Compliance baseline rules active',
+        'WORM audit chain initialized',
+      ],
+    },
+    {
+      stage: 'Week 2',
+      label: 'First Agents Live',
+      color: '#3b82f6',
+      items: [
+        'First agent deployed, sandboxed at L2',
+        'FDCPA / TCPA compliance gates configured',
+        'CRM read-only sync initiated',
+        'Channel providers authenticated',
+      ],
+    },
+    {
+      stage: 'Month 1',
+      label: 'Full Deployment',
+      color: '#8b5cf6',
+      items: [
+        'Full 8-agent suite at L3 autonomy',
+        'FHIR R4 EHR sync live (healthcare)',
+        'Bidirectional CRM write-back enabled',
+        'DSR lifecycle (GDPR/CCPA) operational',
+      ],
+    },
+    {
+      stage: 'Month 3',
+      label: 'Optimization',
+      color: '#f59e0b',
+      items: [
+        'ML model trained on 90 days of outcomes',
+        'Custom workflows and triggers deployed',
+        'Marketplace agents installed + reviewed',
+        'Agents promoted to L4 autonomy',
+      ],
+    },
+    {
+      stage: 'Month 6',
+      label: 'Compliance Ready',
+      color: '#10b981',
+      items: [
+        'SOC 2 audit evidence collection complete',
+        'WORM archive: 6-month verified Merkle chain',
+        'Breach notification workflow tested',
+        'Pen test conducted, findings closed',
+      ],
+    },
+  ];
+
+  return (
+    <div className="relative">
+      {/* Connector line */}
+      <div className="absolute left-[14px] top-6 hidden h-[calc(100%-48px)] w-px bg-white/5 sm:left-1/2 sm:block" />
+
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-5">
+        {stages.map((s, i) => (
+          <div key={s.stage} className="relative flex flex-col items-center text-center">
+            {/* Stage marker */}
+            <div
+              className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 bg-canvas"
+              style={{ borderColor: s.color }}
+            >
+              <span className="font-mono text-2xs font-bold" style={{ color: s.color }}>
+                {i + 1}
+              </span>
+            </div>
+
+            <div
+              className="mt-4 w-full rounded-xl border p-4"
+              style={{ borderColor: `${s.color}20`, background: `${s.color}05` }}
+            >
+              <p
+                className="font-mono text-2xs font-bold uppercase tracking-widest"
+                style={{ color: s.color }}
+              >
+                {s.stage}
+              </p>
+              <h4 className="mt-1 text-xs font-semibold text-content">{s.label}</h4>
+              <div className="mt-3 space-y-1.5">
+                {s.items.map((item) => (
+                  <div key={item} className="flex items-start gap-1.5">
+                    <CheckCircle2
+                      className="mt-0.5 h-3 w-3 shrink-0"
+                      style={{ color: `${s.color}70` }}
+                    />
+                    <span className="text-left text-2xs leading-relaxed text-content-tertiary">
+                      {item}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Compliance Penalty Reference Table
 // ---------------------------------------------------------------------------
 
@@ -2318,6 +2571,12 @@ export function Landing(): ReactNode {
           </div>
           <div className="hidden items-center gap-8 lg:flex">
             <a
+              href="#demo-preview"
+              className="text-sm font-semibold text-brand-accent transition-colors hover:text-white"
+            >
+              Live Demo
+            </a>
+            <a
               href="#features"
               className="text-sm text-content-secondary transition-colors hover:text-content"
             >
@@ -2452,6 +2711,58 @@ export function Landing(): ReactNode {
                 <span>{b}</span>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── LIVE DEMO PREVIEW ── */}
+      <section id="demo-preview" className="py-20 px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
+            <div>
+              <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
+                INTERACTIVE DEMO
+              </p>
+              <h2 className="mt-3 text-2xl font-bold sm:text-3xl">
+                Explore the platform — no signup required.
+              </h2>
+              <p className="mt-2 max-w-xl text-sm text-content-secondary">
+                Seven fully interactive modules with real-time simulated data. See exactly what your
+                ops team will use every day before committing to a conversation.
+              </p>
+            </div>
+            <a
+              href="/demo"
+              className="group flex shrink-0 items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-canvas transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/5"
+            >
+              Launch Demo
+              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </a>
+          </div>
+
+          <div className="mt-10">
+            <DemoPreviewCards />
+          </div>
+
+          {/* Terminal-style status strip */}
+          <div className="mt-6 flex flex-wrap items-center gap-6 rounded-xl border border-white/5 bg-white/[0.015] px-5 py-3">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+              <span className="font-mono text-xs text-emerald-400">6 agents online</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-blue-400" />
+              <span className="font-mono text-xs text-blue-400/80">1.2K events/s simulated</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-amber-400" />
+              <span className="font-mono text-xs text-amber-400/80">
+                All compliance gates active
+              </span>
+            </div>
+            <div className="ml-auto hidden font-mono text-2xs text-content-tertiary sm:block">
+              Synthetic data only — no PHI, no credentials
+            </div>
           </div>
         </div>
       </section>
@@ -3732,6 +4043,68 @@ export function Landing(): ReactNode {
                 >
                   <Icon className="mb-3 h-5 w-5" style={{ color: item.color }} />
                   <h4 className="text-sm font-semibold text-content">{item.title}</h4>
+                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── IMPLEMENTATION TIMELINE ── */}
+      <section className="py-32 px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center">
+            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
+              IMPLEMENTATION
+            </p>
+            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
+              From contract to full autonomy
+              <br />
+              <span className="text-content-tertiary">in six months.</span>
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
+              ORDR-Connect is designed to deploy incrementally — compliance gates and audit
+              infrastructure go live on Day 1, agents and integrations layer in week by week. No
+              big-bang deployment, no months of professional services.
+            </p>
+          </div>
+
+          <div className="mt-16">
+            <ImplementationTimeline />
+          </div>
+
+          <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {[
+              {
+                icon: Clock,
+                title: 'Day 1: Compliance Infrastructure',
+                desc: 'The compliance engine, WORM audit chain, and tenant isolation are operational before a single agent fires. Security posture is established from the start — not retrofitted.',
+                color: '#06b6d4',
+              },
+              {
+                icon: Zap,
+                title: 'No "Integration Sprint"',
+                desc: 'CRM sync, FHIR, SCIM, and webhook adapters are pre-built. Connection is configuration, not development. Most teams have live integrations within the first 10 days.',
+                color: '#f59e0b',
+              },
+              {
+                icon: ShieldCheck,
+                title: 'Month 6: Audit-Ready',
+                desc: 'Six months of WORM-verified audit evidence is ready for SOC 2 Type II collection. The audit chain is tamper-proof from the first event — nothing needs to be backfilled.',
+                color: '#10b981',
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.title}
+                  className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4" style={{ color: item.color }} />
+                    <h4 className="text-sm font-semibold text-content">{item.title}</h4>
+                  </div>
                   <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
                 </div>
               );
