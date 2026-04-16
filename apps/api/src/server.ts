@@ -828,7 +828,7 @@ async function bootstrap(): Promise<void> {
 
   // ── 4.10. SLA checker — periodic background scan for breach notifications ──
   slaChecker = new SlaChecker(db);
-  configureSlaRoutes(slaChecker);
+  configureSlaRoutes(slaChecker, db, auditLogger);
   slaChecker.start(DEFAULT_CHECK_INTERVAL_MS);
 
   // ── 4.11. Team management routes ──────────────────────────────────────────

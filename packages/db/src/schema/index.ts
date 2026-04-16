@@ -215,3 +215,6 @@ export {
 // Internal Messaging — enterprise chat channels and messages (Phase 70)
 export { chatChannels, channelTypeEnum } from './chat-channels.js';
 export { chatMessages, messageContentTypeEnum } from './chat-messages.js';
+
+// SLA Policies (Phase 100)
+export { slaPolicies } from './sla.js';
