@@ -53,6 +53,7 @@ import {
   Webhook,
   ShieldAlert,
   Radio,
+  Fingerprint,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -109,6 +110,7 @@ const navSections: NavSection[] = [
       { to: '/organizations', label: 'Organizations', icon: Building2 },
       { to: '/consent', label: 'Consent Records', icon: ShieldCheck },
       { to: '/security-events', label: 'Security Events', icon: ShieldAlert },
+      { to: '/encryption-keys', label: 'Encryption Keys', icon: Fingerprint },
     ],
   },
   {
