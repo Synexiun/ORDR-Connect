@@ -48,6 +48,11 @@ module "ordr_connect" {
 
   # Vault — full HA
   vault_replicas = 5
+
+  # WAF — production headroom: 10k req/IP/5min, 365-day retention for SOC 2 evidence
+  waf_rate_limit_per_5min   = 10000
+  waf_blocked_country_codes = []
+  waf_log_retention_days    = 365
 }
 
 # ---------------------------------------------------------------------------
@@ -79,4 +84,14 @@ output "kafka_brokers" {
 
 output "audit_bucket_arn" {
   value = module.ordr_connect.audit_bucket_arn
+}
+
+output "waf_web_acl_arn" {
+  description = "WAFv2 WebACL ARN — wire into Ingress via alb.ingress.kubernetes.io/wafv2-acl-arn"
+  value       = module.ordr_connect.waf_web_acl_arn
+}
+
+output "waf_log_group_name" {
+  description = "CloudWatch log group for WAF blocked-request audit"
+  value       = module.ordr_connect.waf_log_group_name
 }

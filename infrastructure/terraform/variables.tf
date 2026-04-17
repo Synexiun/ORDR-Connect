@@ -169,3 +169,35 @@ variable "vault_replicas" {
     error_message = "Minimum 3 replicas for Vault HA."
   }
 }
+
+# ---------------------------------------------------------------------------
+# WAF (AWS WAFv2)
+# ---------------------------------------------------------------------------
+
+variable "waf_rate_limit_per_5min" {
+  description = "Per-IP request ceiling over a 5-minute sliding window"
+  type        = number
+  default     = 10000
+
+  validation {
+    condition     = var.waf_rate_limit_per_5min >= 100
+    error_message = "WAF rate limit must be at least 100."
+  }
+}
+
+variable "waf_blocked_country_codes" {
+  description = "ISO 3166-1 alpha-2 country codes to geo-block (empty disables rule)"
+  type        = list(string)
+  default     = []
+}
+
+variable "waf_log_retention_days" {
+  description = "CloudWatch retention for WAF logs (SOC 2 evidence window)"
+  type        = number
+  default     = 365
+
+  validation {
+    condition     = var.waf_log_retention_days >= 90
+    error_message = "WAF log retention must be at least 90 days."
+  }
+}

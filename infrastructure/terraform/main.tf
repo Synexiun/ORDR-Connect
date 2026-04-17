@@ -181,3 +181,12 @@ module "monitoring" {
 
   depends_on = [module.eks]
 }
+
+module "waf" {
+  source = "./modules/waf"
+
+  environment           = var.environment
+  rate_limit_per_5min   = var.waf_rate_limit_per_5min
+  blocked_country_codes = var.waf_blocked_country_codes
+  log_retention_days    = var.waf_log_retention_days
+}

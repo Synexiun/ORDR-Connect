@@ -54,6 +54,11 @@ module "ordr_connect" {
 
   # Vault
   vault_replicas = 3
+
+  # WAF — staging gets a tighter rate limit so load tests don't mask real abuse
+  waf_rate_limit_per_5min   = 5000
+  waf_blocked_country_codes = []
+  waf_log_retention_days    = 90
 }
 
 # ---------------------------------------------------------------------------
@@ -81,4 +86,14 @@ output "redis_endpoint" {
 output "kafka_brokers" {
   value     = module.ordr_connect.kafka_bootstrap_brokers_tls
   sensitive = true
+}
+
+output "waf_web_acl_arn" {
+  description = "WAFv2 WebACL ARN — wire into Ingress via alb.ingress.kubernetes.io/wafv2-acl-arn"
+  value       = module.ordr_connect.waf_web_acl_arn
+}
+
+output "waf_log_group_name" {
+  description = "CloudWatch log group for WAF blocked-request audit"
+  value       = module.ordr_connect.waf_log_group_name
 }

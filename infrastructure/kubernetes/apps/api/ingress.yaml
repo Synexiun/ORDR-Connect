@@ -1,7 +1,16 @@
 # ============================================================================
 # ORDR-Connect — API Ingress
 # SOC 2 Type II | ISO 27001:2022 | HIPAA Compliant
-# TLS termination, rate limiting, WAF headers
+# TLS termination, rate limiting, WAF-fronted
+#
+# WAF ASSOCIATION (AWS):
+# AWS WAFv2 WebACL is provisioned by infrastructure/terraform/modules/waf/
+# with ARN exposed via the root output `waf_web_acl_arn`. If this ingress is
+# migrated to the AWS Load Balancer Controller (ingressClassName: alb),
+# attach the ACL with:
+#   alb.ingress.kubernetes.io/wafv2-acl-arn: <waf_web_acl_arn output>
+# While this ingress uses nginx-ingress, associate WAF at the ALB level via
+# `aws_wafv2_web_acl_association` (Terraform) or the WAF console.
 # ============================================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -16,11 +25,11 @@ metadata:
   annotations:
     # TLS — Rule 1: TLS 1.3 minimum
     nginx.ingress.kubernetes.io/ssl-protocols: TLSv1.3
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
     # Rate limiting — Rule 4
-    nginx.ingress.kubernetes.io/limit-rps: "50"
-    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-rps: '50'
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: '5'
     # Request size — Rule 4
     nginx.ingress.kubernetes.io/proxy-body-size: 1m
     # Security headers — Rule 7
@@ -31,9 +40,9 @@ metadata:
       more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
       more_set_headers "Permissions-Policy: camera=(), microphone=(), geolocation=()";
     # Connection timeouts
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '30'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '30'
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: '10'
 spec:
   ingressClassName: nginx
   tls:

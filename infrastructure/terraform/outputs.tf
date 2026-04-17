@@ -101,3 +101,22 @@ output "sbom_bucket_arn" {
   description = "SBOM artifact S3 bucket ARN"
   value       = module.s3.sbom_bucket_arn
 }
+
+# ---------------------------------------------------------------------------
+# WAF
+# ---------------------------------------------------------------------------
+
+output "waf_web_acl_arn" {
+  description = "WAFv2 WebACL ARN — attach to ALB via Ingress annotation alb.ingress.kubernetes.io/wafv2-acl-arn"
+  value       = module.waf.web_acl_arn
+}
+
+output "waf_web_acl_name" {
+  description = "WAFv2 WebACL name"
+  value       = module.waf.web_acl_name
+}
+
+output "waf_log_group_name" {
+  description = "CloudWatch log group receiving WAF blocked-request logs"
+  value       = module.waf.log_group_name
+}
