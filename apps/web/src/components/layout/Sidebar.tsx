@@ -53,6 +53,7 @@ import {
   Webhook,
   ShieldAlert,
   Radio,
+  TrendingUp,
   Fingerprint,
   UserCog,
   Activity,
@@ -126,6 +127,7 @@ const navSections: NavSection[] = [
   {
     label: 'AUTOMATION',
     items: [
+      { to: '/escalation', label: 'Escalation Rules', icon: TrendingUp },
       { to: '/workflows', label: 'Workflows', icon: GitBranch },
       { to: '/integrations', label: 'Integrations', icon: Link2 },
       { to: '/integrations/sync', label: 'Sync History', icon: RefreshCw },

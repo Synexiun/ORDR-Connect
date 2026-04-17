@@ -139,6 +139,9 @@ const KnowledgeBase = lazy(() =>
 const PromptTemplates = lazy(() =>
   import('./pages/PromptTemplates').then((m) => ({ default: m.PromptTemplates })),
 );
+const EscalationRules = lazy(() =>
+  import('./pages/EscalationRules').then((m) => ({ default: m.EscalationRules })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -284,6 +287,7 @@ export function App(): ReactNode {
                 <Route path="/ai-models" element={<AiModels />} />
                 <Route path="/knowledge-base" element={<KnowledgeBase />} />
                 <Route path="/prompts" element={<PromptTemplates />} />
+                <Route path="/escalation" element={<EscalationRules />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
