@@ -61,6 +61,7 @@ import {
   Cpu,
   BookOpen,
   Layers,
+  Brain,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -95,6 +96,7 @@ const navSections: NavSection[] = [
     label: 'INTELLIGENCE',
     items: [
       { to: '/agents', label: 'Agent Activity', icon: Bot },
+      { to: '/decision-engine', label: 'Decision Engine', icon: Brain },
       { to: '/ai-models', label: 'AI Models', icon: Cpu },
       { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
       { to: '/prompts', label: 'Prompt Templates', icon: Layers },

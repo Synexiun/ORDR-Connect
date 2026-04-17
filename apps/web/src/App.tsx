@@ -142,6 +142,9 @@ const PromptTemplates = lazy(() =>
 const EscalationRules = lazy(() =>
   import('./pages/EscalationRules').then((m) => ({ default: m.EscalationRules })),
 );
+const DecisionEngine = lazy(() =>
+  import('./pages/DecisionEngine').then((m) => ({ default: m.DecisionEngine })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -288,6 +291,7 @@ export function App(): ReactNode {
                 <Route path="/knowledge-base" element={<KnowledgeBase />} />
                 <Route path="/prompts" element={<PromptTemplates />} />
                 <Route path="/escalation" element={<EscalationRules />} />
+                <Route path="/decision-engine" element={<DecisionEngine />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
