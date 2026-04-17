@@ -86,6 +86,7 @@ export {
   Unlock,
   Key,
   Shield,
+  ShieldAlert,
   Briefcase,
   Gauge,
 

@@ -114,6 +114,9 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys').then((m) => ({ default: m.A
 const WebhookMonitor = lazy(() =>
   import('./pages/WebhookMonitor').then((m) => ({ default: m.WebhookMonitor })),
 );
+const SecurityEvents = lazy(() =>
+  import('./pages/SecurityEvents').then((m) => ({ default: m.SecurityEvents })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -250,6 +253,7 @@ export function App(): ReactNode {
                 <Route path="/consent" element={<ConsentRecords />} />
                 <Route path="/api-keys" element={<ApiKeys />} />
                 <Route path="/webhooks" element={<WebhookMonitor />} />
+                <Route path="/security-events" element={<SecurityEvents />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

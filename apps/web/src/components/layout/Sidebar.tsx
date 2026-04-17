@@ -51,6 +51,7 @@ import {
   Bell,
   Key,
   Webhook,
+  ShieldAlert,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -105,6 +106,7 @@ const navSections: NavSection[] = [
       { to: '/roles', label: 'Roles & Permissions', icon: Lock },
       { to: '/organizations', label: 'Organizations', icon: Building2 },
       { to: '/consent', label: 'Consent Records', icon: ShieldCheck },
+      { to: '/security-events', label: 'Security Events', icon: ShieldAlert },
     ],
   },
   {
