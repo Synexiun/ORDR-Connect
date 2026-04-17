@@ -136,6 +136,9 @@ const AiModels = lazy(() => import('./pages/AiModels').then((m) => ({ default: m
 const KnowledgeBase = lazy(() =>
   import('./pages/KnowledgeBase').then((m) => ({ default: m.KnowledgeBase })),
 );
+const PromptTemplates = lazy(() =>
+  import('./pages/PromptTemplates').then((m) => ({ default: m.PromptTemplates })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -280,6 +283,7 @@ export function App(): ReactNode {
                 <Route path="/data-retention" element={<DataRetention />} />
                 <Route path="/ai-models" element={<AiModels />} />
                 <Route path="/knowledge-base" element={<KnowledgeBase />} />
+                <Route path="/prompts" element={<PromptTemplates />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
