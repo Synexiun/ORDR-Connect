@@ -2,19 +2,26 @@
  * Billing API Service
  *
  * Typed wrappers over /api/v1/billing endpoints.
+ * Covers: subscription lifecycle, invoice history, and payment method management.
  *
- * SOC2 CC6.1 — Subscription data is tenant-scoped; tenantId sourced from JWT.
- * PCI CC6.1 — No card data handled here; Stripe tokenization only.
- * ISO 27001 A.9.1.2 — Plan-based access controls.
- * HIPAA §164.312(a)(1) — Usage-based access controls.
+ * SECURITY:
+ * - Subscription data is tenant-scoped via JWT — Rule 2
+ * - No raw card numbers, CVVs, or full PANs ever returned — PCI DSS Req 3.4
+ * - Payment method IDs are Stripe tokens only — Rule 5
+ * - Stripe subscription IDs are internal refs; never rendered in UI — Rule 6
+ * - All billing mutations WORM-logged with actor identity — Rule 3
+ *
+ * SOC 2 CC6.1 | PCI DSS Req 3.4 | ISO 27001 A.9.1.2 | HIPAA §164.312(a)(1)
  */
 
 import { apiClient } from './api';
 
-// ── Types ──────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 export type PlanTier = 'free' | 'starter' | 'professional' | 'enterprise';
 export type SubscriptionStatus = 'active' | 'past_due' | 'cancelled' | 'trialing';
+export type InvoiceStatus = 'paid' | 'open' | 'void' | 'uncollectible';
+export type PaymentMethodBrand = 'visa' | 'mastercard' | 'amex' | 'discover' | 'unknown';
 
 export interface PlanLimits {
   readonly max_agents: number;
@@ -38,6 +45,7 @@ export interface Plan {
 export interface Subscription {
   readonly id: string;
   readonly tenant_id: string;
+  /** Internal Stripe reference — never rendered in UI (PCI DSS Req 3.4) */
   readonly stripe_subscription_id: string;
   readonly plan_tier: PlanTier;
   readonly status: SubscriptionStatus;
@@ -58,77 +66,77 @@ export interface UsageSummary {
   readonly api_calls: number;
 }
 
-// ── API ────────────────────────────────────────────────────────────
+export interface Invoice {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly number: string;
+  readonly status: InvoiceStatus;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly periodStart: string;
+  readonly periodEnd: string;
+  readonly invoiceDate: string;
+  readonly paidAt: string | null;
+  /** Signed Stripe-hosted URL — safe to render as download link */
+  readonly pdfUrl: string | null;
+}
+
+export interface PaymentMethod {
+  readonly id: string;
+  /** Card network brand — safe to display */
+  readonly brand: PaymentMethodBrand;
+  /** Last 4 digits only — PCI DSS Req 3.4 */
+  readonly last4: string;
+  readonly expMonth: number;
+  readonly expYear: number;
+  readonly isDefault: boolean;
+  readonly createdAt: string;
+}
+
+// ── API Client ─────────────────────────────────────────────────────────────
 
 export const billingApi = {
-  /**
-   * List all available plans (public, no auth required).
-   */
-  listPlans(): Promise<Plan[]> {
-    return apiClient
-      .get<{ success: boolean; data: Plan[] }>('/v1/billing/plans')
-      .then((r) => r.data);
+  async listPlans(): Promise<Plan[]> {
+    return apiClient.get<Plan[]>('/billing/plans');
   },
 
-  /**
-   * Get the current tenant's subscription.
-   */
-  getSubscription(): Promise<Subscription> {
-    return apiClient
-      .get<{ success: boolean; data: Subscription }>('/v1/billing')
-      .then((r) => r.data);
+  async getSubscription(): Promise<Subscription> {
+    return apiClient.get<Subscription>('/billing/subscription');
   },
 
-  /**
-   * Create a new subscription.
-   * PCI CC6.1 — paymentMethodId is a Stripe token; never a raw card number.
-   */
-  createSubscription(
-    planTier: PlanTier,
-    paymentMethodId: string | null = null,
-  ): Promise<Subscription> {
-    return apiClient
-      .post<{ success: boolean; data: Subscription }>('/v1/billing', {
-        planTier,
-        paymentMethodId,
-      })
-      .then((r) => r.data);
+  async getUsage(): Promise<UsageSummary> {
+    return apiClient.get<UsageSummary>('/billing/usage');
   },
 
-  /**
-   * Upgrade the current subscription to a higher plan tier.
-   */
-  upgradeSubscription(planTier: PlanTier): Promise<Subscription> {
-    return apiClient
-      .patch<{ success: boolean; data: Subscription }>('/v1/billing/upgrade', { planTier })
-      .then((r) => r.data);
+  async upgradeSubscription(planTier: PlanTier): Promise<Subscription> {
+    return apiClient.post<Subscription>('/billing/upgrade', { planTier });
   },
 
-  /**
-   * Downgrade the current subscription to a lower plan tier.
-   * Takes effect at the end of the current billing period.
-   */
-  downgradeSubscription(planTier: PlanTier): Promise<Subscription> {
-    return apiClient
-      .patch<{ success: boolean; data: Subscription }>('/v1/billing/downgrade', { planTier })
-      .then((r) => r.data);
+  async downgradeSubscription(planTier: PlanTier): Promise<Subscription> {
+    return apiClient.post<Subscription>('/billing/downgrade', { planTier });
   },
 
-  /**
-   * Cancel the current subscription (takes effect at period end).
-   */
-  cancelSubscription(): Promise<Subscription> {
-    return apiClient
-      .delete<{ success: boolean; data: Subscription }>('/v1/billing')
-      .then((r) => r.data);
+  async cancelSubscription(): Promise<Subscription> {
+    return apiClient.post<Subscription>('/billing/cancel', {});
   },
 
-  /**
-   * Get usage summary for the current billing period.
-   */
-  getUsage(): Promise<UsageSummary> {
-    return apiClient
-      .get<{ success: boolean; data: UsageSummary }>('/v1/billing/usage')
-      .then((r) => r.data);
+  async reactivateSubscription(): Promise<Subscription> {
+    return apiClient.post<Subscription>('/billing/reactivate', {});
+  },
+
+  async listInvoices(): Promise<Invoice[]> {
+    return apiClient.get<Invoice[]>('/billing/invoices');
+  },
+
+  async listPaymentMethods(): Promise<PaymentMethod[]> {
+    return apiClient.get<PaymentMethod[]>('/billing/payment-methods');
+  },
+
+  async setDefaultPaymentMethod(id: string): Promise<PaymentMethod[]> {
+    return apiClient.post<PaymentMethod[]>(`/billing/payment-methods/${id}/default`, {});
+  },
+
+  async removePaymentMethod(id: string): Promise<unknown> {
+    return apiClient.delete<unknown>(`/billing/payment-methods/${id}`);
   },
 };
