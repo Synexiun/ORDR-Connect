@@ -44,6 +44,7 @@ import {
   ToggleRight,
   Lock,
   Building2,
+  Monitor,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -118,6 +119,8 @@ const navSections: NavSection[] = [
   {
     label: 'SYSTEM',
     items: [
+      { to: '/tenant', label: 'Tenant', icon: Building2 },
+      { to: '/cobrowse', label: 'Co-Browse', icon: Monitor },
       { to: '/settings', label: 'Settings', icon: Settings },
       { to: '/help', label: 'Help', icon: HelpCircle },
     ],
