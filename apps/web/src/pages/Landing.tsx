@@ -4,19 +4,14 @@ import {
   ShieldCheck,
   Bot,
   Activity,
-  Zap,
   Lock,
-  Globe,
   LayoutDashboard,
   Clock,
   Building2,
-  Briefcase,
   Users,
-  Phone,
   ArrowUpRight,
   ChevronRight,
   CheckCircle2,
-  Mail,
   MessageSquare,
   Cpu,
   Target,
@@ -24,22 +19,11 @@ import {
   FileText,
   HeartPulse,
   Database,
-  Code2,
-  Webhook,
-  Terminal,
-  BookOpen,
-  Stethoscope,
-  TrendingUp,
-  Award,
-  Layers,
-  MapPin,
   Brain,
   BarChart3,
   Key,
   AlertTriangle,
-  Building,
   Sparkles,
-  Network,
 } from '../components/icons';
 
 // ---------------------------------------------------------------------------
@@ -242,7 +226,6 @@ function AuditChainDiagram(): ReactNode {
           <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.6" />
         </linearGradient>
       </defs>
-      {/* Hash chain — bottom row */}
       {[0, 1, 2, 3, 4, 5, 6].map((i) => {
         const x = 50 + i * 78;
         return (
@@ -281,7 +264,6 @@ function AuditChainDiagram(): ReactNode {
           </g>
         );
       })}
-      {/* Merkle tree — pairs */}
       {[0, 1, 2].map((i) => {
         const x = 89 + i * 156;
         const lx = 50 + i * 2 * 78;
@@ -313,7 +295,6 @@ function AuditChainDiagram(): ReactNode {
           </g>
         );
       })}
-      {/* Merkle tree — next level */}
       {[0, 1].map((i) => {
         const x = 167 + i * 234;
         const lx = 89 + (i === 0 ? 0 : 2) * 156;
@@ -345,7 +326,6 @@ function AuditChainDiagram(): ReactNode {
           </g>
         );
       })}
-      {/* Root */}
       <rect
         x={268}
         y={10}
@@ -800,7 +780,6 @@ function DecisionEngineDiagram(): ReactNode {
             className="h-full rounded-2xl border bg-white/[0.015] p-6"
             style={{ borderColor: `${l.color}20` }}
           >
-            {/* Header */}
             <div className="mb-4 flex items-start justify-between gap-2">
               <div>
                 <span
@@ -823,7 +802,6 @@ function DecisionEngineDiagram(): ReactNode {
               </div>
             </div>
 
-            {/* Examples */}
             <div className="space-y-1.5">
               {l.examples.map((ex) => (
                 <div key={ex} className="flex items-start gap-2">
@@ -836,7 +814,6 @@ function DecisionEngineDiagram(): ReactNode {
               ))}
             </div>
 
-            {/* Output */}
             <div
               className="mt-5 rounded-lg border px-3 py-2.5"
               style={{ borderColor: `${l.color}15`, background: `${l.color}05` }}
@@ -848,7 +825,6 @@ function DecisionEngineDiagram(): ReactNode {
             </div>
           </div>
 
-          {/* Arrow connector between cards */}
           {i < layers.length - 1 && (
             <div className="absolute -right-2.5 top-1/2 z-10 hidden -translate-y-1/2 lg:flex">
               <div className="flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-canvas">
@@ -1389,41 +1365,7 @@ function DemoPreviewCards(): ReactNode {
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      {modules.slice(0, 4).map((m) => {
-        const Icon = m.icon;
-        return (
-          <a
-            key={m.path}
-            href={m.path}
-            className="group relative overflow-hidden rounded-xl border border-white/5 bg-white/[0.015] p-5 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                style={{ background: `${m.color}14`, border: `1px solid ${m.color}22` }}
-              >
-                <Icon className="h-4 w-4" style={{ color: m.color }} />
-              </div>
-              <span className="font-mono text-2xs font-bold" style={{ color: `${m.color}70` }}>
-                {m.badge}
-              </span>
-            </div>
-            <h4 className="mt-3 text-sm font-semibold text-content">{m.label}</h4>
-            <p className="mt-1 text-2xs leading-relaxed text-content-secondary">{m.desc}</p>
-            <div
-              className="mt-3 flex items-center gap-1 font-mono text-2xs"
-              style={{ color: m.color }}
-            >
-              <span>Explore →</span>
-            </div>
-            <div
-              className="absolute -bottom-16 -right-16 h-32 w-32 rounded-full opacity-0 blur-[50px] transition-opacity duration-500 group-hover:opacity-10"
-              style={{ background: m.color }}
-            />
-          </a>
-        );
-      })}
-      {modules.slice(4).map((m) => {
+      {modules.map((m) => {
         const Icon = m.icon;
         return (
           <a
@@ -1526,13 +1468,10 @@ function ImplementationTimeline(): ReactNode {
 
   return (
     <div className="relative">
-      {/* Connector line */}
       <div className="absolute left-[14px] top-6 hidden h-[calc(100%-48px)] w-px bg-white/5 sm:left-1/2 sm:block" />
-
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-5">
         {stages.map((s, i) => (
           <div key={s.stage} className="relative flex flex-col items-center text-center">
-            {/* Stage marker */}
             <div
               className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 bg-canvas"
               style={{ borderColor: s.color }}
@@ -1541,7 +1480,6 @@ function ImplementationTimeline(): ReactNode {
                 {i + 1}
               </span>
             </div>
-
             <div
               className="mt-4 w-full rounded-xl border p-4"
               style={{ borderColor: `${s.color}20`, background: `${s.color}05` }}
@@ -2131,145 +2069,222 @@ function CompetitorMatrix(): ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Live Decision Stream — animated terminal hero component
+// ---------------------------------------------------------------------------
+
+interface DecisionEvent {
+  type: string;
+  detail: string;
+  layer: string;
+  ms: number;
+  ok: boolean;
+}
+
+const ALL_EVENTS: DecisionEvent[] = [
+  {
+    type: 'DECISION',
+    detail: 'customer:cust-8821  routing → billing-queue',
+    layer: 'RULES',
+    ms: 3,
+    ok: true,
+  },
+  {
+    type: 'COMPLIANCE',
+    detail: 'TCPA-DNC check  channel:sms  consent:verified',
+    layer: 'RULES',
+    ms: 2,
+    ok: true,
+  },
+  {
+    type: 'AGENT',
+    detail: 'sentiment-monitor  confidence:0.82  escalated → tier-2',
+    layer: 'ML',
+    ms: 28,
+    ok: true,
+  },
+  {
+    type: 'FRAUD',
+    detail: 'velocity-check  47/hr (threshold 20)  → blocked',
+    layer: 'RULES',
+    ms: 4,
+    ok: false,
+  },
+  {
+    type: 'DECISION',
+    detail: 'customer:cust-3390  next-best-action → follow_up',
+    layer: 'LLM',
+    ms: 94,
+    ok: true,
+  },
+  {
+    type: 'AUDIT',
+    detail: 'WORM event logged  hash:a3f9c1...  chain:intact',
+    layer: 'AUDIT',
+    ms: 1,
+    ok: true,
+  },
+  {
+    type: 'AGENT',
+    detail: 'debt-recovery-agent  dispatched → cust-5521  L4',
+    layer: 'AGENT',
+    ms: 187,
+    ok: true,
+  },
+  {
+    type: 'DECISION',
+    detail: 'customer:cust-2287  channel-selection → email  EST 9am',
+    layer: 'RULES',
+    ms: 4,
+    ok: true,
+  },
+  {
+    type: 'COMPLIANCE',
+    detail: 'HIPAA-PHI access logged  actor:agent-7  audit-chain+1',
+    layer: 'AUDIT',
+    ms: 1,
+    ok: true,
+  },
+  {
+    type: 'DECISION',
+    detail: 'customer:cust-9934  sentiment:ambiguous  → human-review',
+    layer: 'LLM',
+    ms: 102,
+    ok: false,
+  },
+];
+
+const TYPE_COLORS: Record<string, string> = {
+  DECISION: '#3b82f6',
+  COMPLIANCE: '#10b981',
+  AGENT: '#8b5cf6',
+  FRAUD: '#ef4444',
+  AUDIT: '#06b6d4',
+};
+
+function LiveDecisionStream(): ReactNode {
+  const [lines, setLines] = useState<(DecisionEvent & { id: number; ts: string })[]>([]);
+  const counterRef = useRef(0);
+  const eventIdxRef = useRef(0);
+
+  useEffect(() => {
+    const initial = ALL_EVENTS.slice(0, 5).map((ev, i) => {
+      const h = String(9 + Math.floor(i / 2)).padStart(2, '0');
+      const m = String((i * 7) % 60).padStart(2, '0');
+      const s = String((i * 13) % 60).padStart(2, '0');
+      return { ...ev, id: counterRef.current++, ts: `${h}:${m}:${s}` };
+    });
+    setLines(initial);
+    eventIdxRef.current = 5 % ALL_EVENTS.length;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      const ev = ALL_EVENTS[eventIdxRef.current % ALL_EVENTS.length];
+      if (ev === undefined) return;
+      eventIdxRef.current = (eventIdxRef.current + 1) % ALL_EVENTS.length;
+      const newLine = { ...ev, id: counterRef.current++, ts };
+      setLines((prev) => [...prev, newLine].slice(-8));
+    }, 1200);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  return (
+    <div
+      className="rounded-2xl border border-white/[0.08] bg-[#0a0a0f] overflow-hidden"
+      style={{ boxShadow: '0 0 80px rgba(16,185,129,0.06)' }}
+    >
+      <div className="bg-[#0f0f18] border-b border-white/5 px-4 py-2.5 flex items-center gap-2">
+        <div className="h-3 w-3 rounded-full bg-red-500/70" />
+        <div className="h-3 w-3 rounded-full bg-yellow-500/70" />
+        <div className="h-3 w-3 rounded-full bg-green-500/70" />
+        <span className="ml-3 font-mono text-xs text-content-tertiary">
+          ordr-connect · decision-engine · live
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="font-mono text-2xs text-emerald-400/70">streaming</span>
+        </div>
+      </div>
+      <div className="p-4 space-y-1 font-mono text-xs min-h-[220px]">
+        {lines.map((line) => {
+          const typeColor = TYPE_COLORS[line.type] ?? '#94a3b8';
+          return (
+            <div
+              key={line.id}
+              className="flex items-start gap-2 opacity-0 animate-[fadeIn_0.5s_ease-out_forwards]"
+            >
+              <span className="shrink-0 text-content-tertiary/50 text-2xs pt-px">{line.ts}</span>
+              <span
+                className="shrink-0 rounded px-1.5 py-0.5 text-2xs font-bold uppercase"
+                style={{ background: `${typeColor}15`, color: typeColor }}
+              >
+                {line.type}
+              </span>
+              <span className="flex-1 text-content-secondary text-2xs leading-relaxed">
+                {line.detail}
+              </span>
+              <span className="shrink-0 text-content-tertiary/40 text-2xs">{line.layer}</span>
+              <span className="shrink-0 font-bold text-2xs" style={{ color: `${typeColor}90` }}>
+                {line.ms}ms
+              </span>
+              <span className="shrink-0 text-2xs">
+                {line.ok ? (
+                  <span className="text-emerald-400">✓</span>
+                ) : (
+                  <span className="text-red-400">✗</span>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Nav Ticker
+// ---------------------------------------------------------------------------
+
+const TICKER_MESSAGES = ['48,291 decisions today', '99.99% uptime', '0 violations'];
+
+function NavTicker(): ReactNode {
+  const [idx, setIdx] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx((prev) => (prev + 1) % TICKER_MESSAGES.length);
+        setVisible(true);
+      }, 300);
+    }, 3000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  return (
+    <div className="hidden items-center gap-2 lg:flex">
+      <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+      <span
+        className="font-mono text-xs text-content-tertiary transition-opacity duration-300"
+        style={{ opacity: visible ? 1 : 0 }}
+      >
+        {TICKER_MESSAGES[idx]}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
 
-const features = [
-  {
-    icon: Bot,
-    title: 'Multi-Agent Runtime',
-    sub: 'LangGraph + Claude API',
-    desc: '8 specialized agent types with 5-level graduated autonomy. Budget enforcement, kill switches at 4 levels, and 4-layer hallucination containment. Every decision logged to WORM audit trail.',
-    color: '#8b5cf6',
-    tag: 'AI NATIVE',
-  },
-  {
-    icon: Globe,
-    title: 'Omnichannel Execution',
-    sub: 'SMS · Email · Voice · WhatsApp',
-    desc: 'Unified delivery across 8 channels with dynamic selection based on prior response patterns. Provider failover, HMAC-validated inbound webhooks, and per-channel compliance enforcement.',
-    color: '#ec4899',
-    tag: 'MULTI-CHANNEL',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Compliance Engine',
-    sub: '9 regulatory frameworks',
-    desc: 'Regulatory rules enforced at runtime — FDCPA, HIPAA, GDPR, TCPA, RESPA, FEC, CCPA, LGPD, PIPEDA. Quiet hours, consent tracking, frequency limits, and right-to-erasure.',
-    color: '#10b981',
-    tag: 'REGULATORY',
-  },
-  {
-    icon: HeartPulse,
-    title: 'FHIR R4 Healthcare',
-    sub: 'HL7 FHIR 4.0.1',
-    desc: 'Native FHIR R4 endpoints — Patient, Communication, Bundle. PHI field-level encryption (AES-256-GCM), de-identification controls, and BAA-ready HIPAA compliance.',
-    color: '#ef4444',
-    tag: 'HEALTHCARE',
-  },
-  {
-    icon: Database,
-    title: 'CRM Integrations',
-    sub: 'Salesforce · HubSpot · bidirectional',
-    desc: 'Bidirectional contact sync with field-level mapping, OAuth 2.1 flows, and conflict resolution. Three-way merge algorithm prevents data loss from simultaneous updates.',
-    color: '#3b82f6',
-    tag: 'INTEGRATIONS',
-  },
-  {
-    icon: Code2,
-    title: 'Developer Platform',
-    sub: 'REST API · Webhooks · Marketplace',
-    desc: 'Fully documented REST API, event webhook subscriptions, scoped API keys with SHA-256 storage, Confluent schema registry, and an agent marketplace with sandboxed installs.',
-    color: '#f59e0b',
-    tag: 'DEVELOPER',
-  },
-  {
-    icon: FileText,
-    title: 'DSR Lifecycle',
-    sub: 'GDPR Art. 15 / 17 / 20',
-    desc: 'End-to-end data subject request management — access, erasure, portability — with 30-day SLA tracking, Kafka-published approval events, and cryptographic erasure.',
-    color: '#06b6d4',
-    tag: 'PRIVACY',
-  },
-  {
-    icon: Users,
-    title: 'Enterprise Directory',
-    sub: 'SCIM 2.0 · WorkOS · SAML',
-    desc: 'RFC 7644 SCIM 2.0 user and group provisioning, WorkOS SSO with SAML/OIDC, and tenant-scoped RBAC with custom roles, 19 permission scopes, and 5-level autonomy per agent type.',
-    color: '#64748b',
-    tag: 'ENTERPRISE',
-  },
-];
-
-const primitives = [
-  {
-    icon: Users,
-    title: 'Customer Graph',
-    sub: 'Neo4j + pgvector',
-    desc: 'Temporal knowledge graph with entity resolution, relationship inference, and confidence scoring. Every interaction, outcome, and relationship stored as a traversable graph node. Zero institutional memory loss.',
-    gradient: 'from-blue-500 to-cyan-400',
-  },
-  {
-    icon: Activity,
-    title: 'Event Stream',
-    sub: 'Kafka — Confluent',
-    desc: 'Immutable append-only event log. Single source of truth for every signal, decision, and action. Sub-15ms publish latency, infinite replay, Confluent Schema Registry enforcement.',
-    gradient: 'from-emerald-500 to-teal-400',
-  },
-  {
-    icon: Zap,
-    title: 'Decision Engine',
-    sub: 'OPA · ClickHouse · Redis',
-    desc: 'Three-layer cascade — deterministic rules (<10ms), ML scoring (<50ms), LLM reasoning (<100ms). Evaluates every event before any action executes. No batch processing, no queue delay.',
-    gradient: 'from-amber-500 to-yellow-400',
-  },
-  {
-    icon: Bot,
-    title: 'Agent Runtime',
-    sub: 'LangGraph + Claude API',
-    desc: '8 specialized agent types with 5-level graduated autonomy, budget enforcement, kill switches at 4 scopes, and 4-layer hallucination containment. Every reasoning step logged.',
-    gradient: 'from-violet-500 to-purple-400',
-  },
-  {
-    icon: Globe,
-    title: 'Execution Layer',
-    sub: 'Twilio · SendGrid · Omnichannel',
-    desc: 'Unified delivery across SMS, email, voice, WhatsApp, IVR, Slack, and webhooks. Dynamic channel selection using outcome history. Multi-provider failover with automatic retry.',
-    gradient: 'from-rose-500 to-pink-400',
-  },
-  {
-    icon: Lock,
-    title: 'Governance Layer',
-    sub: 'Merkle DAG + WORM',
-    desc: 'Cryptographic audit trail with SHA-256 hash chain and Merkle tree batch verification. Write-once storage, tamper detection on read, 7-year WORM retention. S3 Object Lock replication.',
-    gradient: 'from-sky-500 to-indigo-400',
-  },
-];
-
-const complianceBadges = [
-  { label: 'SOC 2 Type II', sub: 'CC1–CC9, A1, PI1, C1, P1' },
-  { label: 'ISO 27001:2022', sub: '93 Annex A Controls' },
-  { label: 'HIPAA', sub: '§164.308 / .310 / .312' },
-  { label: 'GDPR', sub: 'Art. 15/17/20 + DSR lifecycle' },
-  { label: 'FDCPA / TCPA', sub: 'Quiet hours + frequency limits' },
-  { label: 'PCI DSS', sub: 'Payment data isolation' },
-  { label: 'LGPD', sub: 'Brazilian data protection' },
-  { label: 'PIPEDA', sub: 'Canadian privacy law' },
-  { label: 'FEC', sub: 'Political campaign compliance' },
-];
-
-const channelIcons: Record<string, typeof Mail> = {
-  SMS: MessageSquare,
-  Email: Mail,
-  Voice: Phone,
-  WhatsApp: MessageSquare,
-  IVR: Phone,
-  Slack: MessageSquare,
-  Chat: MessageSquare,
-  Webhooks: Zap,
-};
-
-// Deep case study data
 const caseStudies = [
   {
     id: 'collections',
@@ -2279,42 +2294,13 @@ const caseStudies = [
     regulations: ['FDCPA', 'Reg F', 'TCPA', 'FCRA'],
     headline: '40% of accounts resolved without a human agent',
     context:
-      'Third-party collections agencies, in-house AR departments, and debt buyers managing millions of delinquent accounts face a narrow FDCPA compliance corridor. A single violation costs $1,000–$3,500 per incident — with class-action exposure. Agent time is wasted on unreachable accounts and manual compliance checks.',
-    workflow: [
-      {
-        n: 1,
-        label: 'Eligibility Gate',
-        desc: '14 conditions evaluated in <10ms: FDCPA quiet hours (8am–9pm local time zone), 7-in-7 call limit, cease-contact flag, active dispute, bankruptcy flag, deceased, military active duty, minor, DNC registry, recent promise-to-pay. Any BLOCK exits immediately.',
-      },
-      {
-        n: 2,
-        label: 'Dynamic Channel Selection',
-        desc: 'ML scorer pulls 4.7M historical contact outcomes from ClickHouse feature store. Customer-level channel preference model selects SMS, Voice, or Email based on prior response rates. First-contact resolution probability predicted per channel.',
-      },
-      {
-        n: 3,
-        label: 'Agent-Crafted Outreach',
-        desc: 'Recovery Agent (L3–L4 autonomy) composes message using customer graph context — account age, previous promises, preferred language, last interaction sentiment. FDCPA mini-Miranda disclosure enforced on every voice contact.',
-      },
-      {
-        n: 4,
-        label: 'Promise-to-Pay Capture',
-        desc: 'Customer commitment recorded as a structured event in Kafka. Payment arrangement automatically scheduled in workflow engine. If payment is missed, next step in recovery sequence fires automatically — zero manual follow-up.',
-      },
-      {
-        n: 5,
-        label: 'WORM Audit Trail',
-        desc: 'Every attempt, outcome, compliance check, and agent decision written to immutable audit log with SHA-256 hash chain. Dispute defense package exportable in 2 minutes — complete contact history with timestamps.',
-      },
-    ],
+      'Third-party collections agencies, in-house AR departments, and debt buyers managing millions of delinquent accounts face a narrow FDCPA compliance corridor. A single violation costs $1,000–$3,500 per incident — with class-action exposure.',
     outcomes: [
       { metric: '40%', label: 'Resolved autonomously', sub: 'No human agent contact needed' },
       { metric: '$0.08', label: 'Cost per account', sub: 'vs $2.40 manual / $0.85 call center' },
       { metric: '0', label: 'FDCPA violations', sub: '18 months in production' },
       { metric: '23%', label: 'Contact rate lift', sub: 'Dynamic channel sequencing' },
     ],
-    example:
-      "A regional bank's in-house recovery team managing 380,000 delinquent accounts across 50 states processes 12,000 eligibility evaluations per minute. Peak GOTV-equivalent: Black Friday payment push — 80K outreach attempts dispatched in 45 minutes with zero compliance violations.",
   },
   {
     id: 'healthcare',
@@ -2324,42 +2310,13 @@ const caseStudies = [
     regulations: ['HIPAA', 'HITECH', 'GDPR', 'CCPA'],
     headline: '31% no-show reduction. $847K in recovered appointments annually.',
     context:
-      'Multi-site specialty clinic networks lose $200–800 per missed appointment slot. Patient engagement coordinators are overwhelmed. HIPAA violations from insecure outreach average $35K per incident, and EHR systems (Epic, Cerner, Athena) have no outreach engine — care coordinators manually dial from personal phones.',
-    workflow: [
-      {
-        n: 1,
-        label: 'FHIR R4 EHR Sync',
-        desc: 'Patient resources ingested via HL7 FHIR 4.0.1 Bundle endpoint from any SMART on FHIR-compatible EHR. PHI fields (name, DOB, phone, email) encrypted with AES-256-GCM at field level before any database write. HSM-backed keys.',
-      },
-      {
-        n: 2,
-        label: 'PHI-Safe Reminder Sequence',
-        desc: '7-day SMS (first name + "you have an upcoming appointment"), 3-day email (appointment type, clinic location — no diagnosis), 1-day voice call with IVR confirmation. No PHI in message body — HIPAA minimum-necessary enforced by compliance gate.',
-      },
-      {
-        n: 3,
-        label: 'No-Show Detection',
-        desc: 'Real-time event fires within 5 minutes of scheduled appointment start time if check-in event is absent. Care Coordinator agent (L2–L3 autonomy, 0.85+ confidence) dispatched for immediate rescue outreach. HITL escalation for complex cases.',
-      },
-      {
-        n: 4,
-        label: 'Reschedule Automation',
-        desc: 'Agent offers next 3 available slots from scheduling system via preferred channel. Slot held for 10-minute response window. Confirmation logged as FHIR Communication resource. Freed slot released back to scheduling system via webhook.',
-      },
-      {
-        n: 5,
-        label: 'HIPAA Audit Export',
-        desc: 'Every PHI access logged to WORM audit trail with accessor identity, business justification, and timestamp. HIPAA audit package — complete access log for any patient — exported in 2 minutes. Right-of-access DSR handled via GDPR lifecycle.',
-      },
-    ],
+      'Multi-site specialty clinic networks lose $200–800 per missed appointment slot. HIPAA violations from insecure outreach average $35K per incident, and EHR systems have no outreach engine.',
     outcomes: [
       { metric: '31%', label: 'No-show reduction', sub: 'Industry avg: 5–8%' },
       { metric: '$847K', label: 'Recovered annually', sub: 'Per 100-location network' },
       { metric: '0', label: 'PHI breaches', sub: 'AES-256-GCM + HSM key mgmt' },
       { metric: '8 min', label: 'Time to reschedule', sub: 'vs 3-day manual process' },
     ],
-    example:
-      'A 45-location specialty ophthalmology practice managing 2,800 weekly appointments runs FHIR sync from Epic every 15 minutes. Care Coordinator agent handles all tier-1 reminders, freeing 3 FTE patient coordinators to handle complex care navigation. Zero PHI complaints in 14 months.',
   },
   {
     id: 'saas',
@@ -2369,177 +2326,13 @@ const caseStudies = [
     regulations: ['SOC 2 Type II', 'ISO 27001', 'GDPR', 'CCPA'],
     headline: '67% churn reduction in at-risk cohort. $18.2M ARR protected.',
     context:
-      "Enterprise SaaS companies with 12-24 month contract cycles lose the renewal war 90 days before the renewal date. CSMs managing 200+ accounts can't proactively monitor health signals. When the churn signal finally surfaces — in a Slack message to the AE — it's too late to save the relationship.",
-    workflow: [
-      {
-        n: 1,
-        label: 'Real-Time Health Scoring',
-        desc: 'ClickHouse analytics continuously scores customer health across 40+ signals: login frequency, feature adoption depth, seats used vs. contracted, support ticket volume and sentiment, NPS trend, integration activity, billing status. Score updated in <100ms on any change.',
-      },
-      {
-        n: 2,
-        label: 'Tiered NBA Routing',
-        desc: 'Score 80–100: automated nurture (feature announcements, QBR invites, success resources). Score 60–79: CS Agent outreach with personalized usage summary. Score 40–59: CS lead + exec sponsor engagement. Score <40: emergency exec call + contract extension offer. Routing is automatic.',
-      },
-      {
-        n: 3,
-        label: 'LangGraph CS Agent',
-        desc: 'CS Success Agent (L3–L4, 0.75+ confidence) pulls customer graph — full usage history, all contacts, previous interactions, active support tickets, expansion potential. Composes personalized email or Slack message. No generic templates — every message contextual.',
-      },
-      {
-        n: 4,
-        label: 'Renewal Sequence',
-        desc: '90-day pre-renewal sequence auto-triggered based on contract end date. Customized by tier, usage pattern, relationship strength, and open support issues. Outcome of each touch logged and factored into next step. ML feedback loop refines sequence over time.',
-      },
-      {
-        n: 5,
-        label: 'Closed-Loop Outcome Tracking',
-        desc: 'Every customer interaction — email open, reply, meeting booked, QBR attended — fed back into health model. Renewal outcome labeled and used to refine CS agent confidence scoring. Each closed deal improves the model for the next cohort.',
-      },
-    ],
+      "Enterprise SaaS companies with 12–24 month contract cycles lose the renewal war 90 days before the date. CSMs managing 200+ accounts can't proactively monitor health signals.",
     outcomes: [
       { metric: '67%', label: 'Churn reduction', sub: 'At-risk cohort (health < 60)' },
       { metric: '3.5×', label: 'CS capacity increase', sub: '80 → 280 accounts per CSM' },
       { metric: '3.2×', label: 'Faster signal-to-action', sub: '4 hours vs 13 days median' },
       { metric: '$18.2M', label: 'ARR protected', sub: '350-account pilot year 1' },
     ],
-    example:
-      'An enterprise DevOps platform ($55M ARR, 420 accounts) was losing 24% annually to churn. After 12 months with ORDR-Connect, annual churn dropped to 8% — protecting $8.8M ARR. CSM headcount held flat while accounts under management grew 40%.',
-  },
-  {
-    id: 'realestate',
-    industry: 'Real Estate & Mortgage',
-    icon: Building,
-    color: '#10b981',
-    regulations: ['RESPA', 'TILA', 'FDCPA', 'TCPA'],
-    headline: 'Speed-to-lead under 30 seconds. RESPA compliance at 99.7%.',
-    context:
-      'The first lender to respond to a mortgage inquiry wins 78% of loans — yet the industry average response time is 4+ hours. Simultaneously, RESPA non-compliance (missed disclosure timelines, SPOC assignment failures) is found in 15% of originations during regulatory audits, generating remediation costs of $50K–200K per finding.',
-    workflow: [
-      {
-        n: 1,
-        label: 'Sub-30s Lead Response',
-        desc: 'Inquiry event published to Kafka. Decision engine classifies by loan type (conventional, FHA, VA, jumbo), geography, and qualification signals. Lead Qualifier agent (L3, 0.75+ confidence) dispatched within 30 seconds via customer-preferred channel — SMS, email, or call.',
-      },
-      {
-        n: 2,
-        label: 'RESPA Disclosure Automation',
-        desc: 'RESPA Section 5 (GFE/LE timing), Section 6 (servicing transfer notice), and TILA APR disclosure tracked as scheduled compliance events. Workflow engine enforces timing — advancement to next stage is blocked if disclosure not delivered. Zero manual tracking.',
-      },
-      {
-        n: 3,
-        label: 'Early Intervention Enforcement',
-        desc: 'At 36 days delinquent: if no contact attempt is logged, the compliance gate blocks any other collection action until the call is made (RESPA Early Intervention Rule, 12 CFR 1024.39). System auto-dispatches contact attempt and logs outcome before allowing next step.',
-      },
-      {
-        n: 4,
-        label: 'SPOC Assignment',
-        desc: "When an account enters workout stage, Single Point of Contact (SPOC) is automatically assigned from available workout specialists. RESPA Continuity of Contact requirement satisfied immediately. Customer notified via preferred channel with SPOC's direct contact.",
-      },
-      {
-        n: 5,
-        label: 'Regulatory Audit Package',
-        desc: 'RESPA compliance exam-ready report generated in 3 minutes: disclosure delivery timestamps, contact attempt logs, SPOC assignment records, loss mitigation response windows. SHA-256 WORM chain provides tamper-proof evidence for examiner review.',
-      },
-    ],
-    outcomes: [
-      { metric: '30s', label: 'Speed-to-lead', sub: 'vs 4-hour industry average' },
-      { metric: '99.7%', label: 'RESPA compliance rate', sub: 'vs 85% industry baseline' },
-      { metric: '$1.2M', label: 'Origination fees recovered', sub: 'From faster lead response' },
-      { metric: '78%', label: 'Compliance cost reduction', sub: 'Automated vs manual enforcement' },
-    ],
-    example:
-      'A regional mortgage lender processing 800 applications/month cut lead response time from 4 hours to 28 seconds. RESPA findings in the next regulatory exam: zero. Previous exam: 14 findings at $35K average remediation cost each.',
-  },
-  {
-    id: 'political',
-    industry: 'Political Campaigns & Advocacy',
-    icon: Briefcase,
-    color: '#6366f1',
-    regulations: ['FEC', 'TCPA', 'CAN-SPAM', 'State Election Law'],
-    headline: '10K messages/second on GOTV day. 100% FEC compliance across 847 campaigns.',
-    context:
-      'Federal and state campaigns, PACs, and ballot initiative organizations face a compliance intersection that few platforms understand: FEC campaign finance rules, TCPA voter contact restrictions, and state election law disclosure requirements all apply simultaneously. A TCPA class action for mass auto-dialing runs $500/call — at campaign scale, that is existential.',
-    workflow: [
-      {
-        n: 1,
-        label: 'FEC Compliance Gate',
-        desc: '6 rules enforced at runtime before every message: disclaimer required ("Paid for by..."), express advocacy disclosure, 30/60-day electioneering communication window, prohibited sources check (foreign nationals, corporations in candidate elections), internet disclaimer, coordinated expenditure limit. All checked in <10ms.',
-      },
-      {
-        n: 2,
-        label: 'TCPA P2P Handling',
-        desc: 'Platform correctly implements the P2P political speech exemption for live-agent texts (FCC Staff Opinion Letter). Auto-dialer restrictions enforced per TCPA §227(b). Individual ATDS distinction maintained per message type. Do-Not-Call processing in <100ms.',
-      },
-      {
-        n: 3,
-        label: 'Multi-Tier Outreach Sequencing',
-        desc: 'Campaign types (fundraising, GOTV, survey, volunteer ask, issue education) have separate compliance treatments applied automatically. Fundraising messages include solicitation disclosure. GOTV has polling location rules. Survey contacts trigger different opt-out wording per state.',
-      },
-      {
-        n: 4,
-        label: 'GOTV Burst Capacity',
-        desc: '10K messages/second sustained throughput on Election Day. Dynamic scaling via Kafka consumer groups. All opt-outs processed in <100ms and suppressed across all active sequences within the same message cycle — not after the next run.',
-      },
-      {
-        n: 5,
-        label: 'FEC Reporting Preparation',
-        desc: 'All outreach activities logged to WORM audit trail with FEC-required metadata: disbursement amounts (estimated per-message costs), purpose codes, transmission timestamps, and disclaimer confirmation. Quarterly FEC filing data extractable in structured format.',
-      },
-    ],
-    outcomes: [
-      { metric: '10K', label: 'Messages/second', sub: 'Sustained GOTV burst capacity' },
-      { metric: '100%', label: 'FEC compliance', sub: 'Across 847 outreach campaigns' },
-      { metric: '<100ms', label: 'Opt-out processing', sub: 'vs 2-day manual suppression' },
-      { metric: '4.2%', label: 'Fundraising conversion', sub: 'vs 1.8% industry average' },
-    ],
-    example:
-      'A Senate campaign with 2.1M registered voter file targets ran 847 distinct outreach campaigns across 14 months. Zero TCPA violations. Zero FEC disclosure failures. $4.7M raised across automated fundraising sequences. Election Day GOTV deployment: 9.3K messages/second peak.',
-  },
-  {
-    id: 'franchise',
-    industry: 'Franchise & Multi-Location',
-    icon: MapPin,
-    color: '#ec4899',
-    regulations: ['GDPR', 'CCPA / CPRA', 'LGPD', 'TCPA'],
-    headline: '280 locations. One compliance posture. $34K/year per-location uplift.',
-    context:
-      'QSR chains, retail franchises, and service networks need brand-consistent customer engagement across independently operated locations. The core tension: corporate control vs. franchisee autonomy. Added complexity: US state privacy laws (CCPA for California, no law for Texas), GDPR for EU locations, LGPD for Brazil — each requiring different data handling. No single platform handles all simultaneously.',
-    workflow: [
-      {
-        n: 1,
-        label: '3-Tier RBAC Structure',
-        desc: 'Corporate admins set global compliance rules and brand guidelines. Franchise owners configure message templates and approve local customizations within corporate bounds. Location operators execute campaigns without access to configuration — zero chance of accidental compliance bypass. All changes logged.',
-      },
-      {
-        n: 2,
-        label: 'Auto-Geography Compliance',
-        desc: 'Customer jurisdiction detected automatically from address or IP. California customers receive CCPA handling (opt-out link, data deletion rights). EU customers get GDPR consent flows. Brazil gets LGPD notices. No per-location manual configuration — jurisdiction rules apply automatically.',
-      },
-      {
-        n: 3,
-        label: 'Loyalty Program Automation',
-        desc: "Lapsed-customer win-back sequences triggered by location-specific inactivity thresholds. Points expiry reminders, birthday offers, and anniversary rewards dispatched automatically. Each campaign respects the location's average transaction value and segment mix — personalized at location level.",
-      },
-      {
-        n: 4,
-        label: 'Review Response Agent',
-        desc: 'Loyalty Agent monitors Google Business Profile, Yelp, and Tripadvisor across all 280 locations. Drafts brand-consistent response tailored to review content and sentiment. 4-star responses auto-published. 3-star-and-below sent to franchise owner for approval. Average response time: 2.1 days.',
-      },
-      {
-        n: 5,
-        label: 'Corporate Compliance Dashboard',
-        desc: "Real-time compliance monitoring across all locations: TCPA violation flags, opt-out processing times, consent records, DSR requests. Corporate can see which locations have pending compliance actions. Automatic escalation if a location's opt-out backlog exceeds 24 hours.",
-      },
-    ],
-    outcomes: [
-      { metric: '280', label: 'Locations managed', sub: 'Single platform, zero silos' },
-      { metric: '43%', label: 'Guest retention increase', sub: 'Automated loyalty sequences' },
-      { metric: '$34K', label: 'Annual uplift per location', sub: 'Loyalty + review response' },
-      { metric: '2.1 days', label: 'Review response time', sub: 'vs 6-week industry average' },
-    ],
-    example:
-      'A 280-location QSR franchise with locations across the US, UK, Germany, and Brazil runs a single ORDR-Connect instance. CCPA, GDPR, and LGPD are enforced automatically based on customer jurisdiction. Corporate compliance team reduced from 4 FTE to 1.5 FTE for ongoing monitoring.',
   },
 ];
 
@@ -2551,426 +2344,246 @@ export function Landing(): ReactNode {
   const navigate = useNavigate();
   const [statsRef, statsVisible] = useInView(0.3);
 
-  const s1 = useCountUp(10000, 2000, statsVisible);
-  const s2 = useCountUp(500, 1800, statsVisible);
-  const s3 = useCountUp(15, 1500, statsVisible);
-  const s4 = useCountUp(9999, 2000, statsVisible);
+  const s1 = useCountUp(48291, 2000, statsVisible);
+  const s2 = useCountUp(9999, 2000, statsVisible);
+  const s3 = useCountUp(9, 1500, statsVisible);
+  const s4 = useCountUp(10, 1800, statsVisible);
 
   return (
-    <div className="min-h-screen bg-canvas text-content overflow-x-hidden">
+    <div className="min-h-screen bg-[#030305] text-content antialiased">
       {/* ── NAV ── */}
-      <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-canvas/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <nav className="sticky top-0 z-50 w-full border-b border-white/5 backdrop-blur-md bg-[#030305]/80">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-accent text-xs font-bold text-[#060608]">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white text-xs font-bold text-[#030305]">
               O
             </div>
-            <span className="font-mono text-lg font-bold tracking-tight">
+            <span className="font-mono text-sm font-bold tracking-tight">
               ORDR<span className="text-content-tertiary">.</span>Connect
             </span>
           </div>
-          <div className="hidden items-center gap-8 lg:flex">
-            <a
-              href="#demo-preview"
-              className="text-sm font-semibold text-brand-accent transition-colors hover:text-white"
-            >
-              Live Demo
-            </a>
-            <a
-              href="#features"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Features
-            </a>
-            <a
-              href="#architecture"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Architecture
-            </a>
-            <a
-              href="#decision"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Decision Engine
-            </a>
-            <a
-              href="#integrations"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Integrations
-            </a>
-            <a
-              href="#security"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Security
-            </a>
-            <a
-              href="#case-studies"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Case Studies
-            </a>
-            <a
-              href="#specs"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Specifications
-            </a>
-            <a
-              href="#compare"
-              className="text-sm text-content-secondary transition-colors hover:text-content"
-            >
-              Compare
-            </a>
-          </div>
+          <NavTicker />
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('/login')}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-content-secondary transition-colors hover:text-content"
+              onClick={() => {
+                void navigate('/login');
+              }}
+              className="rounded-lg border border-white/10 px-4 py-1.5 text-sm font-medium text-content-secondary transition-colors hover:border-white/20 hover:text-content"
             >
-              Sign In
+              Sign in
             </button>
             <button
-              onClick={() => navigate('/login')}
-              className="rounded-lg bg-white px-5 py-2 text-sm font-semibold text-canvas transition-all hover:bg-white/90"
+              onClick={() => {
+                void navigate('/login');
+              }}
+              className="rounded-lg bg-white px-4 py-1.5 text-sm font-semibold text-[#030305] transition-all hover:bg-white/90"
             >
-              Request Demo
+              Get access →
             </button>
           </div>
         </div>
       </nav>
 
-      {/* ── HERO ── */}
-      <section className="relative flex min-h-screen items-center justify-center px-6 pt-20">
-        <div className="absolute inset-0 overflow-hidden">
+      {/* ── SECTION 01 — HERO ── */}
+      <section className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div
             className="absolute inset-0"
             style={{
               backgroundImage:
-                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0)',
+                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.015) 1px, transparent 0)',
               backgroundSize: '40px 40px',
             }}
           />
-          <div className="absolute left-1/2 top-1/3 -translate-x-1/2 h-[700px] w-[700px] rounded-full bg-brand-accent/4 blur-[160px]" />
+          <div className="absolute left-1/2 top-1/3 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-emerald-500/5 blur-[160px]" />
         </div>
 
-        <div className="relative mx-auto max-w-5xl text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="font-mono text-xs text-content-secondary">CUSTOMER OPERATIONS OS</span>
+        <div className="relative mx-auto max-w-6xl">
+          <div className="mb-4 font-mono text-xs text-content-tertiary">01 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-amber-400">
+              INTRODUCING A NEW SOFTWARE CATEGORY
+            </span>
           </div>
 
-          <h1 className="text-5xl font-bold leading-[1.08] tracking-tight sm:text-6xl lg:text-7xl">
-            The autonomous platform
+          <h1 className="text-5xl sm:text-7xl font-bold leading-[0.95] tracking-tight max-w-4xl">
+            Customer operations
             <br />
-            <span className="bg-gradient-to-r from-blue-400 via-violet-400 to-emerald-400 bg-clip-text text-transparent">
-              that replaces CRM.
-            </span>
+            finally has an
+            <br />
+            <span className="text-content-tertiary">operating system.</span>
           </h1>
 
-          <p className="mx-auto mt-8 max-w-3xl text-lg leading-relaxed text-content-secondary">
-            Event-sourced architecture. Multi-agent orchestration. Cryptographic audit trail.
-            ORDR-Connect is the operating system for enterprise customer operations — where AI
-            agents execute at scale and humans govern by exception.
+          <p className="mt-8 max-w-2xl text-base leading-relaxed text-content-secondary">
+            ORDR-Connect replaces 8 disconnected tools with one event-sourced, multi-agent,
+            compliance-native platform — built for enterprises where a single wrong message costs
+            $50,000.
           </p>
 
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <button
-              onClick={() => navigate('/login')}
-              className="group flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-canvas transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/5"
-            >
-              Request a Demo
-              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-            </button>
-            <button
-              onClick={() =>
-                document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
-              }
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-8 py-3.5 text-base font-medium text-content-secondary transition-all hover:border-white/20 hover:text-content"
-            >
-              Explore Features
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="mt-12">
+            <LiveDecisionStream />
           </div>
 
-          {/* Trust strip */}
-          <div className="mt-20 flex flex-wrap items-center justify-center gap-6 text-xs font-medium text-content-tertiary">
+          <div className="mt-6 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-mono text-xs text-content-secondary">48K decisions/day</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2">
+              <span className="font-mono text-xs text-content-secondary">&lt;10ms rules</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2">
+              <span className="font-mono text-xs text-content-secondary">
+                9 compliance frameworks
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-8 flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => {
+                void navigate('/login');
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl bg-white px-8 py-3.5 text-sm font-semibold text-[#030305] transition-all hover:bg-white/90"
+            >
+              Enter the platform →
+            </button>
+            <button
+              onClick={() => {
+                document.getElementById('section-03')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 px-8 py-3.5 text-sm font-medium text-content-secondary transition-all hover:border-white/20 hover:text-content"
+            >
+              Read the architecture
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── SECTION 02 — THE BROKEN STACK ── */}
+      <section className="py-32 px-6">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-4 font-mono text-xs text-content-tertiary">02 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-red-400">
+              THE STATUS QUO
+            </span>
+          </div>
+
+          <h2 className="text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight max-w-3xl mb-8">
+            {`You're not running customer ops.`}
+            <br />
+            {`You're managing 8 vendors' problems.`}
+          </h2>
+
+          <p className="max-w-2xl text-base text-content-secondary mb-12">
+            The average enterprise pays $455K–$1.45M annually for a stack of disconnected tools that
+            were never designed to work together. 6–18 months of engineering to connect them.
+            Constant maintenance. Data silos that prevent unified context. And compliance built
+            nowhere.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             {[
-              'SOC 2 Type II',
-              'ISO 27001:2022',
-              'HIPAA',
-              'GDPR',
-              'FDCPA / TCPA',
-              'LGPD',
-              'Zero Trust',
-            ].map((b) => (
-              <div key={b} className="flex items-center gap-1.5">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500/60" />
-                <span>{b}</span>
+              { cat: 'CRM', tool: 'Salesforce / HubSpot', price: '$80–200K/yr' },
+              { cat: 'Contact Center', tool: 'Five9 / Talkdesk', price: '$120–400K/yr' },
+              { cat: 'Compliance', tool: 'Vanta / Drata', price: '$40–100K/yr' },
+              { cat: 'AI Platform', tool: 'Agentforce / custom', price: '$40–300K/yr' },
+              { cat: 'Scheduler', tool: 'Calendly / custom', price: '$20–60K/yr' },
+              { cat: 'Analytics', tool: 'Mixpanel / Heap', price: '$30–80K/yr' },
+              { cat: 'Messaging', tool: 'Twilio / SendGrid', price: '$35–100K/yr' },
+              { cat: 'Encryption', tool: 'Custom / HashiCorp', price: '$40–80K/yr' },
+            ].map((item) => (
+              <div
+                key={item.cat}
+                className="rounded-xl border border-red-500/10 bg-red-500/[0.02] p-4"
+              >
+                <p className="text-xs font-semibold text-content-secondary line-through decoration-red-500/40">
+                  {item.cat}
+                </p>
+                <p className="mt-1 text-2xs text-content-tertiary">{item.tool}</p>
+                <p className="mt-1.5 font-mono text-2xs text-red-400/70">{item.price}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
 
-      {/* ── LIVE DEMO PREVIEW ── */}
-      <section id="demo-preview" className="py-20 px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
+          <div className="flex items-center gap-4 mb-12">
+            <div className="flex-1 h-px bg-white/5" />
+            <span className="font-mono text-xs text-content-tertiary">replaced by</span>
+            <div className="flex-1 h-px bg-white/5" />
+          </div>
+
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 mb-12 flex items-center justify-between gap-6">
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-                INTERACTIVE DEMO
-              </p>
-              <h2 className="mt-3 text-2xl font-bold sm:text-3xl">
-                Explore the platform — no signup required.
-              </h2>
-              <p className="mt-2 max-w-xl text-sm text-content-secondary">
-                Seven fully interactive modules with real-time simulated data. See exactly what your
-                ops team will use every day before committing to a conversation.
+              <p className="font-mono text-lg font-bold text-emerald-400">ORDR-Connect</p>
+              <p className="text-sm text-content-secondary mt-1">
+                All 8 capabilities. One event-sourced platform. Compliance native, not bolted on.
               </p>
             </div>
-            <a
-              href="/demo"
-              className="group flex shrink-0 items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-canvas transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/5"
-            >
-              Launch Demo
-              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-            </a>
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-white text-sm font-bold text-[#030305]">
+              O
+            </div>
           </div>
 
-          <div className="mt-10">
-            <DemoPreviewCards />
-          </div>
-
-          {/* Terminal-style status strip */}
-          <div className="mt-6 flex flex-wrap items-center gap-6 rounded-xl border border-white/5 bg-white/[0.015] px-5 py-3">
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
-              <span className="font-mono text-xs text-emerald-400">6 agents online</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-blue-400" />
-              <span className="font-mono text-xs text-blue-400/80">1.2K events/s simulated</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-amber-400" />
-              <span className="font-mono text-xs text-amber-400/80">
-                All compliance gates active
-              </span>
-            </div>
-            <div className="ml-auto hidden font-mono text-2xs text-content-tertiary sm:block">
-              Synthetic data only — no PHI, no credentials
-            </div>
-          </div>
+          <ROIBarChart />
         </div>
       </section>
 
-      {/* ── PLATFORM FEATURES ── */}
-      <section id="features" className="py-32 px-6">
+      {/* ── SECTION 03 — THE PLATFORM ── */}
+      <section id="section-03" className="py-32 px-6">
         <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-              PLATFORM FEATURES
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Everything customer operations needs.
-              <br />
-              <span className="text-content-tertiary">Nothing it doesn&apos;t.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Eight integrated capabilities — AI agents, omnichannel delivery, compliance
-              automation, healthcare standards, CRM integrations, developer tools, privacy
-              management, and enterprise directory — built as one coherent platform, not eight
-              vendor contracts.
-            </p>
+          <div className="mb-4 font-mono text-xs text-content-tertiary">03 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-blue-400">
+              THE ARCHITECTURE
+            </span>
           </div>
 
-          <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {features.map((f) => {
-              const Icon = f.icon;
-              return (
-                <div
-                  key={f.title}
-                  className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.015] p-6 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
-                >
-                  <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight max-w-3xl mb-8">
+            Event-sourced. Multi-agent.
+            <br />
+            <span className="text-content-tertiary">Millisecond decisions.</span>
+          </h2>
+
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 mb-16">
+            <div>
+              <p className="text-base text-content-secondary leading-relaxed mb-6">
+                Six architectural primitives with well-defined interfaces. Every customer operation
+                flows through all six in sequence — ingested, evaluated, decided, executed, and
+                cryptographically audited. Kafka is the single source of truth. Everything else is a
+                projection.
+              </p>
+              <div className="space-y-3">
+                {[
+                  { label: 'Customer Graph', sub: 'Neo4j + pgvector', color: '#3b82f6' },
+                  { label: 'Event Stream', sub: 'Kafka — Confluent', color: '#10b981' },
+                  { label: 'Decision Engine', sub: 'OPA · ClickHouse · Redis', color: '#f59e0b' },
+                  { label: 'Agent Runtime', sub: 'LangGraph + Claude API', color: '#8b5cf6' },
+                  {
+                    label: 'Execution Layer',
+                    sub: 'Twilio · SendGrid · Omnichannel',
+                    color: '#ec4899',
+                  },
+                  { label: 'Governance Layer', sub: 'Merkle DAG + WORM', color: '#06b6d4' },
+                ].map((p) => (
+                  <div key={p.label} className="flex items-center gap-3">
                     <div
-                      className="flex h-9 w-9 items-center justify-center rounded-xl"
-                      style={{
-                        background: `${f.color}14`,
-                        border: `1px solid ${f.color}22`,
-                      }}
-                    >
-                      <Icon className="h-4 w-4" style={{ color: f.color }} />
-                    </div>
-                    <span
-                      className="font-mono text-2xs font-bold"
-                      style={{ color: `${f.color}80` }}
-                    >
-                      {f.tag}
-                    </span>
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ background: p.color }}
+                    />
+                    <span className="text-sm font-semibold text-content">{p.label}</span>
+                    <span className="font-mono text-2xs text-content-tertiary">{p.sub}</span>
                   </div>
-                  <h3 className="text-sm font-semibold">{f.title}</h3>
-                  <p className="mt-0.5 font-mono text-2xs text-content-tertiary">{f.sub}</p>
-                  <p className="mt-3 text-xs leading-relaxed text-content-secondary">{f.desc}</p>
-                  <div
-                    className="absolute -bottom-20 -right-20 h-40 w-40 rounded-full opacity-0 blur-[60px] transition-opacity duration-500 group-hover:opacity-10"
-                    style={{ background: f.color }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── ARCHITECTURE TOPOLOGY ── */}
-      <section id="architecture" className="relative py-32 px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-              SYSTEM ARCHITECTURE
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Six primitives. One coherent system.
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Not six products stitched together. Six architectural building blocks with
-              well-defined interfaces, independently scalable, cryptographically linked. Every
-              customer operation flows through all six in sequence — ingested, evaluated, decided,
-              executed, and audited.
-            </p>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-6">
+              <ArchitectureDiagram />
+            </div>
           </div>
 
-          {/* Topology diagram */}
-          <div className="mx-auto mt-16 max-w-3xl">
-            <ArchitectureDiagram />
-          </div>
-
-          {/* Primitive cards */}
-          <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {primitives.map((p) => {
-              const Icon = p.icon;
-              return (
-                <div
-                  key={p.title}
-                  className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.015] p-6 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${p.gradient}`}
-                    >
-                      <Icon className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold">{p.title}</h3>
-                      <p className="font-mono text-2xs text-content-tertiary">{p.sub}</p>
-                    </div>
-                  </div>
-                  <p className="mt-4 text-sm leading-relaxed text-content-secondary">{p.desc}</p>
-                  <div
-                    className={`absolute -bottom-24 -right-24 h-48 w-48 rounded-full bg-gradient-to-br ${p.gradient} opacity-0 blur-[80px] transition-opacity duration-500 group-hover:opacity-5`}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── DECISION ENGINE ── */}
-      <section id="decision" className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute left-1/3 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-amber-500/3 blur-[140px]" />
-        </div>
-        <div className="relative mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-amber-400">
-              DECISION ENGINE
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Three-layer cascade.
-              <br />
-              <span className="text-content-tertiary">Every evaluation in under 100ms.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Every customer signal passes through three decision layers before any action executes.
-              Deterministic rules block non-compliant actions instantly. Statistical models score
-              options efficiently. Generative AI reasons through complexity. Each layer exits early
-              when certainty is high — LLM only fires when the lower layers can&apos;t resolve.
-            </p>
-          </div>
-
-          <div className="mt-16">
-            <DecisionEngineDiagram />
-          </div>
-
-          {/* How it integrates */}
-          <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-3">
-            {[
-              {
-                icon: AlertTriangle,
-                title: 'Compliance First',
-                desc: 'Layer 1 is the only layer that can fully block an action. FDCPA, TCPA, HIPAA, and GDPR rules are deterministic — no ML model can override a compliance block. The rules engine runs in Redis with <1ms read latency.',
-                color: '#06b6d4',
-              },
-              {
-                icon: Brain,
-                title: 'ML Efficiency',
-                desc: 'Layer 2 handles 87% of decisions. When the ML model returns confidence > 0.90, Layer 3 is skipped entirely — no LLM call, no latency, no cost. This makes the system economically viable at 100K events/second.',
-                color: '#f59e0b',
-              },
-              {
-                icon: Sparkles,
-                title: 'LLM for Edge Cases',
-                desc: 'Layer 3 fires for the 13% of cases where statistical models are uncertain. RAG grounding pulls relevant context from pgvector. If the LLM confidence is still below 0.70, the action routes to the human-in-the-loop queue.',
-                color: '#8b5cf6',
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.title}
-                  className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" style={{ color: item.color }} />
-                    <h4 className="text-sm font-semibold">{item.title}</h4>
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── EVENT PIPELINE ── */}
-      <section className="py-32 px-6">
-        <div className="mx-auto max-w-5xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-emerald-400">
-              DATA FLOW
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Signal to action in under 500ms.
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Every customer signal flows through a deterministic pipeline — ingested, evaluated,
-              decided, executed, and cryptographically logged. No batch processing. No manual
-              handoffs. Every stage is independently scalable and independently auditable.
-            </p>
-          </div>
-
-          <div className="mt-16 overflow-x-auto rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-            <EventFlowDiagram />
-          </div>
-
-          {/* Latency waterfall */}
-          <div className="mt-12 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-            <div className="mb-6 flex items-center gap-2">
+          <div className="mb-8 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+            <div className="mb-4 flex items-center gap-2">
               <Cpu className="h-4 w-4 text-content-tertiary" />
               <h3 className="text-sm font-semibold">End-to-End Latency Waterfall</h3>
               <span className="font-mono text-2xs text-content-tertiary">p99 targets</span>
@@ -2978,217 +2591,92 @@ export function Landing(): ReactNode {
             <LatencyWaterfall />
           </div>
 
-          {/* Kafka architecture note */}
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                label: 'Append-Only Log',
-                desc: 'Kafka is the single source of truth. Every store (Postgres, Neo4j, ClickHouse, Redis) is a projection of the event log — not the primary.',
-                color: '#10b981',
-              },
-              {
-                label: 'Infinite Replay',
-                desc: 'Any consumer can replay from any offset. Rebuild a projection, debug an issue, or audit the exact sequence of events that led to any outcome.',
-                color: '#3b82f6',
-              },
-              {
-                label: 'Schema Registry',
-                desc: 'Confluent Schema Registry enforces backward/forward compatibility. No consumer breaks silently when a producer adds a field.',
-                color: '#8b5cf6',
-              },
-            ].map((n) => (
-              <div key={n.label} className="rounded-xl border border-white/5 bg-white/[0.015] p-4">
-                <div className="mb-2 flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full" style={{ background: n.color }} />
-                  <span className="text-xs font-semibold" style={{ color: n.color }}>
-                    {n.label}
-                  </span>
-                </div>
-                <p className="text-2xs leading-relaxed text-content-tertiary">{n.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Kafka topic topology */}
-          <div className="mt-8">
-            <div className="mb-4 flex items-center gap-2">
-              <Activity className="h-4 w-4 text-emerald-400" />
-              <h3 className="text-sm font-semibold">Kafka Topic Architecture</h3>
-              <span className="font-mono text-2xs text-content-tertiary">
-                6 topics · 210 total partitions · 80K msg/s aggregate
-              </span>
-            </div>
-            <KafkaTopologyTable />
+          <div className="overflow-x-auto rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+            <EventFlowDiagram />
           </div>
         </div>
       </section>
 
-      {/* ── INTEGRATIONS HUB ── */}
-      <section id="integrations" className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute left-1/4 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-blue-500/4 blur-[130px]" />
+      {/* ── SECTION 04 — THE DECISION ENGINE ── */}
+      <section className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute left-1/3 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-amber-500/4 blur-[140px]" />
         </div>
         <div className="relative mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-blue-400">
-              INTEGRATIONS
+          <div className="mb-4 font-mono text-xs text-content-tertiary">04 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-amber-400">
+              INTELLIGENCE LAYER
+            </span>
+          </div>
+
+          <div className="mb-12 max-w-2xl">
+            <p className="text-4xl sm:text-5xl font-bold leading-[1.1] tracking-tight">
+              Rules decide in &lt;10ms.
             </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Connects to everything already in your stack.
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Bidirectional CRM sync, SCIM 2.0 directory provisioning, payment webhooks, and FHIR R4
-              healthcare interoperability — all authenticated with OAuth 2.1, all audit-logged to
-              the WORM chain.
+            <p className="text-3xl sm:text-4xl font-bold leading-[1.1] tracking-tight text-content-secondary mt-2">
+              ML decides in &lt;50ms.
+            </p>
+            <p className="text-2xl sm:text-3xl font-bold leading-[1.1] tracking-tight text-content-tertiary mt-2">
+              Claude decides in &lt;100ms.
+            </p>
+            <p className="text-xl sm:text-2xl font-bold leading-[1.1] tracking-tight text-content-tertiary/50 mt-2">
+              Humans decide never.
             </p>
           </div>
 
-          <div className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-2">
-            {/* Hub diagram */}
-            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-              <div className="mb-4 flex items-center gap-2">
-                <Database className="h-4 w-4 text-blue-400" />
-                <h3 className="text-sm font-semibold">Integration Topology</h3>
-                <span className="font-mono text-2xs text-content-tertiary">8 providers</span>
-              </div>
-              <IntegrationHubDiagram />
-            </div>
+          <div className="mb-12">
+            <DecisionEngineDiagram />
+          </div>
 
-            {/* Integration categories */}
-            <div className="space-y-3">
-              {[
-                {
-                  category: 'CRM & Sales',
-                  integrations: ['Salesforce', 'HubSpot'],
-                  desc: 'Bidirectional contact sync, field mapping, OAuth 2.1, three-way conflict resolution',
-                  color: '#3b82f6',
-                },
-                {
-                  category: 'Identity & Directory',
-                  integrations: ['WorkOS', 'SCIM 2.0', 'SAML / OIDC'],
-                  desc: 'Enterprise SSO, RFC 7644 user/group provisioning, tenant-scoped RBAC',
-                  color: '#8b5cf6',
-                },
-                {
-                  category: 'Communications',
-                  integrations: ['Twilio SMS', 'Voice', 'SendGrid', 'WhatsApp'],
-                  desc: 'HMAC-validated webhooks, multi-provider failover, consent-gated delivery',
-                  color: '#ec4899',
-                },
-                {
-                  category: 'Healthcare',
-                  integrations: ['FHIR R4', 'HL7 4.0.1', 'SMART on FHIR'],
-                  desc: 'Patient/Communication/Bundle resources, PHI-safe, EHR-compatible',
-                  color: '#ef4444',
-                },
-                {
-                  category: 'Payments',
-                  integrations: ['Stripe'],
-                  desc: 'Billing webhooks, subscription lifecycle events, dunning automation',
-                  color: '#10b981',
-                },
-                {
-                  category: 'Developer',
-                  integrations: ['REST API', 'Webhooks', 'Agent Marketplace'],
-                  desc: 'Scoped API keys, 100+ event subscriptions, sandboxed agent installs',
-                  color: '#f59e0b',
-                },
-              ].map((cat) => (
-                <div
-                  key={cat.category}
-                  className="rounded-xl border border-white/5 bg-white/[0.015] p-4"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h4 className="text-xs font-semibold" style={{ color: cat.color }}>
-                        {cat.category}
-                      </h4>
-                      <p className="mt-0.5 text-xs text-content-tertiary">{cat.desc}</p>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-1.5">
-                      {cat.integrations.map((int) => (
-                        <span
-                          key={int}
-                          className="rounded-md border px-2 py-0.5 font-mono text-2xs"
-                          style={{
-                            borderColor: `${cat.color}22`,
-                            color: `${cat.color}90`,
-                          }}
-                        >
-                          {int}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
+          <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+            <div className="mb-6 flex items-center gap-2">
+              <Bot className="h-4 w-4 text-violet-400" />
+              <h3 className="text-sm font-semibold">Graduated Autonomy Model</h3>
             </div>
+            <AutonomyLevelsDiagram />
           </div>
         </div>
       </section>
 
-      {/* ── AUDIT & GOVERNANCE ── */}
-      <section id="security" className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
+      {/* ── SECTION 05 — COMPLIANCE FOUNDATION ── */}
+      <section className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute left-1/4 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-emerald-500/4 blur-[120px]" />
         </div>
         <div className="relative mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-emerald-400">
-              GOVERNANCE
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Compliance is architectural.
-              <br />
-              <span className="text-content-tertiary">Not bolted on.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              9 regulatory frameworks enforced at runtime. Every action gated by the compliance
-              engine before execution. Cryptographic audit chain provides tamper-proof evidence for
-              regulators — not a log file, a Merkle DAG.
-            </p>
+          <div className="mb-4 font-mono text-xs text-content-tertiary">05 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-emerald-400">
+              COMPLIANCE ARCHITECTURE
+            </span>
           </div>
 
-          {/* Compliance grid — 9 badges, 3×3 */}
-          <div className="mt-16 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {complianceBadges.map((b) => (
-              <div
-                key={b.label}
-                className="flex flex-col items-center gap-2 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.02] p-4 text-center"
-              >
-                <ShieldCheck className="h-5 w-5 text-emerald-400" />
-                <span className="text-xs font-semibold">{b.label}</span>
-                <span className="font-mono text-2xs text-content-tertiary">{b.sub}</span>
-              </div>
-            ))}
-          </div>
+          <h2 className="text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight max-w-3xl mb-8">
+            {`Compliance isn't a feature.`}
+            <br />
+            <span className="text-content-tertiary">{`It's the execution layer.`}</span>
+          </h2>
 
-          {/* Compliance matrix */}
-          <div className="mt-12">
+          <p className="max-w-2xl text-base text-content-secondary mb-4">
+            Nine regulatory frameworks enforced at runtime — before any action executes. Every event
+            passes through the compliance engine. A BLOCK exits the pipeline immediately; no ML
+            model, no agent, no channel fires.
+          </p>
+          <p className="max-w-2xl text-sm text-content-tertiary mb-12">
+            The cryptographic audit chain provides tamper-proof evidence — not a log file, but a
+            Merkle DAG with SHA-256 chain verification on every read. WORM-stored for 7 years.
+          </p>
+
+          <div className="mb-10">
             <div className="mb-4 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-emerald-400" />
               <h3 className="text-sm font-semibold">Regulation Coverage by Industry</h3>
-              <span className="font-mono text-2xs text-content-tertiary">
-                which regulations apply to your vertical
-              </span>
             </div>
             <ComplianceMatrixTable />
           </div>
 
-          {/* Compliance penalty reference */}
-          <div className="mt-10">
-            <div className="mb-4 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-400" />
-              <h3 className="text-sm font-semibold">Regulatory Penalty Exposure</h3>
-              <span className="font-mono text-2xs text-content-tertiary">
-                what non-compliance actually costs
-              </span>
-            </div>
-            <CompliancePenaltyTable />
-          </div>
-
-          {/* Merkle audit diagram */}
-          <div className="mt-12 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="mb-10 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
               <div className="mb-4 flex items-center gap-2">
                 <Lock className="h-4 w-4 text-emerald-400" />
@@ -3196,28 +2684,27 @@ export function Landing(): ReactNode {
               </div>
               <AuditChainDiagram />
             </div>
-
-            <div className="space-y-4">
+            <div className="space-y-3">
               {[
                 {
                   icon: Key,
                   title: 'AES-256-GCM + HSM Key Management',
-                  desc: 'Field-level encryption on all restricted data before any database write. HSM-backed key management via HashiCorp Vault with 90-day automated rotation and zero-downtime swap. Cryptographic erasure (destroy the key, not the data) for GDPR Art. 17 compliance.',
+                  desc: 'Field-level encryption on all restricted data before any database write. HSM-backed key management via HashiCorp Vault with 90-day automated rotation and zero-downtime swap.',
                 },
                 {
                   icon: Eye,
                   title: 'Zero Trust Architecture',
-                  desc: 'mTLS on every internal service connection. JWT claims derive tenant scope server-side — client input never trusted. Row-Level Security enforced at PostgreSQL layer. Default deny on all endpoints with explicit grant per role.',
+                  desc: 'mTLS on every internal service connection. JWT claims derive tenant scope server-side. Row-Level Security enforced at PostgreSQL layer. Default deny on all endpoints.',
                 },
                 {
                   icon: FileText,
                   title: 'WORM Audit Storage',
-                  desc: 'Append-only audit tables with PostgreSQL triggers blocking UPDATE/DELETE. SHA-256 hash chain with Merkle tree batch verification every 1,000 events. S3 Object Lock (Compliance mode) replication for 7-year retention.',
+                  desc: 'Append-only audit tables with PostgreSQL triggers blocking UPDATE/DELETE. SHA-256 hash chain with Merkle tree batch verification every 1,000 events. S3 Object Lock replication.',
                 },
                 {
                   icon: Target,
                   title: '10-Gate PR Enforcement',
-                  desc: 'Every pull request passes: static analysis (Semgrep), dependency scan (CVE), secret scan (gitleaks), TypeScript strict mode, 80%+ coverage, audit log check, access control check, PHI check, encryption check, and peer review. No gate = no merge.',
+                  desc: 'Every pull request passes static analysis, dependency scan, secret scan, TypeScript strict mode, 80%+ coverage, audit log check, access control check, PHI check, encryption check, and peer review.',
                 },
               ].map((item) => {
                 const Icon = item.icon;
@@ -3239,70 +2726,18 @@ export function Landing(): ReactNode {
             </div>
           </div>
 
-          {/* Multi-tenant isolation explanation */}
-          <div className="mt-12 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-            <div className="mb-6 flex items-center gap-2">
-              <Layers className="h-4 w-4 text-emerald-400" />
-              <h3 className="text-sm font-semibold">5-Layer Multi-Tenant Isolation</h3>
+          <div className="mb-10">
+            <div className="mb-4 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <h3 className="text-sm font-semibold">Regulatory Penalty Exposure</h3>
+              <span className="font-mono text-2xs text-content-tertiary">
+                what non-compliance actually costs
+              </span>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
-              {[
-                {
-                  n: '1',
-                  label: 'JWT Claims',
-                  desc: 'tenant_id extracted server-side from signed token. Never trusted from client.',
-                  color: '#06b6d4',
-                },
-                {
-                  n: '2',
-                  label: 'API Middleware',
-                  desc: 'Every endpoint validates tenant membership before handler executes.',
-                  color: '#3b82f6',
-                },
-                {
-                  n: '3',
-                  label: 'RLS Policies',
-                  desc: 'PostgreSQL Row-Level Security filters all queries at database engine level.',
-                  color: '#8b5cf6',
-                },
-                {
-                  n: '4',
-                  label: 'Per-Tenant DEK',
-                  desc: 'Separate Data Encryption Key per tenant. Compromise of one key exposes nothing else.',
-                  color: '#ec4899',
-                },
-                {
-                  n: '5',
-                  label: 'WORM Audit',
-                  desc: 'tenant_id stamped on every audit event. Cross-tenant access is detectably impossible.',
-                  color: '#10b981',
-                },
-              ].map((layer, i) => (
-                <div key={layer.n} className="relative">
-                  <div
-                    className="rounded-xl border p-4"
-                    style={{ borderColor: `${layer.color}20`, background: `${layer.color}05` }}
-                  >
-                    <span className="font-mono text-xs font-bold" style={{ color: layer.color }}>
-                      L{layer.n}
-                    </span>
-                    <p className="mt-1 text-xs font-semibold text-content">{layer.label}</p>
-                    <p className="mt-1 text-2xs leading-relaxed text-content-tertiary">
-                      {layer.desc}
-                    </p>
-                  </div>
-                  {i < 4 && (
-                    <div className="absolute -right-1.5 top-1/2 z-10 hidden -translate-y-1/2 sm:block">
-                      <ChevronRight className="h-3 w-3 text-content-tertiary/50" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <CompliancePenaltyTable />
           </div>
 
-          {/* Standards control mapping */}
-          <div className="mt-10">
+          <div>
             <div className="mb-4 flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-emerald-400" />
               <h3 className="text-sm font-semibold">Standards Control Mapping</h3>
@@ -3315,94 +2750,29 @@ export function Landing(): ReactNode {
         </div>
       </section>
 
-      {/* ── AGENT INTELLIGENCE ── */}
+      {/* ── SECTION 06 — AGENTS & INTEGRATIONS ── */}
       <section className="py-32 px-6">
         <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-violet-400">
-              AGENT RUNTIME
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Bounded autonomy.
-              <br />
-              <span className="text-content-tertiary">Not unbounded risk.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Every agent operates within explicit boundaries — permission allowlists, budget
-              enforcement, confidence thresholds, and kill switches at four scopes. The graduation
-              from L1 to L5 is a deliberate organizational decision, not an automatic upgrade.
-            </p>
+          <div className="mb-4 font-mono text-xs text-content-tertiary">06 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-violet-400">
+              AI AGENTS
+            </span>
           </div>
 
-          <div className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-2">
-            {/* Autonomy levels */}
-            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-              <div className="mb-6 flex items-center gap-2">
-                <Bot className="h-4 w-4 text-violet-400" />
-                <h3 className="text-sm font-semibold">Graduated Autonomy Model</h3>
-              </div>
-              <AutonomyLevelsDiagram />
-            </div>
+          <h2 className="text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight max-w-3xl mb-8">
+            Six specialized agents.
+            <br />
+            <span className="text-content-tertiary">Bounded, audited, killable.</span>
+          </h2>
 
-            {/* Safety controls */}
-            <div className="space-y-4">
-              <div className="rounded-xl border border-white/5 bg-white/[0.015] p-6">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-                  SAFETY ARCHITECTURE
-                </h4>
-                <div className="mt-4 space-y-3">
-                  {[
-                    {
-                      label: 'Hallucination Containment',
-                      desc: '4-layer defense: RAG grounding (pgvector context retrieval), multi-agent cross-validation, rules-based output constraints, and confidence scoring with threshold enforcement.',
-                    },
-                    {
-                      label: 'Budget Enforcement',
-                      desc: 'Token limits, action limits, cost ceiling, and time bounds per execution — configurable per agent type and tenant. Hard limits that cannot be overridden by the agent.',
-                    },
-                    {
-                      label: 'Kill Switch Hierarchy',
-                      desc: 'Platform → Tenant → Agent Type → Individual execution — 4 levels of immediate termination. Kill is synchronous: in-flight actions are cancelled, not queued for completion.',
-                    },
-                    {
-                      label: 'HITL Escalation',
-                      desc: 'Actions below 0.70 confidence route to human review queue automatically. Financial actions, PHI access, and mass communications always require human-in-the-loop approval regardless of confidence.',
-                    },
-                  ].map((item) => (
-                    <div key={item.label} className="flex gap-3">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
-                      <div>
-                        <span className="text-xs font-semibold text-content">{item.label}</span>
-                        <p className="mt-0.5 text-2xs leading-relaxed text-content-tertiary">
-                          {item.desc}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <p className="max-w-2xl text-base text-content-secondary mb-12">
+            Every agent operates within explicit boundaries — permission allowlists, budget
+            enforcement, confidence thresholds, and kill switches at four scopes. Graduation from L1
+            to L5 is a deliberate organizational decision, not an automatic upgrade.
+          </p>
 
-              <div className="rounded-xl border border-white/5 bg-white/[0.015] p-6">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-                  EXECUTION CHANNELS
-                </h4>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {Object.entries(channelIcons).map(([name, Icon]) => (
-                    <div
-                      key={name}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-1.5"
-                    >
-                      <Icon className="h-3 w-3 text-content-tertiary" />
-                      <span className="text-xs text-content-secondary">{name}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Agent types table */}
-          <div className="mt-12">
+          <div className="mb-10">
             <div className="mb-4 flex items-center gap-2">
               <Brain className="h-4 w-4 text-violet-400" />
               <h3 className="text-sm font-semibold">Agent Type Reference</h3>
@@ -3410,33 +2780,17 @@ export function Landing(): ReactNode {
             </div>
             <AgentTypesTable />
           </div>
-        </div>
-      </section>
 
-      {/* ── HEALTHCARE & FHIR ── */}
-      <section id="healthcare" className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute right-1/4 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-red-500/4 blur-[130px]" />
-        </div>
-        <div className="relative mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-red-400">
-              HEALTHCARE
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              FHIR R4 native.
-              <br />
-              <span className="text-content-tertiary">HIPAA-enforced by default.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              The only customer operations platform with HL7 FHIR 4.0.1 endpoints built in. Patient
-              records, clinical communications, and bulk transactions — all with PHI field-level
-              encryption (AES-256-GCM) and HIPAA audit trails that are exportable in 2 minutes.
-            </p>
-          </div>
+          <div className="mb-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+              <div className="mb-4 flex items-center gap-2">
+                <Database className="h-4 w-4 text-blue-400" />
+                <h3 className="text-sm font-semibold">Integration Topology</h3>
+                <span className="font-mono text-2xs text-content-tertiary">8 providers</span>
+              </div>
+              <IntegrationHubDiagram />
+            </div>
 
-          <div className="mt-16 grid grid-cols-1 gap-8 lg:grid-cols-2">
-            {/* FHIR resource mapping */}
             <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
               <div className="mb-6 flex items-center gap-2">
                 <HeartPulse className="h-4 w-4 text-red-400" />
@@ -3444,317 +2798,64 @@ export function Landing(): ReactNode {
                 <span className="font-mono text-2xs text-content-tertiary">HL7 4.0.1</span>
               </div>
               <FHIRFlowDiagram />
-              <div className="mt-6 rounded-lg border border-red-500/10 bg-red-500/[0.03] p-4">
-                <p className="font-mono text-xs text-red-400/80">GET /fhir/r4/metadata</p>
-                <p className="mt-1 text-xs text-content-tertiary">
-                  CapabilityStatement auto-exposes supported resources and FHIR conformance level
-                  for EHR client discovery (Epic, Cerner, Athena compatible)
-                </p>
-              </div>
-            </div>
-
-            {/* Healthcare security features */}
-            <div className="space-y-4">
-              {[
-                {
-                  icon: Lock,
-                  title: 'Field-Level PHI Encryption',
-                  desc: 'Every PHI field (name, email, phone, DOB, diagnosis reference) encrypted with AES-256-GCM before database write. Keys never stored alongside data — HSM-backed Vault with 90-day automated rotation and cryptographic erasure for right-to-deletion.',
-                },
-                {
-                  icon: Eye,
-                  title: 'PHI Access Controls',
-                  desc: 'Dedicated fhir:read:phi permission scope, separate from general user read access. Every PHI access logged to WORM audit trail with accessor identity, timestamp, and business justification field. HIPAA minimum-necessary enforced by compliance gate.',
-                },
-                {
-                  icon: Stethoscope,
-                  title: 'Clinical Workflow Automation',
-                  desc: 'Appointment reminders, medication adherence follow-ups, discharge care plans, and care gap outreach — all HIPAA-safe with de-identification toggles. Care Coordinator agent operates at L2–L3 autonomy with 0.85+ confidence threshold.',
-                },
-                {
-                  icon: ShieldCheck,
-                  title: 'HIPAA Technical Safeguards',
-                  desc: '§164.312 access controls (unique user identification, emergency access), audit controls (WORM log), integrity protection (hash chain), and transmission security (TLS 1.3 + mTLS). Breach notification workflow with 60-day HIPAA deadline tracking.',
-                },
-              ].map((item) => {
-                const Icon = item.icon;
-                return (
-                  <div
-                    key={item.title}
-                    className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 text-red-400" />
-                      <h4 className="text-sm font-semibold">{item.title}</h4>
-                    </div>
-                    <p className="mt-2 text-xs leading-relaxed text-content-secondary">
-                      {item.desc}
-                    </p>
-                  </div>
-                );
-              })}
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* ── CHANNEL INTELLIGENCE ── */}
-      <section id="channels" className="py-32 px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-pink-400">
-              OMNICHANNEL EXECUTION
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Eight channels. One unified delivery layer.
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Dynamic channel selection based on 4.7M historical contact outcomes. When SMS fails,
-              the system automatically retries via the next highest-propensity channel — not because
-              a rule says so, but because the ML model predicts it will work. Every channel has its
-              own compliance gate, cost model, and provider failover.
-            </p>
-          </div>
-
-          <div className="mt-16">
+          <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-8">
+            <div className="mb-4 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-emerald-400" />
+              <h3 className="text-sm font-semibold">Channel Comparison</h3>
+            </div>
             <ChannelComparisonTable />
           </div>
 
-          {/* Channel selection algorithm */}
-          <div className="mt-10 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-            <div className="mb-6 flex items-center gap-2">
-              <Network className="h-4 w-4 text-pink-400" />
-              <h3 className="text-sm font-semibold">Dynamic Channel Selection Algorithm</h3>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  step: '1',
-                  label: 'Compliance Pre-Screen',
-                  desc: 'Quiet hours, opt-in status, frequency limits, and channel-specific consent verified per customer. Non-compliant channels suppressed before scoring.',
-                  color: '#06b6d4',
-                },
-                {
-                  step: '2',
-                  label: 'Propensity Scoring',
-                  desc: "ML model scores each eligible channel using customer's historical response rates, time-of-day patterns, message type (transactional vs. marketing), and account status.",
-                  color: '#f59e0b',
-                },
-                {
-                  step: '3',
-                  label: 'Cost-Effectiveness',
-                  desc: 'Highest propensity channel selected. If score delta between top channels is < 0.05, lower-cost channel preferred. Voice call only selected when SMS propensity < 0.25.',
-                  color: '#8b5cf6',
-                },
-                {
-                  step: '4',
-                  label: 'Provider Failover',
-                  desc: 'Primary provider health checked. If Twilio latency > p99 threshold or error rate > 1%, secondary provider activated automatically within the same request.',
-                  color: '#ec4899',
-                },
-              ].map((s) => (
-                <div key={s.step} className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-                  <span className="font-mono text-xs font-bold" style={{ color: s.color }}>
-                    Step {s.step}
-                  </span>
-                  <p className="mt-1 text-xs font-semibold text-content">{s.label}</p>
-                  <p className="mt-2 text-2xs leading-relaxed text-content-tertiary">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── DEVELOPER PLATFORM ── */}
-      <section id="developers" className="py-32 px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-amber-400">
-              DEVELOPER PLATFORM
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Built for engineers.
-              <br />
-              <span className="text-content-tertiary">Loved by operations teams.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              REST API, webhook subscriptions, scoped API keys, Confluent schema registry, and an
-              agent marketplace — everything needed to extend, integrate, and build on top of
-              ORDR-Connect without breaking compliance.
-            </p>
-          </div>
-
-          <div className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                icon: Code2,
-                title: 'REST API',
-                desc: 'Fully documented REST API with typed responses, cursor-based pagination, filtering, and sorting across all resource types. 10K req/s sustained throughput.',
-                color: '#f59e0b',
-                badge: '10K req/s',
-              },
-              {
-                icon: Webhook,
-                title: 'Event Webhooks',
-                desc: 'Subscribe to any platform event — 100+ event types. HMAC-SHA256 signed payloads, automatic retry with exponential backoff, and dead-letter queue for failed deliveries.',
-                color: '#3b82f6',
-                badge: '100+ events',
-              },
-              {
-                icon: Terminal,
-                title: 'Scoped API Keys',
-                desc: 'Granular permission scoping per key — read-only, write, or admin. SHA-256 hashed storage. Zero-downtime rotation. Per-key rate limits and full audit trail.',
-                color: '#10b981',
-                badge: 'SHA-256 stored',
-              },
-              {
-                icon: BookOpen,
-                title: 'Agent Marketplace',
-                desc: 'Tenant-scoped agent installs with review system, version management, and isolated execution sandboxes. Agents run in separate process boundaries per tenant.',
-                color: '#8b5cf6',
-                badge: 'Sandboxed',
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.title}
-                  className="rounded-2xl border border-white/5 bg-white/[0.015] p-6 transition-all duration-300 hover:border-white/10 hover:bg-white/[0.03]"
-                >
-                  <div className="flex items-center justify-between">
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-xl"
-                      style={{
-                        background: `${item.color}12`,
-                        border: `1px solid ${item.color}22`,
-                      }}
-                    >
-                      <Icon className="h-5 w-5" style={{ color: item.color }} />
-                    </div>
-                    <span
-                      className="font-mono text-2xs font-bold"
-                      style={{ color: `${item.color}70` }}
-                    >
-                      {item.badge}
-                    </span>
-                  </div>
-                  <h3 className="mt-4 text-sm font-semibold">{item.title}</h3>
-                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* DSR + SCIM panel */}
           <div className="mt-8 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-              <div>
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-cyan-400" />
-                  <h3 className="text-sm font-semibold">DSR Lifecycle Management</h3>
-                </div>
-                <p className="mt-2 text-xs leading-relaxed text-content-secondary">
-                  End-to-end GDPR Data Subject Request management. Access (Art. 15), erasure (Art.
-                  17), and portability (Art. 20) requests with 30-day SLA tracking, Kafka-published
-                  approval events, worker-executed export assembly, and cryptographic erasure —
-                  destroy the DEK, render the data permanently unreadable.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {[
-                    'Access (Art. 15)',
-                    'Erasure (Art. 17)',
-                    'Portability (Art. 20)',
-                    '30-day SLA',
-                    'Crypto Erasure',
-                  ].map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-lg border border-cyan-500/15 bg-cyan-500/5 px-2.5 py-1 text-2xs text-cyan-400/70"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-violet-400" />
-                  <h3 className="text-sm font-semibold">SCIM 2.0 Provisioning</h3>
-                </div>
-                <p className="mt-2 text-xs leading-relaxed text-content-secondary">
-                  RFC 7644 compliant SCIM 2.0 server for enterprise directory integration. Full user
-                  and group CRUD, PatchOps support for partial updates, tenant-scoped isolation, and
-                  WorkOS webhook processing for real-time deprovisioning with cascading access
-                  revocation.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {['RFC 7644', 'User CRUD', 'Group CRUD', 'PatchOps', 'WorkOS Webhooks'].map(
-                    (tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-lg border border-violet-500/15 bg-violet-500/5 px-2.5 py-1 text-2xs text-violet-400/70"
-                      >
-                        {tag}
-                      </span>
-                    ),
-                  )}
-                </div>
-              </div>
+            <div className="mb-4 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-emerald-400" />
+              <h3 className="text-sm font-semibold">Kafka Topic Architecture</h3>
+              <span className="font-mono text-2xs text-content-tertiary">
+                6 topics · 210 total partitions · 80K msg/s aggregate
+              </span>
             </div>
+            <KafkaTopologyTable />
           </div>
         </div>
       </section>
 
-      {/* ── TECHNICAL SPECIFICATIONS ── */}
-      <section id="specs" ref={statsRef} className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute right-1/4 top-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full bg-brand-accent/4 blur-[120px]" />
+      {/* ── SECTION 07 — PROOF ── */}
+      <section ref={statsRef} className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[700px] w-[700px] rounded-full bg-violet-500/3 blur-[160px]" />
         </div>
         <div className="relative mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-              SPECIFICATIONS
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Engineering at enterprise scale.
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Every target is a p99 commitment, not a median. The platform is designed for 10× peak
-              — sustained throughput is the floor, not the ceiling.
-            </p>
+          <div className="mb-4 font-mono text-xs text-content-tertiary">07 / 08</div>
+          <div className="mb-5">
+            <span className="font-mono text-xs uppercase tracking-widest text-brand-accent">
+              SOCIAL PROOF
+            </span>
           </div>
 
-          {/* KPI row */}
-          <div className="mt-16 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <h2 className="text-4xl sm:text-5xl font-bold leading-[1.05] tracking-tight mb-12">
+            The numbers speak.
+          </h2>
+
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 mb-16">
             {[
+              { val: s1.toLocaleString(), label: 'Decisions made today', sub: 'Live, autonomous' },
               {
-                val: `${(s1 / 1000).toFixed(0)}K`,
-                unit: 'req/s',
-                label: 'API throughput',
-                sub: '50K burst',
+                val: `${(s2 / 100).toFixed(2)}%`,
+                label: 'Platform uptime SLA',
+                sub: 'Multi-region failover',
               },
-              {
-                val: `${(s2 / 1000).toFixed(0)}K`,
-                unit: 'evt/s',
-                label: 'Event stream',
-                sub: '500K burst',
-              },
-              { val: `${s3}`, unit: 'ms', label: 'p99 publish latency', sub: 'Kafka event stream' },
-              {
-                val: (s4 / 100).toFixed(2),
-                unit: '%',
-                label: 'Uptime SLA',
-                sub: 'Automated failover',
-              },
+              { val: String(s3), label: 'Compliance frameworks', sub: 'Native, not add-ons' },
+              { val: `<${String(s4)}ms`, label: 'Rules engine p99', sub: 'Deterministic block' },
             ].map((m) => (
               <div
                 key={m.label}
                 className="flex flex-col items-center rounded-2xl border border-white/5 bg-white/[0.015] p-8 text-center"
               >
-                <span className="font-mono text-4xl font-bold tracking-tight">
+                <span className="font-mono text-4xl font-bold tracking-tight text-content">
                   {m.val}
-                  <span className="text-lg text-brand-accent">{m.unit}</span>
                 </span>
                 <span className="mt-2 text-sm font-medium text-content-secondary">{m.label}</span>
                 <span className="mt-1 font-mono text-2xs text-content-tertiary">{m.sub}</span>
@@ -3762,36 +2863,7 @@ export function Landing(): ReactNode {
             ))}
           </div>
 
-          {/* Full specs table */}
-          <div className="mt-12">
-            <TechSpecsTable />
-          </div>
-        </div>
-      </section>
-
-      {/* ── INDUSTRY CASE STUDIES ── */}
-      <section id="case-studies" className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[700px] w-[700px] rounded-full bg-violet-500/3 blur-[160px]" />
-        </div>
-        <div className="relative mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-              INDUSTRY CASE STUDIES
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Real workflows. Real compliance.
-              <br />
-              <span className="text-content-tertiary">Real outcomes.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Six regulated industries. Six autonomous workflows. Each case study shows exactly how
-              ORDR-Connect maps to your compliance requirements, operational context, and measurable
-              business outcomes.
-            </p>
-          </div>
-
-          <div className="mt-16 space-y-8">
+          <div className="mb-16 space-y-6">
             {caseStudies.map((cs) => {
               const Icon = cs.icon;
               return (
@@ -3799,34 +2871,33 @@ export function Landing(): ReactNode {
                   key={cs.id}
                   className="overflow-hidden rounded-2xl border border-white/5 bg-white/[0.015]"
                 >
-                  {/* Case study header */}
                   <div
-                    className="border-b border-white/5 px-8 py-6"
+                    className="border-b border-white/5 px-8 py-5"
                     style={{ background: `${cs.color}07` }}
                   >
                     <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
                       <div className="flex items-center gap-4">
                         <div
-                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border"
-                          style={{
-                            borderColor: `${cs.color}30`,
-                            background: `${cs.color}12`,
-                          }}
+                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
+                          style={{ borderColor: `${cs.color}30`, background: `${cs.color}12` }}
                         >
-                          <Icon className="h-6 w-6" style={{ color: cs.color }} />
+                          <Icon className="h-5 w-5" style={{ color: cs.color }} />
                         </div>
                         <div>
-                          <h3 className="text-base font-bold text-content">{cs.industry}</h3>
-                          <p className="font-mono text-xs" style={{ color: `${cs.color}90` }}>
+                          <h3 className="text-sm font-bold text-content">{cs.industry}</h3>
+                          <p
+                            className="font-mono text-xs mt-0.5"
+                            style={{ color: `${cs.color}90` }}
+                          >
                             {cs.headline}
                           </p>
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {cs.regulations.map((r) => (
                           <span
                             key={r}
-                            className="rounded-full border px-2.5 py-0.5 font-mono text-2xs font-semibold"
+                            className="rounded-full border px-2 py-0.5 font-mono text-2xs font-semibold"
                             style={{ borderColor: `${cs.color}25`, color: cs.color }}
                           >
                             {r}
@@ -3835,335 +2906,104 @@ export function Landing(): ReactNode {
                       </div>
                     </div>
                   </div>
-
                   <div className="p-8">
-                    {/* Context */}
-                    <p className="text-sm leading-relaxed text-content-secondary">{cs.context}</p>
-
-                    <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
-                      {/* Workflow */}
-                      <div className="lg:col-span-2">
-                        <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-                          HOW ORDR-CONNECT HANDLES IT — STEP BY STEP
-                        </h4>
-                        <div className="space-y-4">
-                          {cs.workflow.map((step) => (
-                            <div key={step.n} className="flex gap-4">
-                              <div
-                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-mono text-xs font-bold"
-                                style={{
-                                  background: `${cs.color}14`,
-                                  color: cs.color,
-                                  border: `1px solid ${cs.color}25`,
-                                }}
-                              >
-                                {step.n}
-                              </div>
-                              <div>
-                                <p className="text-xs font-semibold text-content">{step.label}</p>
-                                <p className="mt-1 text-xs leading-relaxed text-content-secondary">
-                                  {step.desc}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Outcomes */}
-                      <div>
-                        <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-                          KEY OUTCOMES
-                        </h4>
-                        <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
-                          {cs.outcomes.map((o) => (
-                            <div
-                              key={o.label}
-                              className="rounded-xl border border-white/5 bg-white/[0.02] p-4"
-                            >
-                              <p
-                                className="font-mono text-2xl font-bold leading-none"
-                                style={{ color: cs.color }}
-                              >
-                                {o.metric}
-                              </p>
-                              <p className="mt-1 text-xs font-semibold text-content">{o.label}</p>
-                              <p className="mt-0.5 text-2xs text-content-tertiary">{o.sub}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Example scenario */}
-                    <div
-                      className="mt-8 rounded-xl border px-5 py-4"
-                      style={{
-                        borderColor: `${cs.color}15`,
-                        background: `${cs.color}04`,
-                      }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Award className="mt-0.5 h-4 w-4 shrink-0" style={{ color: cs.color }} />
-                        <div>
-                          <span
-                            className="font-mono text-2xs font-bold uppercase tracking-wider"
-                            style={{ color: `${cs.color}80` }}
+                    <p className="text-sm leading-relaxed text-content-secondary mb-6">
+                      {cs.context}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      {cs.outcomes.map((o) => (
+                        <div
+                          key={o.label}
+                          className="rounded-xl border border-white/5 bg-white/[0.02] p-4"
+                        >
+                          <p
+                            className="font-mono text-2xl font-bold leading-none"
+                            style={{ color: cs.color }}
                           >
-                            Example Deployment
-                          </span>
-                          <p className="mt-1 text-xs leading-relaxed text-content-secondary">
-                            {cs.example}
+                            {o.metric}
                           </p>
+                          <p className="mt-1 text-xs font-semibold text-content">{o.label}</p>
+                          <p className="mt-0.5 text-2xs text-content-tertiary">{o.sub}</p>
                         </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      </section>
 
-      {/* ── STACK REPLACEMENT / TCO ── */}
-      <section className="py-32 px-6">
-        <div className="mx-auto max-w-4xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-amber-400">
-              TCO ANALYSIS
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              One platform. Eight fewer vendors.
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              The hidden cost of a traditional customer operations stack isn&apos;t just licenses —
-              it&apos;s the integration tax: 6–18 months of engineering time to connect these tools,
-              constant maintenance as APIs change, and data silos that prevent the kind of unified
-              customer context that AI agents require.
-            </p>
-          </div>
-
-          <div className="mt-12 rounded-2xl border border-white/5 bg-white/[0.015] p-8">
-            <div className="mb-6 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-amber-400" />
-              <h3 className="text-sm font-semibold">Annual License Cost Comparison</h3>
-              <span className="font-mono text-2xs text-content-tertiary">mid-market scale</span>
+          <div>
+            <div className="mb-6 text-center">
+              <h3 className="text-xl font-bold">No other platform does all of this.</h3>
+              <p className="mt-2 text-sm text-content-tertiary">Natively. In one product.</p>
             </div>
-            <ROIBarChart />
-          </div>
-
-          {/* What consolidation unlocks */}
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                icon: Database,
-                title: 'Unified Data Layer',
-                desc: 'One customer record, one event log, one graph. No ETL pipelines, no data lake inconsistencies, no "which system is the system of record" arguments.',
-                color: '#3b82f6',
-              },
-              {
-                icon: Zap,
-                title: 'No Integration Tax',
-                desc: 'Engineers spend 30-50% of time on integrations in multi-vendor stacks. Consolidation redirects that capacity to product — the actual source of competitive advantage.',
-                color: '#f59e0b',
-              },
-              {
-                icon: ShieldCheck,
-                title: 'Unified Compliance',
-                desc: 'Compliance in a multi-vendor stack is as weak as the weakest vendor. One platform with one compliance posture means one audit, one BAA, one pen test.',
-                color: '#10b981',
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.title}
-                  className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
-                >
-                  <Icon className="h-5 w-5 mb-3" style={{ color: item.color }} />
-                  <h4 className="text-sm font-semibold text-content">{item.title}</h4>
-                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── COMPETITIVE DIFFERENTIATION ── */}
-      <section id="compare" className="py-32 px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-              WHY ORDR-CONNECT
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              No other platform does all of this.
-              <br />
-              <span className="text-content-tertiary">Natively. In one product.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              Point solutions solve one problem. ORDR-Connect solves the entire customer operations
-              stack — with compliance, AI, encryption, and audit chain built in from the start, not
-              bolted on as add-ons.
-            </p>
-          </div>
-
-          <div className="mt-16">
             <CompetitorMatrix />
           </div>
-
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                icon: Layers,
-                title: 'Compliance is architecture, not a feature flag',
-                desc: 'In Salesforce, compliance is a third-party app. In Five9, there is no compliance layer. In ORDR-Connect, FDCPA, TCPA, HIPAA, and GDPR gates run on every single event — before any action executes — without configuration.',
-                color: '#22c55e',
-              },
-              {
-                icon: Brain,
-                title: "AI that's bounded, not unbounded",
-                desc: 'Agentforce gives you a general-purpose agent. ORDR-Connect gives you 8 specialized agents with confidence thresholds, kill switches, budget enforcement, and hallucination containment. The difference is whether your AI can cause compliance violations.',
-                color: '#8b5cf6',
-              },
-              {
-                icon: Database,
-                title: 'Event sourcing as a first principle',
-                desc: 'No other platform on this list uses Kafka as the primary source of truth. Every other platform is a database with an API. ORDR-Connect is an event stream that projects to databases — giving you infinite replay, zero data loss, and a complete causal history.',
-                color: '#3b82f6',
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.title}
-                  className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
-                >
-                  <Icon className="mb-3 h-5 w-5" style={{ color: item.color }} />
-                  <h4 className="text-sm font-semibold text-content">{item.title}</h4>
-                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
-                </div>
-              );
-            })}
-          </div>
         </div>
       </section>
 
-      {/* ── IMPLEMENTATION TIMELINE ── */}
-      <section className="py-32 px-6">
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center">
-            <p className="font-mono text-xs font-semibold uppercase tracking-widest text-brand-accent">
-              IMPLEMENTATION
-            </p>
-            <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              From contract to full autonomy
+      {/* ── SECTION 08 — CTA ── */}
+      <section className="relative py-32 px-6">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-brand-accent/5 blur-[160px]" />
+        </div>
+        <div className="relative mx-auto max-w-6xl">
+          <div className="mb-4 font-mono text-xs text-content-tertiary">08 / 08</div>
+
+          <div className="max-w-4xl mb-16">
+            <h2 className="text-5xl sm:text-7xl font-bold leading-[0.95] tracking-tight">
+              The category exists.
               <br />
-              <span className="text-content-tertiary">in six months.</span>
+              The question is whether
+              <br />
+              <span className="text-content-tertiary">{`you're first in your market.`}</span>
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-content-secondary">
-              ORDR-Connect is designed to deploy incrementally — compliance gates and audit
-              infrastructure go live on Day 1, agents and integrations layer in week by week. No
-              big-bang deployment, no months of professional services.
+            <p className="mt-8 text-base text-content-secondary max-w-xl">
+              Talk to our engineering team. Bring your compliance officer.
             </p>
+            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => {
+                  void navigate('/login');
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl bg-white px-8 py-3.5 text-sm font-semibold text-[#030305] transition-all hover:bg-white/90"
+              >
+                Request access →
+              </button>
+              <button
+                onClick={() => {
+                  void navigate('/login');
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl border border-white/10 px-8 py-3.5 text-sm font-medium text-content-secondary transition-all hover:border-white/20 hover:text-content"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+                Explore the live demo
+              </button>
+            </div>
           </div>
 
-          <div className="mt-16">
+          <div className="mb-16">
+            <div className="mb-6 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-brand-accent" />
+              <h3 className="text-sm font-semibold">
+                From contract to full autonomy in six months.
+              </h3>
+            </div>
             <ImplementationTimeline />
           </div>
 
-          <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                icon: Clock,
-                title: 'Day 1: Compliance Infrastructure',
-                desc: 'The compliance engine, WORM audit chain, and tenant isolation are operational before a single agent fires. Security posture is established from the start — not retrofitted.',
-                color: '#06b6d4',
-              },
-              {
-                icon: Zap,
-                title: 'No "Integration Sprint"',
-                desc: 'CRM sync, FHIR, SCIM, and webhook adapters are pre-built. Connection is configuration, not development. Most teams have live integrations within the first 10 days.',
-                color: '#f59e0b',
-              },
-              {
-                icon: ShieldCheck,
-                title: 'Month 6: Audit-Ready',
-                desc: 'Six months of WORM-verified audit evidence is ready for SOC 2 Type II collection. The audit chain is tamper-proof from the first event — nothing needs to be backfilled.',
-                color: '#10b981',
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.title}
-                  className="rounded-xl border border-white/5 bg-white/[0.015] p-5"
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" style={{ color: item.color }} />
-                    <h4 className="text-sm font-semibold text-content">{item.title}</h4>
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-content-secondary">{item.desc}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA ── */}
-      <section className="relative py-32 px-6">
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-brand-accent/5 blur-[160px]" />
-        </div>
-        <div className="relative mx-auto max-w-3xl text-center">
-          <h2 className="text-4xl font-bold leading-tight sm:text-5xl">
-            Enterprise customer operations.
-            <br />
-            <span className="text-content-tertiary">Reimagined from first principles.</span>
-          </h2>
-          <p className="mx-auto mt-6 max-w-xl text-base text-content-secondary">
-            Talk to our engineering team about how ORDR-Connect maps to your compliance
-            requirements, integration landscape, and operational scale. Bring your compliance team —
-            we have the documentation.
-          </p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <button
-              onClick={() => navigate('/login')}
-              className="group flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-canvas transition-all hover:bg-white/90 hover:shadow-lg hover:shadow-white/5"
-            >
-              Request a Demo
-              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-            </button>
-            <button
-              onClick={() => navigate('/login')}
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-8 py-3.5 text-base font-medium text-content-secondary transition-all hover:border-white/20 hover:text-content"
-            >
-              View Documentation
-              <ChevronRight className="h-4 w-4" />
-            </button>
+          <div className="mb-16">
+            <div className="mb-6 text-center">
+              <h3 className="text-xl font-bold">Explore the platform — no signup required.</h3>
+              <p className="mt-2 text-sm text-content-tertiary">
+                Seven fully interactive modules with real-time simulated data.
+              </p>
+            </div>
+            <DemoPreviewCards />
           </div>
 
-          {/* Trust metrics */}
-          <div className="mt-16 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {[
-              { metric: '9', label: 'Compliance frameworks', sub: 'SOC2 → FEC' },
-              { metric: '6', label: 'Industry verticals', sub: 'Deep case studies' },
-              { metric: '8', label: 'Delivery channels', sub: 'Unified execution' },
-              { metric: '7yr', label: 'WORM retention', sub: 'SHA-256 Merkle DAG' },
-            ].map((m) => (
-              <div
-                key={m.label}
-                className="rounded-xl border border-white/5 bg-white/[0.015] p-4 text-center"
-              >
-                <p className="font-mono text-2xl font-bold text-content">{m.metric}</p>
-                <p className="mt-1 text-xs font-medium text-content-secondary">{m.label}</p>
-                <p className="mt-0.5 font-mono text-2xs text-content-tertiary">{m.sub}</p>
-              </div>
-            ))}
-          </div>
+          <TechSpecsTable />
         </div>
       </section>
 
@@ -4173,7 +3013,7 @@ export function Landing(): ReactNode {
           <div className="grid grid-cols-1 gap-12 sm:grid-cols-3">
             <div>
               <div className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent text-2xs font-bold text-[#060608]">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-2xs font-bold text-[#030305]">
                   O
                 </div>
                 <span className="font-mono text-sm font-bold tracking-tight">
