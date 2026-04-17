@@ -132,6 +132,7 @@ const ServiceHealth = lazy(() =>
 const DataRetention = lazy(() =>
   import('./pages/DataRetention').then((m) => ({ default: m.DataRetention })),
 );
+const AiModels = lazy(() => import('./pages/AiModels').then((m) => ({ default: m.AiModels })));
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -274,6 +275,7 @@ export function App(): ReactNode {
                 <Route path="/sessions" element={<UserSessions />} />
                 <Route path="/health" element={<ServiceHealth />} />
                 <Route path="/data-retention" element={<DataRetention />} />
+                <Route path="/ai-models" element={<AiModels />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

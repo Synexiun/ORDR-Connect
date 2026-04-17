@@ -57,6 +57,7 @@ import {
   UserCog,
   Activity,
   Archive,
+  Cpu,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -91,6 +92,7 @@ const navSections: NavSection[] = [
     label: 'INTELLIGENCE',
     items: [
       { to: '/agents', label: 'Agent Activity', icon: Bot },
+      { to: '/ai-models', label: 'AI Models', icon: Cpu },
       { to: '/analytics', label: 'Analytics', icon: BarChart3 },
       { to: '/events', label: 'Event Stream', icon: Radio },
     ],
