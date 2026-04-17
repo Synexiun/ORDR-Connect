@@ -106,6 +106,10 @@ const Messages = lazy(() => import('./pages/Messages').then((m) => ({ default: m
 const IntegrationSync = lazy(() =>
   import('./pages/IntegrationSync').then((m) => ({ default: m.IntegrationSync })),
 );
+const Chat = lazy(() => import('./pages/Chat').then((m) => ({ default: m.Chat })));
+const ConsentRecords = lazy(() =>
+  import('./pages/ConsentRecords').then((m) => ({ default: m.ConsentRecords })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -238,6 +242,8 @@ export function App(): ReactNode {
                 <Route path="/cobrowse" element={<CoBrowse />} />
                 <Route path="/messages" element={<Messages />} />
                 <Route path="/integrations/sync" element={<IntegrationSync />} />
+                <Route path="/chat" element={<Chat />} />
+                <Route path="/consent" element={<ConsentRecords />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

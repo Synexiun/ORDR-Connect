@@ -47,6 +47,8 @@ import {
   Monitor,
   Send,
   RefreshCw,
+  MessageCircle,
+  Bell,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -71,6 +73,8 @@ const navSections: NavSection[] = [
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/interactions', label: 'Interactions', icon: MessageSquare },
       { to: '/messages', label: 'Messages', icon: Send },
+      { to: '/chat', label: 'Team Chat', icon: MessageCircle },
+      { to: '/notifications', label: 'Notifications', icon: Bell },
       { to: '/tickets', label: 'Tickets', icon: Ticket },
       { to: '/search', label: 'Search', icon: Search },
     ],
@@ -98,6 +102,7 @@ const navSections: NavSection[] = [
       { to: '/feature-flags', label: 'Feature Flags', icon: ToggleRight },
       { to: '/roles', label: 'Roles & Permissions', icon: Lock },
       { to: '/organizations', label: 'Organizations', icon: Building2 },
+      { to: '/consent', label: 'Consent Records', icon: ShieldCheck },
     ],
   },
   {

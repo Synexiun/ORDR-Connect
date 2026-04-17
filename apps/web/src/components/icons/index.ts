@@ -11,6 +11,7 @@ export {
   Bot,
   BarChart3,
   FileText,
+  FileCheck,
   ScrollText,
   ShieldCheck,
   Store,
