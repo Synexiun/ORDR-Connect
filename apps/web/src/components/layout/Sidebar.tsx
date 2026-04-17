@@ -62,6 +62,7 @@ import {
   BookOpen,
   Layers,
   Brain,
+  Filter,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -84,6 +85,7 @@ const navSections: NavSection[] = [
       { to: '/ops', label: 'Ops Center', icon: Network },
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/customers', label: 'Customers', icon: Users },
+      { to: '/segments', label: 'Segments', icon: Filter },
       { to: '/interactions', label: 'Interactions', icon: MessageSquare },
       { to: '/messages', label: 'Messages', icon: Send },
       { to: '/chat', label: 'Team Chat', icon: MessageCircle },

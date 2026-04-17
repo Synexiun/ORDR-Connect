@@ -145,6 +145,9 @@ const EscalationRules = lazy(() =>
 const DecisionEngine = lazy(() =>
   import('./pages/DecisionEngine').then((m) => ({ default: m.DecisionEngine })),
 );
+const ContactSegments = lazy(() =>
+  import('./pages/ContactSegments').then((m) => ({ default: m.ContactSegments })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -292,6 +295,7 @@ export function App(): ReactNode {
                 <Route path="/prompts" element={<PromptTemplates />} />
                 <Route path="/escalation" element={<EscalationRules />} />
                 <Route path="/decision-engine" element={<DecisionEngine />} />
+                <Route path="/segments" element={<ContactSegments />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
