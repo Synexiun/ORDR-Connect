@@ -87,6 +87,7 @@ import { auditLogsRouter } from './routes/audit-logs.js';
 import { messagingRouter } from './routes/messaging.js';
 import { cobrowseRouter } from './routes/cobrowse.js';
 import { decisionEngineRouter } from './routes/decision-engine.js';
+import { predictiveRouter } from './routes/predictive.js';
 import { dsrRouter } from './routes/dsr.js';
 import { onboardingRouter } from './routes/onboarding.js';
 import { featureFlagsRouter } from './routes/feature-flags.js';
@@ -346,6 +347,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Decision Engine — stats, layer metrics, decision log, rules CRUD, SSE live feed
   app.route('/api/v1/decision-engine', decisionEngineRouter);
+
+  // Predictive Intelligence — at-risk, opportunities, model stats, 7-day trends
+  app.route('/api/v1/predictive', predictiveRouter);
 
   // Prometheus metrics — network-restricted; no auth; no PHI in labels (Rule 6)
   if (config.metrics !== undefined) {

@@ -151,6 +151,7 @@ import { configureTicketRoutes } from './routes/tickets.js';
 import { configureReportRoutes } from './routes/reports.js';
 import { configureCobrowseRoutes } from './routes/cobrowse.js';
 import { configureDecisionEngineRoutes } from './routes/decision-engine.js';
+import { configurePredictiveRoutes } from './routes/predictive.js';
 import { configureAnalyticsRoutes } from './routes/analytics.js';
 import { configureCustomerRoutes } from './routes/customers.js';
 import { configureAgentRoutes } from './routes/agents.js';
@@ -1805,6 +1806,17 @@ async function bootstrap(): Promise<void> {
         component: 'api-bootstrap',
         event: 'route_configured',
         route: 'decision-engine',
+      }),
+    );
+
+    // ── 4.15d. Predictive Intelligence routes — at-risk, opportunities, model stats ─
+    configurePredictiveRoutes({ db, auditLogger });
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'predictive',
       }),
     );
   }

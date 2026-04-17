@@ -149,6 +149,9 @@ const ContactSegments = lazy(() =>
   import('./pages/ContactSegments').then((m) => ({ default: m.ContactSegments })),
 );
 const Campaigns = lazy(() => import('./pages/Campaigns').then((m) => ({ default: m.Campaigns })));
+const PredictiveIntelligence = lazy(() =>
+  import('./pages/PredictiveIntelligence').then((m) => ({ default: m.PredictiveIntelligence })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -298,6 +301,7 @@ export function App(): ReactNode {
                 <Route path="/decision-engine" element={<DecisionEngine />} />
                 <Route path="/segments" element={<ContactSegments />} />
                 <Route path="/campaigns" element={<Campaigns />} />
+                <Route path="/predictive" element={<PredictiveIntelligence />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

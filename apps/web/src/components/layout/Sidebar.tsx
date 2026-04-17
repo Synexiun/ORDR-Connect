@@ -64,6 +64,7 @@ import {
   Brain,
   Filter,
   Target,
+  Sparkles,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -101,6 +102,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/agents', label: 'Agent Activity', icon: Bot },
       { to: '/decision-engine', label: 'Decision Engine', icon: Brain },
+      { to: '/predictive', label: 'Predictive Intel', icon: Sparkles },
       { to: '/ai-models', label: 'AI Models', icon: Cpu },
       { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
       { to: '/prompts', label: 'Prompt Templates', icon: Layers },
