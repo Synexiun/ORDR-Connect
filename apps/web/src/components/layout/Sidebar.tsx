@@ -56,6 +56,7 @@ import {
   Fingerprint,
   UserCog,
   Activity,
+  Archive,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -113,6 +114,7 @@ const navSections: NavSection[] = [
       { to: '/consent', label: 'Consent Records', icon: ShieldCheck },
       { to: '/security-events', label: 'Security Events', icon: ShieldAlert },
       { to: '/encryption-keys', label: 'Encryption Keys', icon: Fingerprint },
+      { to: '/data-retention', label: 'Data Retention', icon: Archive },
     ],
   },
   {

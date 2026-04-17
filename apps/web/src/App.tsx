@@ -129,6 +129,9 @@ const UserSessions = lazy(() =>
 const ServiceHealth = lazy(() =>
   import('./pages/ServiceHealth').then((m) => ({ default: m.ServiceHealth })),
 );
+const DataRetention = lazy(() =>
+  import('./pages/DataRetention').then((m) => ({ default: m.DataRetention })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -270,6 +273,7 @@ export function App(): ReactNode {
                 <Route path="/encryption-keys" element={<EncryptionKeys />} />
                 <Route path="/sessions" element={<UserSessions />} />
                 <Route path="/health" element={<ServiceHealth />} />
+                <Route path="/data-retention" element={<DataRetention />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
