@@ -55,6 +55,7 @@ import {
   Radio,
   Fingerprint,
   UserCog,
+  Activity,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -139,6 +140,7 @@ const navSections: NavSection[] = [
   {
     label: 'SYSTEM',
     items: [
+      { to: '/health', label: 'Service Health', icon: Activity },
       { to: '/sessions', label: 'User Sessions', icon: UserCog },
       { to: '/tenant', label: 'Tenant', icon: Building2 },
       { to: '/cobrowse', label: 'Co-Browse', icon: Monitor },
