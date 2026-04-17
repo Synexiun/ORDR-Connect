@@ -43,6 +43,7 @@ import {
   Network,
   ToggleRight,
   Lock,
+  Building2,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -92,6 +93,7 @@ const navSections: NavSection[] = [
       { to: '/dsr', label: 'DSR Management', icon: FileText },
       { to: '/feature-flags', label: 'Feature Flags', icon: ToggleRight },
       { to: '/roles', label: 'Roles & Permissions', icon: Lock },
+      { to: '/organizations', label: 'Organizations', icon: Building2 },
     ],
   },
   {
