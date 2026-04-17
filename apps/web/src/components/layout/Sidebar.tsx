@@ -58,6 +58,7 @@ import {
   Activity,
   Archive,
   Cpu,
+  BookOpen,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -93,6 +94,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/agents', label: 'Agent Activity', icon: Bot },
       { to: '/ai-models', label: 'AI Models', icon: Cpu },
+      { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
       { to: '/analytics', label: 'Analytics', icon: BarChart3 },
       { to: '/events', label: 'Event Stream', icon: Radio },
     ],
