@@ -126,6 +126,8 @@ import { configureOnboardingRoutes } from './routes/onboarding.js';
 import { configureFeatureFlagRoutes } from './routes/feature-flags.js';
 import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
+import { writeDecisionLog } from './lib/decision-engine-queries.js';
+import { broadcastDecisionEvent } from './routes/decision-engine.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureAuditLogsRoute } from './routes/audit-logs.js';
 import { configureMessagingRoutes } from './routes/messaging.js';
@@ -148,6 +150,7 @@ import { configureSettingsRoutes } from './routes/settings.js';
 import { configureTicketRoutes } from './routes/tickets.js';
 import { configureReportRoutes } from './routes/reports.js';
 import { configureCobrowseRoutes } from './routes/cobrowse.js';
+import { configureDecisionEngineRoutes } from './routes/decision-engine.js';
 import { configureAnalyticsRoutes } from './routes/analytics.js';
 import { configureCustomerRoutes } from './routes/customers.js';
 import { configureAgentRoutes } from './routes/agents.js';
@@ -888,6 +891,7 @@ async function bootstrap(): Promise<void> {
 
   // ── 4.15b. Cobrowse routes (remote assistance sessions) ──────────────────
   configureCobrowseRoutes({ auditLogger });
+
   console.warn(
     JSON.stringify({
       level: 'info',
@@ -1563,6 +1567,7 @@ async function bootstrap(): Promise<void> {
       compliance: nbaComplianceAdapter,
       auditLogger: nbaAuditAdapter,
       writeDecisionAudit: async (entries: readonly DecisionAuditEntry[]) => {
+        // Write per-layer detail to decision_audit (WORM)
         await db.insert(schema.decisionAudit).values(
           entries.map((e: DecisionAuditEntry) => ({
             tenantId: e.tenantId,
@@ -1579,6 +1584,38 @@ async function bootstrap(): Promise<void> {
             createdAt: e.createdAt,
           })),
         );
+
+        // Derive per-decision summary from the final (last) audit entry
+        const finalEntry = entries[entries.length - 1];
+        if (finalEntry !== undefined) {
+          const layerMap: Record<string, 'rules' | 'ml_scorer' | 'llm_reasoner'> = {
+            rules: 'rules',
+            ml: 'ml_scorer',
+            llm: 'llm_reasoner',
+          };
+          const layerReached = layerMap[finalEntry.layer] ?? 'rules';
+          const totalLatency = entries.reduce((sum, e) => sum + e.durationMs, 0);
+          const auditEntryIds = entries.map(() => finalEntry.decisionId);
+
+          const logEntry = {
+            tenantId: finalEntry.tenantId,
+            customerId: finalEntry.customerId,
+            decisionType: 'next_best_action',
+            outcome: finalEntry.confidence >= 0.7 ? 'approved' : 'escalated',
+            layerReached,
+            actionSelected: finalEntry.actionSelected,
+            confidence: finalEntry.confidence,
+            latencyMs: totalLatency,
+            reasoning: finalEntry.outputSummary,
+            ruleId: null,
+            actorId: 'agent',
+            complianceGates: [],
+            auditEntryIds,
+          };
+
+          await writeDecisionLog(db, logEntry).catch(() => undefined);
+          broadcastDecisionEvent(logEntry);
+        }
       },
     });
 
@@ -1751,6 +1788,23 @@ async function bootstrap(): Promise<void> {
         component: 'api-bootstrap',
         event: 'route_configured',
         route: 'agents',
+      }),
+    );
+
+    // ── 4.15c. Decision Engine routes — stats, records, rules CRUD, SSE feed ─
+    // Placed here (inside the agent block) so nbaRuleStore is in scope.
+    configureDecisionEngineRoutes({
+      ruleStore: nbaRuleStore,
+      auditLogger,
+      db,
+      jwtConfig: activeJwtConfig,
+    });
+    console.warn(
+      JSON.stringify({
+        level: 'info',
+        component: 'api-bootstrap',
+        event: 'route_configured',
+        route: 'decision-engine',
       }),
     );
   }

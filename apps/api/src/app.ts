@@ -86,6 +86,7 @@ import { integrationsRouter } from './routes/integrations.js';
 import { auditLogsRouter } from './routes/audit-logs.js';
 import { messagingRouter } from './routes/messaging.js';
 import { cobrowseRouter } from './routes/cobrowse.js';
+import { decisionEngineRouter } from './routes/decision-engine.js';
 import { dsrRouter } from './routes/dsr.js';
 import { onboardingRouter } from './routes/onboarding.js';
 import { featureFlagsRouter } from './routes/feature-flags.js';
@@ -342,6 +343,9 @@ export function createApp(config: AppConfig): Hono<Env> {
 
   // Co-browsing / remote assistance — WebRTC signaling, session management
   app.route('/api/v1/cobrowse', cobrowseRouter);
+
+  // Decision Engine — stats, layer metrics, decision log, rules CRUD, SSE live feed
+  app.route('/api/v1/decision-engine', decisionEngineRouter);
 
   // Prometheus metrics — network-restricted; no auth; no PHI in labels (Rule 6)
   if (config.metrics !== undefined) {

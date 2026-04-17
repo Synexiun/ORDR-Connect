@@ -61,6 +61,9 @@ export { decisionRules } from './decision-rules.js';
 // Decision Audit (WORM — immutable)
 export { decisionAudit } from './decision-audit.js';
 
+// Decision Log — per-decision outcome summary (WORM — immutable)
+export { decisionLog } from './decision-log.js';
+
 // Channel Preferences
 export { channelPreferences } from './channel-preferences.js';
 

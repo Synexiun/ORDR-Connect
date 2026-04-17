@@ -15,7 +15,7 @@
  * SOC 2 CC7.2 | ISO 27001 A.8.6 | HIPAA §164.312(a)(1)
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import {
   Zap,
   Clock,
@@ -1111,6 +1111,165 @@ function RulesTab({ rules, onToggle, onEdit, onDelete, onCreate }: RulesTabProps
   );
 }
 
+// ── Live Decision Feed ────────────────────────────────────────────────────
+
+interface LiveDecisionEvent {
+  id: string;
+  timestamp: string;
+  customerId: string;
+  decisionType: string;
+  outcome: 'approved' | 'rejected' | 'escalated' | 'deferred';
+  layerReached: 'rules' | 'ml_scorer' | 'llm_reasoner';
+  confidence: number;
+  latencyMs: number;
+  actionSelected: string;
+  complianceFlags: number;
+}
+
+const OUTCOME_LIVE: Record<string, { dot: string; badge: string }> = {
+  approved: { dot: 'bg-emerald-400', badge: 'text-emerald-400' },
+  rejected: { dot: 'bg-red-400', badge: 'text-danger' },
+  escalated: { dot: 'bg-amber-400', badge: 'text-amber-400' },
+  deferred: { dot: 'bg-slate-400', badge: 'text-content-tertiary' },
+};
+
+const LAYER_LIVE: Record<string, string> = {
+  rules: 'text-emerald-400',
+  ml_scorer: 'text-blue-400',
+  llm_reasoner: 'text-violet-400',
+};
+
+function LiveDecisionFeed(): ReactNode {
+  const [events, setEvents] = useState<LiveDecisionEvent[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const esRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token') ?? '';
+    const url = `/api/v1/decision-engine/stream${token !== '' ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.addEventListener('decision', (e: MessageEvent<string>) => {
+      if (pausedRef.current) return;
+      try {
+        const evt = JSON.parse(e.data) as LiveDecisionEvent;
+        setEvents((prev) => [evt, ...prev].slice(0, 50));
+      } catch {
+        // malformed SSE — ignore
+      }
+    });
+
+    es.addEventListener('heartbeat', () => {
+      setConnected(true);
+    });
+
+    es.onopen = () => {
+      setConnected(true);
+    };
+    es.onerror = () => {
+      setConnected(false);
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, []);
+
+  function togglePause() {
+    const next = !paused;
+    setPaused(next);
+    pausedRef.current = next;
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Header bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'h-2 w-2 rounded-full',
+              connected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500',
+            )}
+          />
+          <span className="text-xs text-content-tertiary font-mono">
+            {connected ? 'LIVE' : 'CONNECTING…'}
+          </span>
+          <span className="text-xs text-content-tertiary">· {events.length} decisions</span>
+        </div>
+        <button
+          onClick={togglePause}
+          className="text-xs px-2 py-1 rounded border border-border text-content-secondary hover:bg-surface-secondary transition-colors"
+        >
+          {paused ? '▶ Resume' : '⏸ Pause'}
+        </button>
+      </div>
+
+      {/* Terminal-style event list */}
+      <div className="bg-[#0a0a0f] border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/50">
+          <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-500/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
+          <span className="ml-2 text-2xs font-mono text-content-tertiary">
+            decision-engine / live-stream
+          </span>
+        </div>
+        <div className="divide-y divide-border/30 max-h-[420px] overflow-y-auto">
+          {events.length === 0 && (
+            <div className="px-4 py-8 text-center text-xs font-mono text-content-tertiary">
+              {connected
+                ? 'Waiting for decisions… Pipeline is idle.'
+                : 'Connecting to decision stream…'}
+            </div>
+          )}
+          {events.map((evt) => {
+            const o = OUTCOME_LIVE[evt.outcome] ?? OUTCOME_LIVE['approved'];
+            const lc = LAYER_LIVE[evt.layerReached] ?? 'text-content-secondary';
+            return (
+              <div
+                key={evt.id}
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.02] transition-colors"
+              >
+                <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', o?.dot)} />
+                <span className="text-2xs font-mono text-content-tertiary w-20 shrink-0">
+                  {new Date(evt.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                </span>
+                <span className="text-2xs font-mono text-content-secondary w-28 truncate shrink-0">
+                  {evt.customerId}
+                </span>
+                <span className="text-2xs font-mono text-content-secondary w-28 truncate shrink-0">
+                  {evt.actionSelected}
+                </span>
+                <span className={cn('text-2xs font-mono shrink-0 w-20', lc)}>
+                  {evt.layerReached === 'rules'
+                    ? 'L1:rules'
+                    : evt.layerReached === 'ml_scorer'
+                      ? 'L2:ml'
+                      : 'L3:llm'}
+                </span>
+                <span className={cn('text-2xs font-mono shrink-0 w-16', o?.badge)}>
+                  {evt.outcome}
+                </span>
+                <span className="text-2xs font-mono text-content-tertiary shrink-0 ml-auto">
+                  conf {evt.confidence.toFixed(2)} · {evt.latencyMs}ms
+                  {evt.complianceFlags > 0 && (
+                    <span className="ml-1 text-amber-400">⚠ {evt.complianceFlags}</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export function DecisionEngine() {
@@ -1119,7 +1278,7 @@ export function DecisionEngine() {
   const [records, setRecords] = useState<DecisionRecord[]>([]);
   const [rules, setRules] = useState<DecisionRule[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'log' | 'rules'>('log');
+  const [tab, setTab] = useState<'log' | 'rules' | 'feed'>('log');
   const [ruleModal, setRuleModal] = useState<{ open: boolean; rule: DecisionRule | null }>({
     open: false,
     rule: null,
@@ -1185,6 +1344,7 @@ export function DecisionEngine() {
   const TABS = [
     { id: 'log' as const, label: 'Decision Log' },
     { id: 'rules' as const, label: `Rules (${rules.length})` },
+    { id: 'feed' as const, label: '⚡ Live Feed' },
   ];
 
   return (
@@ -1274,6 +1434,7 @@ export function DecisionEngine() {
             </div>
 
             {tab === 'log' && <DecisionLogTab records={records} />}
+            {tab === 'feed' && <LiveDecisionFeed />}
             {tab === 'rules' && (
               <RulesTab
                 rules={rules}

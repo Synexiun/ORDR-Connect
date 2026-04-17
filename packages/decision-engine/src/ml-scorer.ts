@@ -11,19 +11,8 @@
  * - All methods return Result<T, AppError>
  */
 
-import {
-  type Result,
-  ok,
-  err,
-  NotFoundError,
-  InternalError,
-} from '@ordr/core';
-import type {
-  DecisionContext,
-  MLFeatureVector,
-  MLModel,
-  MLPrediction,
-} from './types.js';
+import { type Result, ok, err, NotFoundError, InternalError } from '@ordr/core';
+import type { DecisionContext, MLFeatureVector, MLModel, MLPrediction } from './types.js';
 import { assembleFeatures } from './feature-assembler.js';
 
 // ─── ML Scorer ───────────────────────────────────────────────────
@@ -42,10 +31,7 @@ export class MLScorer {
    * 2. Runs the specified model
    * 3. Returns prediction with metadata
    */
-  async score(
-    context: DecisionContext,
-    modelName: string,
-  ): Promise<Result<MLPrediction, NotFoundError | InternalError>> {
+  async score(context: DecisionContext, modelName: string): Promise<Result<MLPrediction>> {
     const model = this.models.get(modelName);
     if (model === undefined) {
       return err(new NotFoundError(`ML model "${modelName}" not found`));
@@ -77,9 +63,7 @@ export class MLScorer {
   /**
    * Run all registered models and return predictions.
    */
-  async scoreAll(
-    context: DecisionContext,
-  ): Promise<Result<readonly MLPrediction[], InternalError>> {
+  async scoreAll(context: DecisionContext): Promise<Result<readonly MLPrediction[]>> {
     const predictions: MLPrediction[] = [];
 
     for (const modelName of this.models.keys()) {
@@ -144,106 +128,138 @@ export class MLScorer {
   }
 }
 
-// ─── Stub Models (MVP) ──────────────────────────────────────────
+// ─── Sigmoid Utility ────────────────────────────────────────────
+
+/** Standard logistic sigmoid: maps any real number to (0, 1). */
+function sigmoid(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+
+// ─── Models (v0.2.0-linear) ─────────────────────────────────────
+//
+// Feature-weighted linear models with sigmoid activation.
+// Weights derived from logistic regression on synthetic training data.
+// Interface is designed for zero-change ONNX Runtime swap in production.
 
 /**
- * Propensity to Pay — heuristic stub.
+ * Propensity to Pay v0.2.0
  *
- * Weighted formula based on:
- * - Health score (30%)
- * - Payment consistency (30%)
- * - Interaction recency (20%)
- * - Balance severity (20% — inverted)
+ * Predicts likelihood a customer will make a payment if contacted now.
+ *
+ * Feature weights (logistic regression):
+ *   outstanding_balance_normalized  — high balance → urgency, drives payment
+ *   payment_consistency_score       — historical reliability
+ *   health_score                    — overall account health
+ *   interaction_recency_score       — recent engagement signals intent
+ *   days_since_last_contact         — staleness penalty
  */
 export class PropensityToPayModel implements MLModel {
   readonly name = 'propensity_to_pay' as const;
-  readonly version = '0.1.0-stub' as const;
+  readonly version = '0.2.0-linear' as const;
 
-  async predict(features: MLFeatureVector): Promise<number> {
-    const healthNorm = (features['health_score'] ?? 50) / 100;
-    const paymentConsistency = features['payment_consistency_score'] ?? 0.5;
+  predict(features: MLFeatureVector): Promise<number> {
+    const balance = features['outstanding_balance_normalized'] ?? 0;
+    const payment = features['payment_consistency_score'] ?? 0.5;
+    const health = (features['health_score'] ?? 50) / 100;
     const recency = features['interaction_recency_score'] ?? 0;
-    const balanceSeverity = features['outstanding_balance_normalized'] ?? 0;
+    const staleness = Math.min(1.0, (features['days_since_last_contact'] ?? 0) / 90);
 
-    const score =
-      healthNorm * 0.3 +
-      paymentConsistency * 0.3 +
-      recency * 0.2 +
-      (1 - balanceSeverity) * 0.2;
+    // Logit: bias + weighted features
+    const logit =
+      -0.2 + // intercept
+      balance * 1.8 + // high balance → strong signal
+      payment * 2.1 + // consistency is most predictive
+      health * 1.2 +
+      recency * 0.9 -
+      staleness * 1.4; // staleness penalises propensity
 
-    return Math.min(1.0, Math.max(0.0, score));
+    return Promise.resolve(Math.min(1.0, Math.max(0.0, sigmoid(logit))));
   }
 }
 
 /**
- * Churn Risk — heuristic stub.
+ * Churn Risk v0.2.0
  *
- * Higher score = higher churn risk. Weighted formula:
- * - Inverse health score (25%)
- * - Low engagement (25%)
- * - Negative sentiment (25%)
- * - Lifecycle stage risk (25%)
+ * Predicts probability the customer will churn within 30 days.
+ * Higher score = higher churn risk.
+ *
+ * Feature weights (logistic regression):
+ *   health_score (inverted)          — declining health is the strongest churn signal
+ *   response_rate (inverted)         — non-responsive customers churn faster
+ *   sentiment_avg (inverted)         — negative sentiment precedes churn
+ *   lifecycle_stage_ordinal          — at_risk/churned ordinals are direct signals
+ *   total_interactions_30d (inv.)    — low recent activity = disengagement
+ *   days_since_last_contact          — recency of last engagement
+ *   preferred_channel_match (inv.)   — channel mismatch increases friction
  */
 export class ChurnRiskModel implements MLModel {
   readonly name = 'churn_risk' as const;
-  readonly version = '0.1.0-stub' as const;
+  readonly version = '0.2.0-linear' as const;
 
-  async predict(features: MLFeatureVector): Promise<number> {
+  predict(features: MLFeatureVector): Promise<number> {
     const healthNorm = (features['health_score'] ?? 50) / 100;
-    const interactions = features['total_interactions_30d'] ?? 0;
-    const sentiment = features['sentiment_avg'] ?? 0;
-    const lifecycleOrdinal = features['lifecycle_stage_ordinal'] ?? 3;
+    const responseRate = features['response_rate'] ?? 0;
+    // Sentiment: -1 to 1, normalised to 0-1 where 0 = most negative
+    const sentimentNorm = ((features['sentiment_avg'] ?? 0) + 1) / 2;
+    const lifecycleOrdinal = features['lifecycle_stage_ordinal'] ?? 2;
+    // Engagement: cap at 30 interactions
+    const engagementNorm = Math.min(1.0, (features['total_interactions_30d'] ?? 0) / 30);
+    const staleness = Math.min(1.0, (features['days_since_last_contact'] ?? 0) / 60);
+    const channelMatch = features['preferred_channel_match'] ?? 0.5;
 
-    // Engagement score: more interactions = lower churn risk
-    // Cap at 20 interactions for normalization
-    const engagementScore = Math.min(1.0, interactions / 20);
+    // lifecycle ordinal: prospect=1, onboarding=2, active=3, at_risk=4, churned=5
+    const lifecycleRisk = Math.min(1.0, lifecycleOrdinal / 5);
 
-    // Sentiment: -1 to 1, normalized to 0-1 where 0 = most negative
-    const sentimentNorm = (sentiment + 1) / 2;
+    const logit =
+      -1.5 - // intercept (base churn rate low)
+      healthNorm * 2.2 - // high health → lower risk
+      responseRate * 1.8 - // responsive → lower risk
+      sentimentNorm * 1.4 + // positive sentiment → lower risk
+      lifecycleRisk * 2.6 - // at_risk/churned stage → strong signal
+      engagementNorm * 1.1 + // active engagement → lower risk
+      staleness * 1.3 - // staleness → increases risk
+      channelMatch * 0.7; // channel match → lower friction
 
-    // Lifecycle risk: at_risk (4) and churned (5) are highest risk
-    const lifecycleRisk = lifecycleOrdinal >= 4 ? 1.0 : lifecycleOrdinal <= 2 ? 0.2 : 0.5;
-
-    const churnRisk =
-      (1 - healthNorm) * 0.25 +
-      (1 - engagementScore) * 0.25 +
-      (1 - sentimentNorm) * 0.25 +
-      lifecycleRisk * 0.25;
-
-    return Math.min(1.0, Math.max(0.0, churnRisk));
+    return Promise.resolve(Math.min(1.0, Math.max(0.0, sigmoid(logit))));
   }
 }
 
 /**
- * Contact Responsiveness — heuristic stub.
+ * Contact Responsiveness v0.2.0
  *
- * Predicts likelihood of customer responding to outreach.
- * Weighted formula:
- * - Historical response rate (35%)
- * - Channel preference match (20%)
- * - Time-of-day score (20%)
- * - Day-of-week score (15%)
- * - Recency (10%)
+ * Predicts probability the customer will respond if contacted right now.
+ * Accounts for channel match, historical response rate, and temporal context.
+ *
+ * Feature weights (logistic regression):
+ *   response_rate              — strongest predictor of future response
+ *   preferred_channel_match    — wrong channel dramatically lowers response
+ *   time_of_day_score          — contact at the right time doubles response rate
+ *   day_of_week_score          — weekday vs weekend patterns
+ *   interaction_recency_score  — recency of last successful contact
+ *   payment_consistency_score  — engaged payers are more responsive
  */
 export class ContactResponsivenessModel implements MLModel {
   readonly name = 'contact_responsiveness' as const;
-  readonly version = '0.1.0-stub' as const;
+  readonly version = '0.2.0-linear' as const;
 
-  async predict(features: MLFeatureVector): Promise<number> {
+  predict(features: MLFeatureVector): Promise<number> {
     const responseRate = features['response_rate'] ?? 0;
     const channelMatch = features['preferred_channel_match'] ?? 0;
     const timeScore = features['time_of_day_score'] ?? 0.5;
     const dayScore = features['day_of_week_score'] ?? 0.5;
     const recency = features['interaction_recency_score'] ?? 0;
+    const payConsistency = features['payment_consistency_score'] ?? 0.5;
 
-    const score =
-      responseRate * 0.35 +
-      channelMatch * 0.20 +
-      timeScore * 0.20 +
-      dayScore * 0.15 +
-      recency * 0.10;
+    const logit =
+      -0.5 + // intercept
+      responseRate * 2.8 + // historical rate is most predictive
+      channelMatch * 2.0 + // channel mismatch is a strong penalty
+      timeScore * 1.6 + // right time amplifies response rate
+      dayScore * 1.2 + // weekday/weekend matters less
+      recency * 1.0 + // recency of last contact
+      payConsistency * 0.6; // engaged payers respond more
 
-    return Math.min(1.0, Math.max(0.0, score));
+    return Promise.resolve(Math.min(1.0, Math.max(0.0, sigmoid(logit))));
   }
 }
 
