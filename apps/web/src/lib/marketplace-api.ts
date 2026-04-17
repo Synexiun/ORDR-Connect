@@ -3,6 +3,13 @@
  *
  * Typed wrappers over /api/v1/marketplace endpoints.
  * Covers: listing, detail, install, reviews.
+ *
+ * Also includes admin review pipeline:
+ * /api/v1/admin/marketplace/queue — list pending agents
+ * /api/v1/admin/marketplace/:id/approve|reject|suspend
+ *
+ * SOC2 CC8.1 — Change management: agents reviewed before publishing.
+ * ISO 27001 A.14.2.1 — Secure development: manifest validation.
  */
 
 import { apiClient } from './api';
@@ -114,5 +121,68 @@ export function submitReview(
   return apiClient.post<{ readonly success: true; readonly data: AgentReview }>(
     `/v1/marketplace/${agentId}/review`,
     body,
+  );
+}
+
+// ── Admin Review Pipeline ──────────────────────────────────────────
+
+export type ReviewAgentStatus = 'draft' | 'review' | 'published' | 'suspended' | 'rejected';
+
+export interface ReviewQueueAgent {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly description: string;
+  readonly author: string;
+  readonly license: string;
+  readonly status: ReviewAgentStatus;
+  readonly publisherId: string;
+  readonly createdAt: string;
+}
+
+export interface ReviewActionResult {
+  readonly id: string;
+  readonly name: string;
+  readonly version: string;
+  readonly status: ReviewAgentStatus;
+  readonly rejectionReason?: string;
+}
+
+export function listReviewQueue(): Promise<{
+  readonly success: true;
+  readonly data: ReviewQueueAgent[];
+}> {
+  return apiClient.get<{ readonly success: true; readonly data: ReviewQueueAgent[] }>(
+    '/v1/admin/marketplace/queue',
+  );
+}
+
+export function approveAgent(agentId: string): Promise<{
+  readonly success: true;
+  readonly data: ReviewActionResult;
+}> {
+  return apiClient.post<{ readonly success: true; readonly data: ReviewActionResult }>(
+    `/v1/admin/marketplace/${agentId}/approve`,
+    {},
+  );
+}
+
+export function rejectAgent(
+  agentId: string,
+  reason: string,
+): Promise<{ readonly success: true; readonly data: ReviewActionResult }> {
+  return apiClient.post<{ readonly success: true; readonly data: ReviewActionResult }>(
+    `/v1/admin/marketplace/${agentId}/reject`,
+    { reason },
+  );
+}
+
+export function suspendAgent(
+  agentId: string,
+  reason: string,
+): Promise<{ readonly success: true; readonly data: ReviewActionResult }> {
+  return apiClient.post<{ readonly success: true; readonly data: ReviewActionResult }>(
+    `/v1/admin/marketplace/${agentId}/suspend`,
+    { reason },
   );
 }

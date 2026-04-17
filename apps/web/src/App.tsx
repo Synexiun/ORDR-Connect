@@ -95,6 +95,9 @@ const RolesManagement = lazy(() =>
 const Organizations = lazy(() =>
   import('./pages/Organizations').then((m) => ({ default: m.Organizations })),
 );
+const MarketplaceReview = lazy(() =>
+  import('./pages/MarketplaceReview').then((m) => ({ default: m.MarketplaceReview })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -222,6 +225,7 @@ export function App(): ReactNode {
                 <Route path="/feature-flags" element={<FeatureFlags />} />
                 <Route path="/roles" element={<RolesManagement />} />
                 <Route path="/organizations" element={<Organizations />} />
+                <Route path="/marketplace/review" element={<MarketplaceReview />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

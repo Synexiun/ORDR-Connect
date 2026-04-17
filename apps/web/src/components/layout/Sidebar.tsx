@@ -108,6 +108,7 @@ const navSections: NavSection[] = [
     label: 'PLATFORM',
     items: [
       { to: '/marketplace', label: 'Marketplace', icon: Store },
+      { to: '/marketplace/review', label: 'Agent Review', icon: ShieldCheck },
       { to: '/developer', label: 'Developer', icon: Code },
       { to: '/healthcare', label: 'Healthcare', icon: Heart },
       { to: '/partner', label: 'Partner', icon: Handshake },
