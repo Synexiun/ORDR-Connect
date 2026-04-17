@@ -110,6 +110,10 @@ const Chat = lazy(() => import('./pages/Chat').then((m) => ({ default: m.Chat })
 const ConsentRecords = lazy(() =>
   import('./pages/ConsentRecords').then((m) => ({ default: m.ConsentRecords })),
 );
+const ApiKeys = lazy(() => import('./pages/ApiKeys').then((m) => ({ default: m.ApiKeys })));
+const WebhookMonitor = lazy(() =>
+  import('./pages/WebhookMonitor').then((m) => ({ default: m.WebhookMonitor })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -244,6 +248,8 @@ export function App(): ReactNode {
                 <Route path="/integrations/sync" element={<IntegrationSync />} />
                 <Route path="/chat" element={<Chat />} />
                 <Route path="/consent" element={<ConsentRecords />} />
+                <Route path="/api-keys" element={<ApiKeys />} />
+                <Route path="/webhooks" element={<WebhookMonitor />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}

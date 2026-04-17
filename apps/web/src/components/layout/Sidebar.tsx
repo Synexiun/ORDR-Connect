@@ -49,6 +49,8 @@ import {
   RefreshCw,
   MessageCircle,
   Bell,
+  Key,
+  Webhook,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -111,6 +113,7 @@ const navSections: NavSection[] = [
       { to: '/workflows', label: 'Workflows', icon: GitBranch },
       { to: '/integrations', label: 'Integrations', icon: Link2 },
       { to: '/integrations/sync', label: 'Sync History', icon: RefreshCw },
+      { to: '/webhooks', label: 'Webhooks', icon: Webhook },
       { to: '/scheduler', label: 'Scheduler', icon: Clock },
     ],
   },
@@ -120,6 +123,7 @@ const navSections: NavSection[] = [
       { to: '/marketplace', label: 'Marketplace', icon: Store },
       { to: '/marketplace/review', label: 'Agent Review', icon: ShieldCheck },
       { to: '/developer', label: 'Developer', icon: Code },
+      { to: '/api-keys', label: 'API Keys', icon: Key },
       { to: '/healthcare', label: 'Healthcare', icon: Heart },
       { to: '/partner', label: 'Partner', icon: Handshake },
       { to: '/billing', label: 'Billing', icon: DollarSign },
