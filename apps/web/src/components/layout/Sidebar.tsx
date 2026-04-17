@@ -52,6 +52,7 @@ import {
   Key,
   Webhook,
   ShieldAlert,
+  Radio,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -87,6 +88,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/agents', label: 'Agent Activity', icon: Bot },
       { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+      { to: '/events', label: 'Event Stream', icon: Radio },
     ],
   },
   {

@@ -117,6 +117,9 @@ const WebhookMonitor = lazy(() =>
 const SecurityEvents = lazy(() =>
   import('./pages/SecurityEvents').then((m) => ({ default: m.SecurityEvents })),
 );
+const EventStream = lazy(() =>
+  import('./pages/EventStream').then((m) => ({ default: m.EventStream })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -254,6 +257,7 @@ export function App(): ReactNode {
                 <Route path="/api-keys" element={<ApiKeys />} />
                 <Route path="/webhooks" element={<WebhookMonitor />} />
                 <Route path="/security-events" element={<SecurityEvents />} />
+                <Route path="/events" element={<EventStream />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
