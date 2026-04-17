@@ -63,6 +63,7 @@ import {
   Layers,
   Brain,
   Filter,
+  Target,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -86,6 +87,7 @@ const navSections: NavSection[] = [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/segments', label: 'Segments', icon: Filter },
+      { to: '/campaigns', label: 'Campaigns', icon: Target },
       { to: '/interactions', label: 'Interactions', icon: MessageSquare },
       { to: '/messages', label: 'Messages', icon: Send },
       { to: '/chat', label: 'Team Chat', icon: MessageCircle },
