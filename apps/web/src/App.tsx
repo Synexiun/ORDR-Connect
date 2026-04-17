@@ -123,6 +123,9 @@ const EventStream = lazy(() =>
 const EncryptionKeys = lazy(() =>
   import('./pages/EncryptionKeys').then((m) => ({ default: m.EncryptionKeys })),
 );
+const UserSessions = lazy(() =>
+  import('./pages/UserSessions').then((m) => ({ default: m.UserSessions })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -262,6 +265,7 @@ export function App(): ReactNode {
                 <Route path="/security-events" element={<SecurityEvents />} />
                 <Route path="/events" element={<EventStream />} />
                 <Route path="/encryption-keys" element={<EncryptionKeys />} />
+                <Route path="/sessions" element={<UserSessions />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
