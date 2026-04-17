@@ -80,6 +80,82 @@ export interface UpsertContactParams {
   metadata?: Record<string, unknown>;
 }
 
+// ── Sync & Field Mapping Types ─────────────────────────────────────
+
+export type SyncEntityType = 'contact' | 'deal' | 'activity';
+export type SyncDirection = 'inbound' | 'outbound';
+export type SyncEventStatus = 'success' | 'failed' | 'conflict' | 'skipped';
+export type ConflictResolution = 'source_wins' | 'target_wins' | 'most_recent' | 'manual';
+
+export interface SyncTriggerBody {
+  readonly entityType: SyncEntityType;
+  readonly conflictResolution?: ConflictResolution;
+  readonly modifiedAfter?: string;
+  readonly maxPages?: number;
+}
+
+export interface SyncResult {
+  readonly provider: string;
+  readonly entityType: string;
+  readonly fetched: number;
+  readonly created: number;
+  readonly updated: number;
+  readonly skipped: number;
+  readonly conflictsDetected: number;
+  readonly conflictsResolved: number;
+  readonly conflictsQueued: number;
+  readonly errors: number;
+}
+
+export interface SyncEvent {
+  readonly id: string;
+  readonly provider: string;
+  readonly direction: SyncDirection;
+  readonly entityType: string;
+  readonly entityId: string | null;
+  readonly externalId: string | null;
+  readonly status: SyncEventStatus;
+  readonly conflictResolution: string | null;
+  readonly errorSummary: string | null;
+  readonly syncedAt: string;
+}
+
+export interface SyncHistoryParams {
+  readonly entityType?: SyncEntityType;
+  readonly status?: SyncEventStatus;
+  readonly direction?: SyncDirection;
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+export interface SyncHistoryResponse {
+  readonly success: boolean;
+  readonly data: SyncEvent[];
+  readonly meta: {
+    readonly total: number;
+    readonly limit: number;
+    readonly offset: number;
+    readonly provider: string;
+  };
+}
+
+export type FieldMappingDirection = 'inbound' | 'outbound' | 'both';
+
+export interface FieldMapping {
+  readonly id?: string;
+  readonly entityType: SyncEntityType;
+  readonly direction: FieldMappingDirection;
+  readonly sourceField: string;
+  readonly targetField: string;
+  readonly transform?: Record<string, unknown>;
+}
+
+export interface FieldMappingListResponse {
+  readonly success: boolean;
+  readonly data: FieldMapping[];
+  readonly provider: string;
+}
+
 // ── API ────────────────────────────────────────────────────────────
 
 export const integrationsApi = {
@@ -206,5 +282,68 @@ export const integrationsApi = {
         offset: number;
       }>(`/v1/integrations/${provider}/deals${qs ? `?${qs}` : ''}`)
       .then((r) => ({ items: r.data, total: r.total, limit: r.limit, offset: r.offset }));
+  },
+
+  /**
+   * Trigger an inbound batch sync from a CRM provider.
+   * SOC2 CC8.1 — Change management: sync runs are audit-logged.
+   */
+  triggerSync(provider: IntegrationProvider, body: SyncTriggerBody): Promise<SyncResult> {
+    return apiClient
+      .post<{ success: boolean; data: SyncResult }>(`/v1/integrations/${provider}/sync`, body)
+      .then((r) => r.data);
+  },
+
+  /**
+   * Get sync event history for a provider.
+   */
+  getSyncHistory(
+    provider: IntegrationProvider,
+    params: SyncHistoryParams = {},
+  ): Promise<SyncHistoryResponse> {
+    const query = new URLSearchParams();
+    if (params.entityType !== undefined) query.set('entityType', params.entityType);
+    if (params.status !== undefined) query.set('status', params.status);
+    if (params.direction !== undefined) query.set('direction', params.direction);
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return apiClient.get<SyncHistoryResponse>(
+      `/v1/integrations/${provider}/sync/history${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  /**
+   * Get field mappings for a provider.
+   */
+  getFieldMappings(
+    provider: IntegrationProvider,
+    direction?: SyncDirection | 'both',
+  ): Promise<FieldMappingListResponse> {
+    const qs = direction !== undefined ? `?direction=${direction}` : '';
+    return apiClient.get<FieldMappingListResponse>(
+      `/v1/integrations/${provider}/field-mappings${qs}`,
+    );
+  },
+
+  /**
+   * Update field mappings for a provider.
+   */
+  updateFieldMappings(
+    provider: IntegrationProvider,
+    mappings: FieldMapping[],
+  ): Promise<{ readonly success: boolean; readonly provider: string }> {
+    return apiClient.put<{ readonly success: boolean; readonly provider: string }>(
+      `/v1/integrations/${provider}/field-mappings`,
+      { mappings },
+    );
+  },
+
+  /**
+   * Disconnect an integration (admin only).
+   * Revokes stored OAuth tokens and removes connection metadata.
+   */
+  disconnect(provider: IntegrationProvider): Promise<void> {
+    return apiClient.delete(`/v1/integrations/${provider}`);
   },
 };

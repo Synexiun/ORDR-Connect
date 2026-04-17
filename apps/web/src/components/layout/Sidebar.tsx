@@ -45,6 +45,8 @@ import {
   Lock,
   Building2,
   Monitor,
+  Send,
+  RefreshCw,
 } from '../icons';
 
 // ─── Navigation Config ───────────────────────────────────────
@@ -68,6 +70,7 @@ const navSections: NavSection[] = [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/customers', label: 'Customers', icon: Users },
       { to: '/interactions', label: 'Interactions', icon: MessageSquare },
+      { to: '/messages', label: 'Messages', icon: Send },
       { to: '/tickets', label: 'Tickets', icon: Ticket },
       { to: '/search', label: 'Search', icon: Search },
     ],
@@ -102,6 +105,7 @@ const navSections: NavSection[] = [
     items: [
       { to: '/workflows', label: 'Workflows', icon: GitBranch },
       { to: '/integrations', label: 'Integrations', icon: Link2 },
+      { to: '/integrations/sync', label: 'Sync History', icon: RefreshCw },
       { to: '/scheduler', label: 'Scheduler', icon: Clock },
     ],
   },

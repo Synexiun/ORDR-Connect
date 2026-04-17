@@ -102,6 +102,10 @@ const TenantSettings = lazy(() =>
   import('./pages/TenantSettings').then((m) => ({ default: m.TenantSettings })),
 );
 const CoBrowse = lazy(() => import('./pages/CoBrowse').then((m) => ({ default: m.CoBrowse })));
+const Messages = lazy(() => import('./pages/Messages').then((m) => ({ default: m.Messages })));
+const IntegrationSync = lazy(() =>
+  import('./pages/IntegrationSync').then((m) => ({ default: m.IntegrationSync })),
+);
 
 // Demo pages — public, dark topology aesthetic
 const DemoLayout = lazy(() =>
@@ -232,6 +236,8 @@ export function App(): ReactNode {
                 <Route path="/marketplace/review" element={<MarketplaceReview />} />
                 <Route path="/tenant" element={<TenantSettings />} />
                 <Route path="/cobrowse" element={<CoBrowse />} />
+                <Route path="/messages" element={<Messages />} />
+                <Route path="/integrations/sync" element={<IntegrationSync />} />
               </Route>
 
               {/* Public demo — full ORDR-Connect experience */}
