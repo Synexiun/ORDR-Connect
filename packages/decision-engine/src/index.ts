@@ -84,6 +84,15 @@ export type {
   BundleLoadResult,
 } from './ml-bundle.js';
 
+// ─── Shadow Scorer (A/B harness) ────────────────────────────────
+export { ShadowScorer, InMemoryShadowSink } from './shadow-scorer.js';
+export type {
+  ShadowComparisonEvent,
+  ShadowComparisonSink,
+  ShadowDefinition,
+  ShadowScorerOptions,
+} from './shadow-scorer.js';
+
 // ─── LLM Reasoner (Layer 3) ─────────────────────────────────────
 export { LLMReasoner } from './llm-reasoner.js';
 export type { PromptRegistryInterface } from './llm-reasoner.js';
