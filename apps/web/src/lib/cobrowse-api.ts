@@ -3,19 +3,21 @@
  *
  * Typed wrappers over /api/v1/cobrowse endpoints.
  *
- * POST   /v1/cobrowse/sessions               — initiate session (admin)
- * GET    /v1/cobrowse/sessions               — list sessions
- * GET    /v1/cobrowse/sessions/:id           — session details
- * POST   /v1/cobrowse/sessions/:id/accept    — user accepts invite
- * POST   /v1/cobrowse/sessions/:id/reject    — user rejects invite
- * POST   /v1/cobrowse/sessions/:id/end       — end session
+ * POST   /v1/cobrowse/sessions                    — initiate session (admin)
+ * GET    /v1/cobrowse/sessions                    — list sessions
+ * GET    /v1/cobrowse/sessions/:id                — session details
+ * POST   /v1/cobrowse/sessions/:id/accept         — user accepts invite
+ * POST   /v1/cobrowse/sessions/:id/reject         — user rejects invite
+ * POST   /v1/cobrowse/sessions/:id/end            — end session
+ * POST   /v1/cobrowse/sessions/:id/signal         — WebRTC signal relay
+ * GET    /v1/cobrowse/sessions/:id/events (SSE)   — signal stream
  *
  * SOC2 CC6.1 — Session access requires authentication.
  * HIPAA §164.312(b) — Audit controls: all session state changes are logged.
  * Rule 6 — No PHI in session metadata; userId is an opaque reference.
  */
 
-import { apiClient } from './api';
+import { apiClient, getAccessToken } from './api';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -179,4 +181,94 @@ export function endCobrowseSession(
       readonly data: { status: CobrowseSessionStatus };
     }>(`/v1/cobrowse/sessions/${sessionId}/end`, {})
     .then((r) => r.data);
+}
+
+// ── WebRTC Signaling ───────────────────────────────────────────────
+
+export type SignalType = 'offer' | 'answer' | 'ice-candidate';
+
+export interface CobrowseSignal {
+  readonly type: SignalType | 'annotation' | 'pointer' | 'end';
+  readonly from: 'admin' | 'user';
+  readonly payload: unknown;
+  readonly timestamp: string;
+}
+
+export function sendCobrowseSignal(
+  sessionId: string,
+  type: SignalType,
+  payload: unknown,
+): Promise<void> {
+  return apiClient
+    .post<{ readonly success: true }>(`/v1/cobrowse/sessions/${sessionId}/signal`, {
+      type,
+      payload,
+    })
+    .then(() => undefined);
+}
+
+/**
+ * Subscribe to the SSE signal stream for a session.
+ *
+ * Uses fetch with Authorization header (EventSource doesn't support custom headers).
+ * Returns a cleanup function — call it to abort the connection.
+ *
+ * @param sessionId  Target session
+ * @param onSignal   Called for each signal received (from the remote party only)
+ * @returns          Cleanup function
+ */
+export function subscribeCobrowseEvents(
+  sessionId: string,
+  onSignal: (signal: CobrowseSignal) => void,
+): () => void {
+  const controller = new AbortController();
+  const token = getAccessToken();
+  const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
+
+  void (async () => {
+    try {
+      const resp = await fetch(`${BASE_URL}/v1/cobrowse/sessions/${sessionId}/events`, {
+        headers: {
+          Authorization: token !== null ? `Bearer ${token}` : '',
+          Accept: 'text/event-stream',
+          'Cache-Control': 'no-cache',
+        },
+        signal: controller.signal,
+      });
+      if (!resp.ok || resp.body === null) return;
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      // for(;;) avoids the @typescript-eslint/no-unnecessary-condition rule
+      // that flags `while (true)` as an always-truthy literal condition.
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              // The server sets both `event:` and `type` in the JSON payload,
+              // so `parsed.type` is the canonical signal type.
+              const parsed = JSON.parse(line.slice(6)) as CobrowseSignal;
+              onSignal(parsed);
+            } catch {
+              /* malformed SSE line — skip */
+            }
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      // SSE connection dropped — caller can decide whether to reconnect
+    }
+  })();
+
+  return () => {
+    controller.abort();
+  };
 }

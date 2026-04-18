@@ -90,6 +90,9 @@ export default tseslint.config(
       // App test files are handled by the project service (nearest tsconfig).
       'packages/**/src/__tests__/**',
       'packages/**/src/*/__tests__/**',
+      // Extension is a separate TypeScript project with its own tsconfig;
+      // it requires @types/chrome which is not installed at the repo root.
+      'apps/cobrowse-extension/**',
     ],
   },
 );

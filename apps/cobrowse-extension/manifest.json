@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "ORDR-Connect Co-Browse",
+  "version": "1.0.0",
+  "description": "Secure screen-sharing for ORDR-Connect support sessions.",
+  "permissions": ["storage", "tabs", "notifications"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ORDR-Connect Co-Browse"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src *; media-src *;"
+  }
+}

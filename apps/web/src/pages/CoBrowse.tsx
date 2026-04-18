@@ -11,7 +11,7 @@
  * - Session IDs never exposed in URL parameters (Rule 6)
  */
 
-import { type ReactNode, useState, useEffect, useCallback } from 'react';
+import { type ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -43,11 +43,14 @@ import {
   type CobrowseSession,
   type CobrowseSessionStatus,
   type CobrowseMode,
+  type CobrowseSignal,
   listCobrowseSessions,
   initiateCobrowseSession,
   acceptCobrowseSession,
   rejectCobrowseSession,
   endCobrowseSession,
+  sendCobrowseSignal,
+  subscribeCobrowseEvents,
 } from '../lib/cobrowse-api';
 import type { BadgeVariant } from '../components/ui/Badge';
 import { cn } from '../lib/cn';
@@ -272,6 +275,158 @@ function InitiateModal({ onClose, onCreated }: InitiateModalProps): ReactNode {
   );
 }
 
+// ── WebRTC Viewer — admin-side screen viewer ──────────────────────
+
+const STUN_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+interface WebRtcViewerProps {
+  sessionId: string;
+  onClose: () => void;
+}
+
+function WebRtcViewer({ sessionId, onClose }: WebRtcViewerProps): ReactNode {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const [connState, setConnState] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const handleClose = useCallback(() => {
+    cleanupRef.current?.();
+    pcRef.current?.close();
+    onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+    pcRef.current = pc;
+
+    pc.addTransceiver('video', { direction: 'recvonly' });
+
+    pc.addEventListener('track', (ev) => {
+      if (videoRef.current !== null && ev.streams[0] !== undefined) {
+        videoRef.current.srcObject = ev.streams[0];
+      }
+    });
+
+    pc.addEventListener('connectionstatechange', () => {
+      switch (pc.connectionState) {
+        case 'connected':
+          setConnState('connected');
+          break;
+        case 'failed':
+          setErrMsg('WebRTC connection failed — customer may have ended sharing.');
+          setConnState('error');
+          break;
+      }
+    });
+
+    pc.addEventListener('icecandidate', (ev) => {
+      if (ev.candidate !== null) {
+        void sendCobrowseSignal(sessionId, 'ice-candidate', ev.candidate.toJSON()).catch(
+          () => undefined,
+        );
+      }
+    });
+
+    void (async () => {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await sendCobrowseSignal(sessionId, 'offer', { sdp: offer });
+
+        const unsubscribe = subscribeCobrowseEvents(sessionId, (signal: CobrowseSignal) => {
+          if (signal.type === 'answer') {
+            const { sdp } = signal.payload as { sdp: RTCSessionDescriptionInit };
+            void pc.setRemoteDescription(new RTCSessionDescription(sdp)).catch(() => undefined);
+          } else if (signal.type === 'ice-candidate') {
+            const candidate = signal.payload as RTCIceCandidateInit;
+            void pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => undefined);
+          } else if (signal.type === 'end') {
+            setErrMsg('Customer ended screen sharing.');
+            setConnState('error');
+          }
+        });
+        cleanupRef.current = unsubscribe;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setErrMsg(`Setup failed: ${msg}`);
+        setConnState('error');
+      }
+    })();
+
+    return () => {
+      cleanupRef.current?.();
+      pc.close();
+      pcRef.current = null;
+    };
+  }, [sessionId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+      <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-surface">
+        <div className="flex items-center justify-between border-b border-border p-3">
+          <div className="flex items-center gap-2">
+            <Monitor className="h-4 w-4 text-brand-accent" />
+            <span className="text-sm font-medium text-content">Live Screen View</span>
+            {connState === 'connected' && (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                Connected
+              </span>
+            )}
+            {connState === 'connecting' && (
+              <span className="text-xs text-content-tertiary">Waiting for customer…</span>
+            )}
+          </div>
+          <button
+            onClick={handleClose}
+            className="rounded-lg p-1 text-content-tertiary hover:text-content"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div
+          className="relative flex flex-1 items-center justify-center bg-black"
+          style={{ minHeight: 400 }}
+        >
+          {connState === 'connecting' && (
+            <div className="flex flex-col items-center gap-3 text-content-secondary">
+              <Spinner />
+              <p className="text-sm">Waiting for customer to accept and share screen…</p>
+            </div>
+          )}
+          {connState === 'error' && (
+            <div className="flex flex-col items-center gap-2">
+              <AlertTriangle className="h-8 w-8 text-red-400" />
+              <p className="text-sm text-red-400">{errMsg}</p>
+              <Button size="sm" variant="secondary" onClick={handleClose}>
+                Close
+              </Button>
+            </div>
+          )}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={cn('h-full w-full object-contain', connState !== 'connected' && 'hidden')}
+          />
+        </div>
+
+        <div className="border-t border-border px-4 py-2 text-xs text-content-tertiary">
+          🔒 Encrypted WebRTC — screen video never passes through ORDR servers. HIPAA
+          §164.312(e)(1).
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Session Detail Panel ──────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -282,6 +437,7 @@ interface DetailPanelProps {
 
 function DetailPanel({ session, onClose, onStatusChange }: DetailPanelProps): ReactNode {
   const [acting, setActing] = useState(false);
+  const [showViewer, setShowViewer] = useState(false);
 
   const act = useCallback(
     async (action: 'accept' | 'reject' | 'end') => {
@@ -305,184 +461,208 @@ function DetailPanel({ session, onClose, onStatusChange }: DetailPanelProps): Re
   const modeMeta = MODE_META[session.mode];
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border p-4">
-        <div>
-          <h2 className="font-semibold text-content">Session Detail</h2>
-          <p className="font-mono text-xs text-content-tertiary">{session.id}</p>
-        </div>
-        <button
-          onClick={onClose}
-          className="rounded-lg p-1 text-content-tertiary hover:text-content"
-        >
-          <XCircle className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Status */}
-        <div className="flex items-center gap-2">
-          <Badge variant={statusMeta.variant}>
-            <span className="flex items-center gap-1">
-              {statusMeta.Icon}
-              {statusMeta.label}
-            </span>
-          </Badge>
-          {session.status === 'active' && (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-              Live
-            </span>
-          )}
-        </div>
-
-        {/* Mode */}
-        <div className="rounded-lg border border-border bg-surface-secondary p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-content">
-            <span className="text-content-tertiary">{modeMeta.Icon}</span>
-            {modeMeta.label} Mode
-          </div>
-          <p className="mt-1 text-xs text-content-tertiary">{modeMeta.description}</p>
-        </div>
-
-        {/* Participants */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-            Participants
-          </p>
-          <div className="rounded-lg border border-border divide-y divide-border">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Admin</span>
-              <span className="font-mono text-xs text-content">{session.adminId}</span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Customer</span>
-              <span className="font-mono text-xs text-content">{session.userId}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Timeline */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-            Timeline
-          </p>
-          <div className="rounded-lg border border-border divide-y divide-border">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Initiated</span>
-              <span className="text-xs text-content">{fmtRelative(session.initiatedAt)}</span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Started</span>
-              <span className="text-xs text-content">{fmtRelative(session.startedAt)}</span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Ended</span>
-              <span className="text-xs text-content">{fmtRelative(session.endedAt)}</span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Duration</span>
-              <span className="text-xs text-content">
-                {fmtDuration(session.startedAt, session.endedAt)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Expires</span>
-              <span className="text-xs text-content">{fmtRelative(session.expiresAt)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Recording / Consent */}
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-            Privacy
-          </p>
-          <div className="rounded-lg border border-border divide-y divide-border">
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">Recording</span>
-              <span
-                className={cn(
-                  'flex items-center gap-1 text-xs',
-                  session.recordingEnabled ? 'text-amber-400' : 'text-content-tertiary',
-                )}
-              >
-                {session.recordingEnabled ? (
-                  <>
-                    <Video className="h-3.5 w-3.5" /> Enabled
-                  </>
-                ) : (
-                  <>
-                    <VideoOff className="h-3.5 w-3.5" /> Disabled
-                  </>
-                )}
-              </span>
-            </div>
-            <div className="flex items-center justify-between px-3 py-2">
-              <span className="text-xs text-content-secondary">User Consent</span>
-              <span
-                className={cn(
-                  'flex items-center gap-1 text-xs',
-                  session.userConsented ? 'text-emerald-400' : 'text-content-tertiary',
-                )}
-              >
-                {session.userConsented ? (
-                  <>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Granted
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="h-3.5 w-3.5" /> Not yet
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      {!isTerminal(session.status) && (
-        <div className="border-t border-border p-4 space-y-2">
-          {session.status === 'pending' && (
-            <>
-              <Button
-                className="w-full"
-                variant="secondary"
-                size="sm"
-                onClick={() => void act('accept')}
-                disabled={acting}
-              >
-                <Phone className="mr-1.5 h-3.5 w-3.5" />
-                Accept Invite
-              </Button>
-              <Button
-                className="w-full"
-                variant="danger"
-                size="sm"
-                onClick={() => void act('reject')}
-                disabled={acting}
-              >
-                <X className="mr-1.5 h-3.5 w-3.5" />
-                Reject
-              </Button>
-            </>
-          )}
-          {session.status === 'active' && (
-            <Button
-              className="w-full"
-              variant="danger"
-              size="sm"
-              onClick={() => void act('end')}
-              disabled={acting}
-            >
-              <StopCircle className="mr-1.5 h-3.5 w-3.5" />
-              End Session
-            </Button>
-          )}
-        </div>
+    <>
+      {showViewer && (
+        <WebRtcViewer
+          sessionId={session.id}
+          onClose={() => {
+            setShowViewer(false);
+          }}
+        />
       )}
-    </div>
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <div>
+            <h2 className="font-semibold text-content">Session Detail</h2>
+            <p className="font-mono text-xs text-content-tertiary">{session.id}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-content-tertiary hover:text-content"
+          >
+            <XCircle className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Status */}
+          <div className="flex items-center gap-2">
+            <Badge variant={statusMeta.variant}>
+              <span className="flex items-center gap-1">
+                {statusMeta.Icon}
+                {statusMeta.label}
+              </span>
+            </Badge>
+            {session.status === 'active' && (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                Live
+              </span>
+            )}
+          </div>
+
+          {/* Mode */}
+          <div className="rounded-lg border border-border bg-surface-secondary p-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-content">
+              <span className="text-content-tertiary">{modeMeta.Icon}</span>
+              {modeMeta.label} Mode
+            </div>
+            <p className="mt-1 text-xs text-content-tertiary">{modeMeta.description}</p>
+          </div>
+
+          {/* Participants */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+              Participants
+            </p>
+            <div className="rounded-lg border border-border divide-y divide-border">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Admin</span>
+                <span className="font-mono text-xs text-content">{session.adminId}</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Customer</span>
+                <span className="font-mono text-xs text-content">{session.userId}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+              Timeline
+            </p>
+            <div className="rounded-lg border border-border divide-y divide-border">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Initiated</span>
+                <span className="text-xs text-content">{fmtRelative(session.initiatedAt)}</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Started</span>
+                <span className="text-xs text-content">{fmtRelative(session.startedAt)}</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Ended</span>
+                <span className="text-xs text-content">{fmtRelative(session.endedAt)}</span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Duration</span>
+                <span className="text-xs text-content">
+                  {fmtDuration(session.startedAt, session.endedAt)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Expires</span>
+                <span className="text-xs text-content">{fmtRelative(session.expiresAt)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Recording / Consent */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+              Privacy
+            </p>
+            <div className="rounded-lg border border-border divide-y divide-border">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">Recording</span>
+                <span
+                  className={cn(
+                    'flex items-center gap-1 text-xs',
+                    session.recordingEnabled ? 'text-amber-400' : 'text-content-tertiary',
+                  )}
+                >
+                  {session.recordingEnabled ? (
+                    <>
+                      <Video className="h-3.5 w-3.5" /> Enabled
+                    </>
+                  ) : (
+                    <>
+                      <VideoOff className="h-3.5 w-3.5" /> Disabled
+                    </>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="text-xs text-content-secondary">User Consent</span>
+                <span
+                  className={cn(
+                    'flex items-center gap-1 text-xs',
+                    session.userConsented ? 'text-emerald-400' : 'text-content-tertiary',
+                  )}
+                >
+                  {session.userConsented ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Granted
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3.5 w-3.5" /> Not yet
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        {!isTerminal(session.status) && (
+          <div className="border-t border-border p-4 space-y-2">
+            {session.status === 'pending' && (
+              <>
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void act('accept')}
+                  disabled={acting}
+                >
+                  <Phone className="mr-1.5 h-3.5 w-3.5" />
+                  Accept Invite
+                </Button>
+                <Button
+                  className="w-full"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void act('reject')}
+                  disabled={acting}
+                >
+                  <X className="mr-1.5 h-3.5 w-3.5" />
+                  Reject
+                </Button>
+              </>
+            )}
+            {session.status === 'active' && (
+              <>
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setShowViewer(true);
+                  }}
+                  disabled={acting}
+                >
+                  <Monitor className="mr-1.5 h-3.5 w-3.5" />
+                  View Screen
+                </Button>
+                <Button
+                  className="w-full"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => void act('end')}
+                  disabled={acting}
+                >
+                  <StopCircle className="mr-1.5 h-3.5 w-3.5" />
+                  End Session
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
