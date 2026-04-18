@@ -1,9 +1,14 @@
 /**
  * Enrichment pipeline — external data enrichment for graph nodes
  *
- * Orchestrates enrichment from multiple providers (Clearbit, Apollo,
- * internal graph data). Rate-limited per provider with configurable
- * thresholds. Designed for both single-node and batch enrichment.
+ * Orchestrates enrichment from Clearbit and internal graph data.
+ * Rate-limited per provider with configurable thresholds. Designed
+ * for both single-node and batch enrichment.
+ *
+ * Person-level scraping enrichment (Apollo et al.) is deliberately
+ * NOT included — GDPR Art. 6 lawful-basis concerns around upstream
+ * data sourcing make those providers a poor fit regardless of
+ * tenant consent on our side.
  *
  * SECURITY:
  * - All operations are tenant-scoped
@@ -507,35 +512,6 @@ function mapClearbitCompany(body: ClearbitApiCompany, domain: string): Enrichmen
     // Real upstream data rates higher than synthetic.
     confidence: 0.92,
   };
-}
-
-/**
- * Apollo stub provider — person enrichment data.
- * In production, replace with actual Apollo.io API calls.
- */
-export class ApolloProvider implements EnrichmentProvider {
-  readonly name = 'apollo' as const;
-  readonly supportedNodeTypes = ['Person'] as const;
-  readonly rateLimit = { maxPerSecond: 5, maxPerDay: 5_000 } as const;
-
-  enrich(_node: GraphNode): Promise<Result<EnrichmentData>> {
-    // Stub: return synthetic demographic/professional data
-    const enrichmentData: EnrichmentData = {
-      source: 'apollo',
-      fields: {
-        title: 'VP of Engineering',
-        seniority: 'executive',
-        department: 'Engineering',
-        verifiedEmail: true,
-        linkedinUrl: 'https://linkedin.com/in/placeholder',
-        phoneVerified: false,
-      },
-      enrichedAt: new Date(),
-      confidence: 0.78,
-    };
-
-    return Promise.resolve(ok(enrichmentData));
-  }
 }
 
 /**

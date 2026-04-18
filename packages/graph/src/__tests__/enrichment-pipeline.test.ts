@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  EnrichmentPipeline,
-  ClearbitProvider,
-  ApolloProvider,
-  InternalProvider,
-} from '../enrichment-pipeline.js';
+import { EnrichmentPipeline, ClearbitProvider, InternalProvider } from '../enrichment-pipeline.js';
 import { ok, err, InternalError, NotFoundError } from '@ordr/core';
 import type { GraphOperations } from '../operations.js';
 import type { GraphNode, EnrichmentProvider, EnrichmentData } from '../types.js';
@@ -43,7 +38,6 @@ function createPipeline(
 ): EnrichmentPipeline {
   const defaultProviders = new Map<string, EnrichmentProvider>([
     ['clearbit', new ClearbitProvider()],
-    ['apollo', new ApolloProvider()],
     ['internal', new InternalProvider()],
   ]);
 
@@ -68,16 +62,16 @@ describe('EnrichmentPipeline', () => {
   // ─── enrichNode ─────────────────────────────────────────────
 
   describe('enrichNode()', () => {
-    it('enriches a Person node using Apollo provider', async () => {
+    it('enriches a Person node using Internal provider', async () => {
       const node = makeNode({ type: 'Person' });
       (mockOps.getNode as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok(node));
       (mockOps.updateNode as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok(node));
 
-      const result = await pipeline.enrichNode('node-1', 'tenant-001', 'apollo');
+      const result = await pipeline.enrichNode('node-1', 'tenant-001', 'internal');
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.source).toBe('apollo');
+        expect(result.data.source).toBe('internal');
         expect(result.data.confidence).toBeGreaterThan(0);
         expect(result.data.enrichedAt).toBeInstanceOf(Date);
       }
@@ -106,9 +100,9 @@ describe('EnrichmentPipeline', () => {
       const result = await pipeline.enrichNode('node-1', 'tenant-001');
 
       expect(result.success).toBe(true);
-      // Apollo is the first provider that supports Person
+      // Internal is the first provider that supports Person now that Apollo is gone
       if (result.success) {
-        expect(result.data.source).toBe('apollo');
+        expect(result.data.source).toBe('internal');
       }
     });
 
@@ -153,11 +147,11 @@ describe('EnrichmentPipeline', () => {
       (mockOps.getNode as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok(node));
       (mockOps.updateNode as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok(node));
 
-      await pipeline.enrichNode('node-1', 'tenant-001', 'apollo');
+      await pipeline.enrichNode('node-1', 'tenant-001', 'internal');
 
       const updateArgs = (mockOps.updateNode as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const properties = updateArgs[2] as Record<string, unknown>;
-      expect(properties['_lastEnrichedBy']).toBe('apollo');
+      expect(properties['_lastEnrichedBy']).toBe('internal');
       expect(properties['_lastEnrichedAt']).toBeDefined();
       expect(properties['_enrichmentConfidence']).toBeGreaterThan(0);
     });
@@ -179,7 +173,7 @@ describe('EnrichmentPipeline', () => {
         err(new InternalError('Write failed')),
       );
 
-      const result = await pipeline.enrichNode('node-1', 'tenant-001', 'apollo');
+      const result = await pipeline.enrichNode('node-1', 'tenant-001', 'internal');
 
       expect(result.success).toBe(false);
     });
@@ -196,7 +190,7 @@ describe('EnrichmentPipeline', () => {
       const result = await pipeline.enrichBatch(
         ['node-1', 'node-2', 'node-3'],
         'tenant-001',
-        'apollo',
+        'internal',
       );
 
       expect(result.success).toBe(true);
@@ -225,7 +219,7 @@ describe('EnrichmentPipeline', () => {
       const result = await pipeline.enrichBatch(
         ['node-1', 'node-2', 'node-3'],
         'tenant-001',
-        'apollo',
+        'internal',
       );
 
       expect(result.success).toBe(true);
@@ -498,28 +492,6 @@ describe('EnrichmentPipeline', () => {
     });
   });
 
-  describe('ApolloProvider', () => {
-    it('returns person enrichment data', async () => {
-      const provider = new ApolloProvider();
-      const node = makeNode({ type: 'Person' });
-
-      const result = await provider.enrich(node);
-
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.source).toBe('apollo');
-        expect(result.data.fields['title']).toBeDefined();
-        expect(result.data.fields['seniority']).toBeDefined();
-      }
-    });
-
-    it('supports Person node type only', () => {
-      const provider = new ApolloProvider();
-      expect(provider.supportedNodeTypes).toContain('Person');
-      expect(provider.supportedNodeTypes).not.toContain('Company');
-    });
-  });
-
   describe('InternalProvider', () => {
     it('returns internal graph enrichment data', async () => {
       const provider = new InternalProvider();
@@ -554,8 +526,8 @@ describe('EnrichmentPipeline', () => {
       (mockOps.getNode as ReturnType<typeof vi.fn>).mockResolvedValue(ok(node));
       (mockOps.updateNode as ReturnType<typeof vi.fn>).mockResolvedValue(ok(node));
 
-      const result1 = await pipeline.enrichNode('node-1', 'tenant-001', 'apollo');
-      const result2 = await pipeline.enrichNode('node-1', 'tenant-001', 'apollo');
+      const result1 = await pipeline.enrichNode('node-1', 'tenant-001', 'internal');
+      const result2 = await pipeline.enrichNode('node-1', 'tenant-001', 'internal');
 
       expect(result1.success).toBe(true);
       expect(result2.success).toBe(true);

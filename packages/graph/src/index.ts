@@ -60,11 +60,7 @@ export { GraphOperations } from './operations.js';
 export { GraphTraversals } from './traversals.js';
 
 // ─── Health Scoring ──────────────────────────────────────────────
-export {
-  HealthScoreCalculator,
-  HEALTH_WEIGHTS,
-  HEALTH_THRESHOLDS,
-} from './health-score.js';
+export { HealthScoreCalculator, HEALTH_WEIGHTS, HEALTH_THRESHOLDS } from './health-score.js';
 
 // ─── Enrichment (legacy event handlers) ─────────────────────────
 export { GraphEnricher } from './enrichment.js';
@@ -82,12 +78,7 @@ export type {
 export { ComputedPropertyUpdater } from './computed-properties.js';
 
 // ─── Enrichment Pipeline ─────────────────────────────────────────
-export {
-  EnrichmentPipeline,
-  ClearbitProvider,
-  ApolloProvider,
-  InternalProvider,
-} from './enrichment-pipeline.js';
+export { EnrichmentPipeline, ClearbitProvider, InternalProvider } from './enrichment-pipeline.js';
 export type { EnrichmentPipelineDeps } from './enrichment-pipeline.js';
 
 // ─── Scheduler ───────────────────────────────────────────────────

@@ -162,12 +162,7 @@ export interface SimilarityResult {
 
 // ─── Enrichment Types ───────────────────────────────────────────
 
-export const ENRICHMENT_SOURCES = [
-  'clearbit',
-  'apollo',
-  'manual',
-  'internal',
-] as const;
+export const ENRICHMENT_SOURCES = ['clearbit', 'manual', 'internal'] as const;
 
 export type EnrichmentSource = (typeof ENRICHMENT_SOURCES)[number];
 
@@ -180,12 +175,7 @@ export interface EnrichmentData {
 
 // ─── Scheduler Types ────────────────────────────────────────────
 
-export const JOB_STATUSES = [
-  'idle',
-  'running',
-  'completed',
-  'failed',
-] as const;
+export const JOB_STATUSES = ['idle', 'running', 'completed', 'failed'] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
@@ -214,7 +204,9 @@ export interface EnrichmentProvider {
   readonly name: string;
   readonly supportedNodeTypes: readonly string[];
   readonly rateLimit: { readonly maxPerSecond: number; readonly maxPerDay: number };
-  enrich(node: GraphNode): Promise<import('@ordr/core').Result<EnrichmentData, import('@ordr/core').AppError>>;
+  enrich(
+    node: GraphNode,
+  ): Promise<import('@ordr/core').Result<EnrichmentData, import('@ordr/core').AppError>>;
 }
 
 // ─── Constants ───────────────────────────────────────────────────
