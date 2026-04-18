@@ -9,6 +9,7 @@
  * - DLPScanner: PII/PHI/secrets response scanning
  * - SecurityEventBus: In-process security event streaming + SIEM correlation
  * - IPIntelligence: TOR detection, IP blocking, geo-velocity
+ * - TorExitRefresher: Periodic refresh of the TOR exit list from check.torproject.org
  * - Honeypot: Decoy path detection
  */
 
@@ -39,4 +40,13 @@ export type { ThreatScorerInput } from './threat-scorer.js';
 export { SecurityEventBus } from './security-event-bus.js';
 export type { SecurityEventHandler, SecurityCorrelation } from './security-event-bus.js';
 export { IPIntelligence, isPrivateIP } from './ip-intelligence.js';
+export {
+  TorExitRefresher,
+  isPlausibleIp,
+  parseTorBulkList,
+  TOR_EXIT_LIST_URL,
+  TOR_REFRESH_INTERVAL_MS,
+  TOR_FETCH_TIMEOUT_MS,
+} from './tor-exit-refresher.js';
+export type { TorExitRefresherOptions } from './tor-exit-refresher.js';
 export { isHoneypotPath, HONEYPOT_PATHS, HONEYPOT_BLOCK_DURATION_MS } from './honeypot.js';
