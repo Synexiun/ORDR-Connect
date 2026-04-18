@@ -1,10 +1,3 @@
-/* eslint-disable
-   @typescript-eslint/no-unsafe-assignment
-   --
-   NOTE: These rules are disabled because @ordr/ai has not been compiled to dist/ yet,
-   so TypeScript's project service cannot resolve its types. Re-enable once packages
-   are built (tracked in build pipeline TODO). All security rules remain active.
-*/
 /**
  * AI Routes — Sentiment analysis, agent insights, entity routing
  *
@@ -101,7 +94,7 @@ aiRouter.post('/sentiment', rateLimit('agent'), async (c): Promise<Response> => 
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
 
-  const body = await c.req.json().catch(() => null);
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = sentimentSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError(
@@ -140,7 +133,7 @@ aiRouter.post('/insights', rateLimit('agent'), async (c): Promise<Response> => {
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
 
-  const body = await c.req.json().catch(() => null);
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = insightSchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError(
@@ -216,7 +209,7 @@ aiRouter.post('/route', rateLimit('agent'), async (c): Promise<Response> => {
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
 
-  const body = await c.req.json().catch(() => null);
+  const body: unknown = await c.req.json().catch(() => null);
   const parsed = routeEntitySchema.safeParse(body);
   if (!parsed.success) {
     throw new ValidationError(
