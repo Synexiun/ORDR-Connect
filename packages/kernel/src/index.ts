@@ -24,6 +24,9 @@ export type { KillSwitchStatus } from './kill-switch.js';
 
 export { BudgetTracker } from './budget-tracker.js';
 
+export { BudgetReporter } from './budget-reporter.js';
+export type { BudgetReporterOptions } from './budget-reporter.js';
+
 export { LimbRegistrar, RegistrationError } from './registrar.js';
 export type { RegistrarOptions } from './registrar.js';
 

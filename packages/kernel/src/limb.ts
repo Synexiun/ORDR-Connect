@@ -27,6 +27,7 @@ import { DiodeClient } from './diode-client.js';
 import { HeartbeatEmitter } from './heartbeat.js';
 import { KillSwitchReceiver } from './kill-switch.js';
 import { BudgetTracker } from './budget-tracker.js';
+import { BudgetReporter } from './budget-reporter.js';
 import { ORDR_LIMB_ID } from './constants.js';
 import type { HealthBeacon, HealthStatus, RegisterResponse } from './types.js';
 
@@ -55,6 +56,8 @@ export interface LimbEnv {
   validityDays?: number;
   /** Heartbeat interval in ms (default: 30_000). */
   heartbeatIntervalMs?: number;
+  /** Budget report interval in ms (default: 300_000 = 5min). */
+  budgetReportIntervalMs?: number;
 }
 
 export interface LimbHealthSnapshot {
@@ -80,6 +83,7 @@ export class Limb {
     public readonly heartbeat: HeartbeatEmitter,
     public readonly killSwitch: KillSwitchReceiver,
     public readonly budget: BudgetTracker,
+    public readonly budgetReporter: BudgetReporter,
   ) {}
 
   /**
@@ -109,6 +113,10 @@ export class Limb {
     const killSwitch = new KillSwitchReceiver(limbId);
     const budget = new BudgetTracker();
 
+    const budgetReporterOpts: import('./budget-reporter.js').BudgetReporterOptions =
+      env.budgetReportIntervalMs !== undefined ? { intervalMs: env.budgetReportIntervalMs } : {};
+    const budgetReporter = new BudgetReporter(limbId, budget, diode, budgetReporterOpts);
+
     // Collector closure captures `killSwitch` and `heartbeat` after assignment.
     // We declare `limb` and let the collector close over it via reference.
     // `let` required here: heartbeat's collector closes over `limb`, which is
@@ -133,7 +141,7 @@ export class Limb {
       heartbeatOpts,
     );
 
-    limb = new Limb(identity, registrar, diode, heartbeat, killSwitch, budget);
+    limb = new Limb(identity, registrar, diode, heartbeat, killSwitch, budget, budgetReporter);
 
     // Step 1: Register with Core (idempotent on restart)
     limb._certificate = await registrar.register();
@@ -141,6 +149,9 @@ export class Limb {
 
     // Step 2: Start heartbeat (first tick fires after intervalMs)
     heartbeat.start();
+
+    // Step 3: Start budget reporter (first tick fires after BUDGET_REPORT_INTERVAL_MS)
+    budgetReporter.start();
 
     return limb;
   }
@@ -151,6 +162,7 @@ export class Limb {
    */
   shutdown(): void {
     this.heartbeat.stop();
+    this.budgetReporter.stop();
   }
 
   /** True if successfully registered with Core on this boot. */
@@ -179,6 +191,7 @@ export class Limb {
   terminate(reason: string): void {
     this.killSwitch.activate(reason);
     this.heartbeat.stop();
+    this.budgetReporter.stop();
   }
 
   /** Current health snapshot for observability endpoints. */
