@@ -29,6 +29,7 @@ import { KillSwitchReceiver } from './kill-switch.js';
 import { BudgetTracker } from './budget-tracker.js';
 import { BudgetReporter } from './budget-reporter.js';
 import { BudgetAllocationReceiver } from './budget-allocation-receiver.js';
+import { IdentityCommandReceiver } from './identity-command-receiver.js';
 import { ORDR_LIMB_ID } from './constants.js';
 import type { HealthBeacon, HealthStatus, RegisterResponse } from './types.js';
 
@@ -61,6 +62,8 @@ export interface LimbEnv {
   budgetReportIntervalMs?: number;
   /** Budget allocation poll interval in ms (default: 60_000 = 1min). */
   budgetAllocationPollIntervalMs?: number;
+  /** Identity command poll interval in ms (default: 15_000 = 15s). */
+  identityCommandPollIntervalMs?: number;
 }
 
 export interface LimbHealthSnapshot {
@@ -88,6 +91,7 @@ export class Limb {
     public readonly budget: BudgetTracker,
     public readonly budgetReporter: BudgetReporter,
     public readonly budgetAllocationReceiver: BudgetAllocationReceiver,
+    public readonly identityCommandReceiver: IdentityCommandReceiver,
   ) {}
 
   /**
@@ -132,6 +136,17 @@ export class Limb {
       allocationReceiverOpts,
     );
 
+    const identityCommandReceiverOpts: import('./identity-command-receiver.js').IdentityCommandReceiverOptions =
+      env.identityCommandPollIntervalMs !== undefined
+        ? { intervalMs: env.identityCommandPollIntervalMs }
+        : {};
+    const identityCommandReceiver = new IdentityCommandReceiver(
+      identity,
+      killSwitch,
+      env.coreUrl,
+      identityCommandReceiverOpts,
+    );
+
     // Collector closure captures `killSwitch` and `heartbeat` after assignment.
     // We declare `limb` and let the collector close over it via reference.
     // `let` required here: heartbeat's collector closes over `limb`, which is
@@ -165,6 +180,7 @@ export class Limb {
       budget,
       budgetReporter,
       budgetAllocationReceiver,
+      identityCommandReceiver,
     );
 
     // Step 1: Register with Core (idempotent on restart)
@@ -180,6 +196,9 @@ export class Limb {
     // Step 4: Start budget allocation receiver (pulls downward allocations from Core)
     budgetAllocationReceiver.start();
 
+    // Step 5: Start identity command receiver (pulls revoke/rotate directives from Core)
+    identityCommandReceiver.start();
+
     return limb;
   }
 
@@ -191,6 +210,7 @@ export class Limb {
     this.heartbeat.stop();
     this.budgetReporter.stop();
     this.budgetAllocationReceiver.stop();
+    this.identityCommandReceiver.stop();
   }
 
   /** True if successfully registered with Core on this boot. */
@@ -221,6 +241,7 @@ export class Limb {
     this.heartbeat.stop();
     this.budgetReporter.stop();
     this.budgetAllocationReceiver.stop();
+    this.identityCommandReceiver.stop();
   }
 
   /** Current health snapshot for observability endpoints. */

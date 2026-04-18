@@ -32,6 +32,14 @@ export const BUDGET_REPORT_INTERVAL_MS = 300_000;
  */
 export const BUDGET_ALLOCATION_POLL_INTERVAL_MS = 60_000;
 
+/**
+ * How often to poll Core for pending IdentityCommands (milliseconds).
+ * Significantly faster than allocation polling because kill-switch
+ * propagation is safety-critical — a rogue limb must terminate ASAP.
+ * RULE 9: "Kill switch: Immediate agent termination capability."
+ */
+export const IDENTITY_COMMAND_POLL_INTERVAL_MS = 15_000;
+
 /** Maximum clock skew allowed for request timestamps (milliseconds). */
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1_000; // 5 minutes
 
