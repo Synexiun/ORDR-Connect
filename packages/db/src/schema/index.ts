@@ -70,6 +70,9 @@ export { channelPreferences } from './channel-preferences.js';
 // Organizations
 export { organizations } from './organizations.js';
 
+// User <-> Organization Memberships (Phase 129)
+export { userOrganizationMemberships } from './user-org-memberships.js';
+
 // SSO Connections
 export {
   ssoConnections,

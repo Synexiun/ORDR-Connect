@@ -114,10 +114,17 @@ export class DrizzleOrgStore implements OrgStore {
       .where(and(eq(schema.organizations.tenantId, tenantId), eq(schema.organizations.id, orgId)));
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- returns empty: no user-org mapping table yet
-  async getUsersByOrg(_tenantId: string, _orgId: string): Promise<readonly string[]> {
-    // TODO: implement when user-organization mapping table is added
-    return [];
+  async getUsersByOrg(tenantId: string, orgId: string): Promise<readonly string[]> {
+    const rows = await this.db
+      .select({ userId: schema.userOrganizationMemberships.userId })
+      .from(schema.userOrganizationMemberships)
+      .where(
+        and(
+          eq(schema.userOrganizationMemberships.tenantId, tenantId),
+          eq(schema.userOrganizationMemberships.orgId, orgId),
+        ),
+      );
+    return rows.map((r) => r.userId);
   }
 
   async getChildOrgIds(tenantId: string, orgId: string): Promise<readonly string[]> {
@@ -128,5 +135,45 @@ export class DrizzleOrgStore implements OrgStore {
         and(eq(schema.organizations.tenantId, tenantId), eq(schema.organizations.parentId, orgId)),
       );
     return rows.map((r) => r.id);
+  }
+
+  // ─── Membership management (Phase 129) ──────────────────────────
+
+  async addUserToOrg(
+    tenantId: string,
+    orgId: string,
+    userId: string,
+    addedBy: string = 'system',
+  ): Promise<void> {
+    // Idempotent upsert — onConflictDoNothing keeps addUserToOrg safe to retry.
+    await this.db
+      .insert(schema.userOrganizationMemberships)
+      .values({ tenantId, orgId, userId, addedBy })
+      .onConflictDoNothing();
+  }
+
+  async removeUserFromOrg(tenantId: string, orgId: string, userId: string): Promise<void> {
+    await this.db
+      .delete(schema.userOrganizationMemberships)
+      .where(
+        and(
+          eq(schema.userOrganizationMemberships.tenantId, tenantId),
+          eq(schema.userOrganizationMemberships.orgId, orgId),
+          eq(schema.userOrganizationMemberships.userId, userId),
+        ),
+      );
+  }
+
+  async listOrgsForUser(tenantId: string, userId: string): Promise<readonly string[]> {
+    const rows = await this.db
+      .select({ orgId: schema.userOrganizationMemberships.orgId })
+      .from(schema.userOrganizationMemberships)
+      .where(
+        and(
+          eq(schema.userOrganizationMemberships.tenantId, tenantId),
+          eq(schema.userOrganizationMemberships.userId, userId),
+        ),
+      );
+    return rows.map((r) => r.orgId);
   }
 }

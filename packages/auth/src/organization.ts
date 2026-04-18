@@ -47,14 +47,24 @@ export interface OrgStore {
   getBySlug(tenantId: string, slug: string): Promise<Organization | null>;
   list(tenantId: string, parentId?: string | null): Promise<readonly Organization[]>;
   listAll(tenantId: string): Promise<readonly Organization[]>;
-  update(tenantId: string, orgId: string, fields: Partial<Pick<Organization, 'name' | 'slug' | 'metadata'>>): Promise<Organization | null>;
+  update(
+    tenantId: string,
+    orgId: string,
+    fields: Partial<Pick<Organization, 'name' | 'slug' | 'metadata'>>,
+  ): Promise<Organization | null>;
   delete(tenantId: string, orgId: string): Promise<void>;
   getUsersByOrg(tenantId: string, orgId: string): Promise<readonly string[]>;
   getChildOrgIds(tenantId: string, orgId: string): Promise<readonly string[]>;
+
+  // ─── Membership management (Phase 129) ──────────────────────────
+  addUserToOrg(tenantId: string, orgId: string, userId: string, addedBy?: string): Promise<void>;
+  removeUserFromOrg(tenantId: string, orgId: string, userId: string): Promise<void>;
+  listOrgsForUser(tenantId: string, userId: string): Promise<readonly string[]>;
 }
 
 // ─── In-Memory Org Store (Testing) ───────────────────────────────
 
+/* eslint-disable @typescript-eslint/require-await -- async methods satisfy OrgStore interface; in-memory impl has no awaits */
 export class InMemoryOrgStore implements OrgStore {
   private readonly orgs = new Map<string, Organization>();
   private readonly userOrgs = new Map<string, readonly string[]>();
@@ -136,13 +146,39 @@ export class InMemoryOrgStore implements OrgStore {
     return results;
   }
 
-  // Test helper
-  addUserToOrg(tenantId: string, orgId: string, userId: string): void {
+  // ─── Membership management (Phase 129) ──────────────────────────
+
+  async addUserToOrg(tenantId: string, orgId: string, userId: string): Promise<void> {
     const key = `${tenantId}:${orgId}`;
     const existing = this.userOrgs.get(key) ?? [];
-    this.userOrgs.set(key, [...existing, userId]);
+    if (!existing.includes(userId)) {
+      this.userOrgs.set(key, [...existing, userId]);
+    }
+  }
+
+  async removeUserFromOrg(tenantId: string, orgId: string, userId: string): Promise<void> {
+    const key = `${tenantId}:${orgId}`;
+    const existing = this.userOrgs.get(key) ?? [];
+    const next = existing.filter((id) => id !== userId);
+    if (next.length === 0) {
+      this.userOrgs.delete(key);
+    } else {
+      this.userOrgs.set(key, next);
+    }
+  }
+
+  async listOrgsForUser(tenantId: string, userId: string): Promise<readonly string[]> {
+    const results: string[] = [];
+    for (const [key, users] of this.userOrgs.entries()) {
+      const [t, orgId] = key.split(':');
+      if (t === tenantId && users.includes(userId) && orgId !== undefined) {
+        results.push(orgId);
+      }
+    }
+    return results;
   }
 }
+/* eslint-enable @typescript-eslint/require-await */
 
 // ─── Organization Manager ─────────────────────────────────────────
 
@@ -157,10 +193,7 @@ export class OrganizationManager {
    * Creates a new organization within a tenant.
    * Validates slug uniqueness within the tenant.
    */
-  async createOrganization(
-    tenantId: string,
-    input: CreateOrgInput,
-  ): Promise<Result<Organization, AppError>> {
+  async createOrganization(tenantId: string, input: CreateOrgInput): Promise<Result<Organization>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -173,23 +206,28 @@ export class OrganizationManager {
       return err(new AppError('Organization slug is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
 
-    // Validate slug format
+    // Validate slug format — regex is linear (no nested quantifiers, no backtracking risk)
+    // eslint-disable-next-line security/detect-unsafe-regex
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug)) {
-      return err(new AppError(
-        'Slug must be lowercase alphanumeric with hyphens only',
-        ERROR_CODES.VALIDATION_FAILED,
-        400,
-      ));
+      return err(
+        new AppError(
+          'Slug must be lowercase alphanumeric with hyphens only',
+          ERROR_CODES.VALIDATION_FAILED,
+          400,
+        ),
+      );
     }
 
     // Check slug uniqueness within tenant
     const existing = await this.store.getBySlug(tenantId, input.slug);
     if (existing) {
-      return err(new AppError(
-        'Organization with this slug already exists in this tenant',
-        ERROR_CODES.CONFLICT,
-        409,
-      ));
+      return err(
+        new AppError(
+          'Organization with this slug already exists in this tenant',
+          ERROR_CODES.CONFLICT,
+          409,
+        ),
+      );
     }
 
     // Validate parent exists if specified
@@ -220,10 +258,7 @@ export class OrganizationManager {
   /**
    * Gets an organization by ID.
    */
-  async getOrganization(
-    tenantId: string,
-    orgId: string,
-  ): Promise<Result<Organization, AppError>> {
+  async getOrganization(tenantId: string, orgId: string): Promise<Result<Organization>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -242,7 +277,7 @@ export class OrganizationManager {
   async listOrganizations(
     tenantId: string,
     parentId?: string,
-  ): Promise<Result<readonly Organization[], AppError>> {
+  ): Promise<Result<readonly Organization[]>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -258,7 +293,7 @@ export class OrganizationManager {
     tenantId: string,
     orgId: string,
     updates: Partial<Pick<Organization, 'name' | 'slug' | 'metadata'>>,
-  ): Promise<Result<Organization, AppError>> {
+  ): Promise<Result<Organization>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -269,22 +304,27 @@ export class OrganizationManager {
     }
 
     // Check slug uniqueness if slug is being updated
-    if (updates.slug && updates.slug !== existing.slug) {
+    if (updates.slug !== undefined && updates.slug.length > 0 && updates.slug !== existing.slug) {
+      // eslint-disable-next-line security/detect-unsafe-regex -- linear, no nested quantifiers
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(updates.slug)) {
-        return err(new AppError(
-          'Slug must be lowercase alphanumeric with hyphens only',
-          ERROR_CODES.VALIDATION_FAILED,
-          400,
-        ));
+        return err(
+          new AppError(
+            'Slug must be lowercase alphanumeric with hyphens only',
+            ERROR_CODES.VALIDATION_FAILED,
+            400,
+          ),
+        );
       }
 
       const slugConflict = await this.store.getBySlug(tenantId, updates.slug);
       if (slugConflict) {
-        return err(new AppError(
-          'Organization with this slug already exists in this tenant',
-          ERROR_CODES.CONFLICT,
-          409,
-        ));
+        return err(
+          new AppError(
+            'Organization with this slug already exists in this tenant',
+            ERROR_CODES.CONFLICT,
+            409,
+          ),
+        );
       }
     }
 
@@ -299,10 +339,7 @@ export class OrganizationManager {
   /**
    * Deletes an organization. Fails if the org has children.
    */
-  async deleteOrganization(
-    tenantId: string,
-    orgId: string,
-  ): Promise<Result<void, AppError>> {
+  async deleteOrganization(tenantId: string, orgId: string): Promise<Result<void>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -315,11 +352,13 @@ export class OrganizationManager {
     // Check for children
     const children = await this.store.getChildOrgIds(tenantId, orgId);
     if (children.length > 0) {
-      return err(new AppError(
-        'Cannot delete organization with child organizations',
-        ERROR_CODES.CONFLICT,
-        409,
-      ));
+      return err(
+        new AppError(
+          'Cannot delete organization with child organizations',
+          ERROR_CODES.CONFLICT,
+          409,
+        ),
+      );
     }
 
     await this.store.delete(tenantId, orgId);
@@ -329,10 +368,7 @@ export class OrganizationManager {
   /**
    * Builds the full org hierarchy tree from a root org.
    */
-  async getOrgHierarchy(
-    tenantId: string,
-    rootOrgId: string,
-  ): Promise<Result<OrgTree, AppError>> {
+  async getOrgHierarchy(tenantId: string, rootOrgId: string): Promise<Result<OrgTree>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -356,7 +392,7 @@ export class OrganizationManager {
     tenantId: string,
     orgId: string,
     includeChildren?: boolean,
-  ): Promise<Result<readonly string[], AppError>> {
+  ): Promise<Result<readonly string[]>> {
     if (!tenantId || tenantId.trim().length === 0) {
       return err(new AppError('Tenant ID is required', ERROR_CODES.VALIDATION_FAILED, 400));
     }
@@ -368,7 +404,7 @@ export class OrganizationManager {
 
     const directUsers = await this.store.getUsersByOrg(tenantId, orgId);
 
-    if (!includeChildren) {
+    if (includeChildren !== true) {
       return ok(directUsers);
     }
 
@@ -390,10 +426,7 @@ export class OrganizationManager {
 
   // ─── Internal Helpers ─────────────────────────────────────────────
 
-  private buildTree(
-    root: Organization,
-    allOrgs: readonly Organization[],
-  ): OrgTree {
+  private buildTree(root: Organization, allOrgs: readonly Organization[]): OrgTree {
     const children = allOrgs
       .filter((o) => o.parentId === root.id)
       .map((child) => this.buildTree(child, allOrgs));

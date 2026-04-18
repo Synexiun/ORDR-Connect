@@ -94,11 +94,9 @@ describe('OrganizationManager CRUD', () => {
     expect(created.success).toBe(true);
     if (!created.success) return;
 
-    const result = await setup.manager.updateOrganization(
-      'tenant-001',
-      created.data.id,
-      { name: 'New Name' },
-    );
+    const result = await setup.manager.updateOrganization('tenant-001', created.data.id, {
+      name: 'New Name',
+    });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.name).toBe('New Name');
@@ -254,8 +252,8 @@ describe('OrganizationManager.getUsersByOrg', () => {
     expect(org.success).toBe(true);
     if (!org.success) return;
 
-    setup.store.addUserToOrg('tenant-001', org.data.id, 'user-1');
-    setup.store.addUserToOrg('tenant-001', org.data.id, 'user-2');
+    await setup.store.addUserToOrg('tenant-001', org.data.id, 'user-1');
+    await setup.store.addUserToOrg('tenant-001', org.data.id, 'user-2');
 
     const result = await setup.manager.getUsersByOrg('tenant-001', org.data.id);
     expect(result.success).toBe(true);
@@ -282,8 +280,8 @@ describe('OrganizationManager.getUsersByOrg', () => {
     expect(child.success).toBe(true);
     if (!child.success) return;
 
-    setup.store.addUserToOrg('tenant-001', parent.data.id, 'user-parent');
-    setup.store.addUserToOrg('tenant-001', child.data.id, 'user-child');
+    await setup.store.addUserToOrg('tenant-001', parent.data.id, 'user-parent');
+    await setup.store.addUserToOrg('tenant-001', child.data.id, 'user-child');
 
     const result = await setup.manager.getUsersByOrg('tenant-001', parent.data.id, true);
     expect(result.success).toBe(true);
