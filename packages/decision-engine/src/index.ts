@@ -54,7 +54,13 @@ export {
 } from './types.js';
 
 // ─── Rules Engine (Layer 1) ──────────────────────────────────────
-export { RulesEngine, InMemoryRuleStore, evaluateCondition, BUILTIN_RULES, copyBuiltinRulesForTenant } from './rules.js';
+export {
+  RulesEngine,
+  InMemoryRuleStore,
+  evaluateCondition,
+  BUILTIN_RULES,
+  copyBuiltinRulesForTenant,
+} from './rules.js';
 export type { RuleStore } from './rules.js';
 
 // ─── Feature Assembler ──────────────────────────────────────────
@@ -68,6 +74,15 @@ export {
   ContactResponsivenessModel,
   createDefaultMLScorer,
 } from './ml-scorer.js';
+
+// ─── ML Bundle (externalised weights, hot-swap) ─────────────────
+export { BundledLinearModel, loadMLBundle, parseMLBundle, computeBundleHash } from './ml-bundle.js';
+export type {
+  MLModelBundle,
+  MLModelEntry,
+  MLFeatureTransform,
+  BundleLoadResult,
+} from './ml-bundle.js';
 
 // ─── LLM Reasoner (Layer 3) ─────────────────────────────────────
 export { LLMReasoner } from './llm-reasoner.js';

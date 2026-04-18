@@ -266,10 +266,23 @@ export class ContactResponsivenessModel implements MLModel {
 // ─── Factory ─────────────────────────────────────────────────────
 
 /**
- * Create an MLScorer with all built-in stub models registered.
+ * Create an MLScorer. If `bundleModels` is provided and non-empty, its
+ * models are used verbatim (externalised weights path). Otherwise the
+ * built-in hand-tuned linear models (`v0.2.0-linear`) are registered as
+ * a graceful fallback — so the pipeline keeps producing predictions even
+ * if no signed bundle is shipped.
+ *
+ * See `ml-bundle.ts` for the bundle format and integrity model.
  */
-export function createDefaultMLScorer(): MLScorer {
+export function createDefaultMLScorer(bundleModels?: ReadonlyMap<string, MLModel>): MLScorer {
   const models = new Map<string, MLModel>();
+
+  if (bundleModels !== undefined && bundleModels.size > 0) {
+    for (const [name, model] of bundleModels) {
+      models.set(name, model);
+    }
+    return new MLScorer(models);
+  }
 
   const propensity = new PropensityToPayModel();
   const churn = new ChurnRiskModel();
