@@ -17,7 +17,19 @@ import { assembleFeatures } from './feature-assembler.js';
 
 // ─── ML Scorer ───────────────────────────────────────────────────
 
-export class MLScorer {
+/**
+ * Public contract of a scorer — used so wrappers (e.g., ShadowScorer)
+ * can stand in wherever a MLScorer is accepted without sharing the
+ * class's private fields.
+ */
+export interface MLScorerLike {
+  score(context: DecisionContext, modelName: string): Promise<Result<MLPrediction>>;
+  scoreAll(context: DecisionContext): Promise<Result<readonly MLPrediction[]>>;
+  hasModel(name: string): boolean;
+  getModelNames(): readonly string[];
+}
+
+export class MLScorer implements MLScorerLike {
   private readonly models: Map<string, MLModel>;
 
   constructor(models: Map<string, MLModel>) {

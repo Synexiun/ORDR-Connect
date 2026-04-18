@@ -74,6 +74,7 @@ export {
   ContactResponsivenessModel,
   createDefaultMLScorer,
 } from './ml-scorer.js';
+export type { MLScorerLike } from './ml-scorer.js';
 
 // ─── ML Bundle (externalised weights, hot-swap) ─────────────────
 export { BundledLinearModel, loadMLBundle, parseMLBundle, computeBundleHash } from './ml-bundle.js';

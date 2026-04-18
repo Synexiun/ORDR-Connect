@@ -35,7 +35,7 @@
  */
 
 import { type Result } from '@ordr/core';
-import type { MLScorer } from './ml-scorer.js';
+import type { MLScorer, MLScorerLike } from './ml-scorer.js';
 import type { DecisionContext, MLPrediction } from './types.js';
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ export interface ShadowScorerOptions {
  * comparison telemetry only. API-compatible with MLScorer — wherever a
  * MLScorer is accepted for scoring, a ShadowScorer can be substituted.
  */
-export class ShadowScorer {
+export class ShadowScorer implements MLScorerLike {
   private readonly primary: MLScorer;
   private readonly shadows: readonly ShadowDefinition[];
   private readonly sink: ShadowComparisonSink | undefined;

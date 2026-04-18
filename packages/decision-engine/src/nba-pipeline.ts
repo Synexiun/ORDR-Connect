@@ -30,7 +30,7 @@ import type {
   AuditLoggerInterface,
 } from './types.js';
 import type { RulesEngine } from './rules.js';
-import type { MLScorer } from './ml-scorer.js';
+import type { MLScorerLike } from './ml-scorer.js';
 import type { LLMReasoner } from './llm-reasoner.js';
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -59,7 +59,7 @@ const ACTION_COST_ESTIMATES: Readonly<Record<string, number>> = {
 
 export interface NBAPipelineDeps {
   readonly rules: RulesEngine;
-  readonly ml: MLScorer;
+  readonly ml: MLScorerLike;
   readonly llm: LLMReasoner;
   readonly compliance: ComplianceGateInterface;
   readonly auditLogger: AuditLoggerInterface;
@@ -71,7 +71,7 @@ export interface NBAPipelineDeps {
 
 export class NBAPipeline {
   private readonly rules: RulesEngine;
-  private readonly ml: MLScorer;
+  private readonly ml: MLScorerLike;
   private readonly llm: LLMReasoner;
   private readonly compliance: ComplianceGateInterface;
   private readonly auditLogger: AuditLoggerInterface;

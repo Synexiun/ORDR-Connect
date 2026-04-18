@@ -72,10 +72,14 @@ import {
   RulesEngine,
   createDefaultMLScorer,
   LLMReasoner,
+  loadMLBundle,
+  ShadowScorer,
+  PrometheusShadowSink,
 } from '@ordr/decision-engine';
 import type {
   ComplianceGateInterface as NBAComplianceGateInterface,
   DecisionAuditEntry,
+  MLScorerLike,
 } from '@ordr/decision-engine';
 import {
   ConsentManager,
@@ -1526,7 +1530,71 @@ async function bootstrap(): Promise<void> {
     // custom rules stored in the decision_rules table.
     const nbaRuleStore = new DrizzleRuleStore(db);
     const nbaRulesEngine = new RulesEngine(nbaRuleStore);
-    const nbaMLScorer = createDefaultMLScorer();
+
+    // Phase 143 — primary ML scorer. If ML_BUNDLE_PATH is set, load the
+    // SHA-256-signed weights bundle; otherwise fall back to the hand-tuned
+    // v0.2.0-linear models. Integrity failure is fatal (fail-closed) because
+    // silently running old weights would violate Rule 9 audit replay.
+    //
+    // Phase 144 + 151 — if ML_SHADOW_BUNDLE_PATH is ALSO set, wrap the
+    // primary in a ShadowScorer with PrometheusShadowSink so the candidate
+    // bundle runs in parallel and divergence flows to the shadow-models
+    // dashboard. Shadow failures never affect the primary decision path.
+    const primaryBundlePath = process.env['ML_BUNDLE_PATH'];
+    let primaryScorer;
+    if (primaryBundlePath !== undefined && primaryBundlePath !== '') {
+      const loaded = await loadMLBundle(primaryBundlePath);
+      if (!loaded.success) {
+        throw new Error(`ML_BUNDLE_PATH bundle failed to load: ${loaded.error.message}`);
+      }
+      primaryScorer = createDefaultMLScorer(loaded.data.models);
+      console.warn(
+        JSON.stringify({
+          level: 'info',
+          component: 'api-bootstrap',
+          event: 'ml.bundle.loaded',
+          role: 'primary',
+          bundleVersion: loaded.data.bundle.version,
+          bundleSha256: loaded.data.bundle.sha256,
+        }),
+      );
+    } else {
+      primaryScorer = createDefaultMLScorer();
+    }
+
+    const shadowBundlePath = process.env['ML_SHADOW_BUNDLE_PATH'];
+    let nbaMLScorer: MLScorerLike = primaryScorer;
+    if (shadowBundlePath !== undefined && shadowBundlePath !== '') {
+      const loaded = await loadMLBundle(shadowBundlePath);
+      if (!loaded.success) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            component: 'api-bootstrap',
+            event: 'ml.shadow_bundle.load_failed',
+            error: loaded.error.message,
+          }),
+        );
+      } else {
+        const candidate = createDefaultMLScorer(loaded.data.models);
+        const shadowName = `bundle-${loaded.data.bundle.version}`;
+        nbaMLScorer = new ShadowScorer({
+          primary: primaryScorer,
+          shadows: [{ name: shadowName, scorer: candidate }],
+          sink: new PrometheusShadowSink({ metrics: metricsRegistry }),
+        });
+        console.warn(
+          JSON.stringify({
+            level: 'info',
+            component: 'api-bootstrap',
+            event: 'ml.shadow_bundle.loaded',
+            shadowName,
+            bundleVersion: loaded.data.bundle.version,
+            bundleSha256: loaded.data.bundle.sha256,
+          }),
+        );
+      }
+    }
 
     // PromptRegistry — real registry with built-in collections templates.
     // NBA-specific system prompt registered under 'nba.decision_engine'.
