@@ -72,6 +72,12 @@ const sessions = new Map<string, CobrowseSession>();
 type SignalSubscriber = (signal: CobrowseSignal) => void | Promise<void>;
 const signalSubscribers = new Map<string, Set<SignalSubscriber>>();
 
+// Per-session SSE connection counters (defence in depth against stream flood;
+// cobrowse sessions only ever have 2 legitimate subscribers — admin + user —
+// so cap at a small multiple to allow brief reconnect overlap).
+const MAX_SSE_CONNECTIONS_PER_SESSION = 4;
+const sseConnectionCount = new Map<string, number>();
+
 function publishSignal(sessionId: string, signal: CobrowseSignal): void {
   const subs = signalSubscribers.get(sessionId);
   if (subs !== undefined) for (const cb of subs) void cb(signal);
@@ -626,11 +632,29 @@ cobrowseRouter.post('/sessions/:id/signal', requireAuth(), rateLimit('write'), a
     timestamp: new Date(),
   };
   publishSignal(session.id, signal);
+
+  // WORM audit — every signal is a state change (HIPAA §164.312(b), Rule 3).
+  // Payload is NOT logged: WebRTC SDP can contain IP candidates that count as
+  // personal data, so we persist only type+direction metadata (Rule 6).
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'cobrowse.signal_exchanged',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'cobrowse_session',
+      resourceId: session.id,
+      action: 'signal',
+      details: { signalType: signal.type, from: signal.from },
+      timestamp: signal.timestamp,
+    });
+  }
+
   return c.json({ success: true as const });
 });
 
 // GET /sessions/:id/events — SSE stream for signaling
-cobrowseRouter.get('/sessions/:id/events', requireAuth(), (c) => {
+cobrowseRouter.get('/sessions/:id/events', requireAuth(), async (c) => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined)
     return c.json(
@@ -670,6 +694,53 @@ cobrowseRouter.get('/sessions/:id/events', requireAuth(), (c) => {
 
   const role: 'admin' | 'user' = session.adminId === ctx.userId ? 'admin' : 'user';
 
+  // Cap concurrent SSE connections per session to prevent stream-flood DoS.
+  // Legitimate sessions have exactly two subscribers (admin + user); the cap
+  // allows a small margin for brief reconnect overlap.
+  const currentCount = sseConnectionCount.get(session.id) ?? 0;
+  if (currentCount >= MAX_SSE_CONNECTIONS_PER_SESSION) {
+    if (_auditLogger) {
+      await _auditLogger.log({
+        tenantId: ctx.tenantId,
+        eventType: 'cobrowse.signaling_rate_limited',
+        actorType: 'user',
+        actorId: ctx.userId,
+        resource: 'cobrowse_session',
+        resourceId: session.id,
+        action: 'deny',
+        details: { reason: 'sse_connection_cap', cap: MAX_SSE_CONNECTIONS_PER_SESSION, role },
+        timestamp: new Date(),
+      });
+    }
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many concurrent signaling connections for this session',
+          correlationId: c.get('requestId'),
+        },
+      },
+      429,
+    );
+  }
+  sseConnectionCount.set(session.id, currentCount + 1);
+
+  // WORM audit — signaling channel opened (HIPAA §164.312(b)).
+  if (_auditLogger) {
+    await _auditLogger.log({
+      tenantId: ctx.tenantId,
+      eventType: 'cobrowse.signaling_connected',
+      actorType: 'user',
+      actorId: ctx.userId,
+      resource: 'cobrowse_session',
+      resourceId: session.id,
+      action: 'subscribe',
+      details: { role },
+      timestamp: new Date(),
+    });
+  }
+
   return streamSSE(c, async (stream) => {
     let unsubscribe: (() => void) | undefined;
     try {
@@ -706,6 +777,9 @@ cobrowseRouter.get('/sessions/:id/events', requireAuth(), (c) => {
       }
     } finally {
       unsubscribe?.();
+      const c2 = sseConnectionCount.get(session.id) ?? 0;
+      if (c2 <= 1) sseConnectionCount.delete(session.id);
+      else sseConnectionCount.set(session.id, c2 - 1);
     }
   });
 });

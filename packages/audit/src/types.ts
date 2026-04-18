@@ -80,6 +80,10 @@ export type AuditEventType =
   | 'cobrowse.session_accepted'
   | 'cobrowse.session_rejected'
   | 'cobrowse.session_ended'
+  // Cobrowse signaling (Phase 146) — Rule 3: every state change logged
+  | 'cobrowse.signal_exchanged'
+  | 'cobrowse.signaling_connected'
+  | 'cobrowse.signaling_rate_limited'
   // Messaging (Phase 84)
   | 'messaging.channel_created'
   | 'messaging.member_added'

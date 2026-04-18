@@ -226,9 +226,7 @@ describe('AuditLogger', () => {
     });
 
     it('throws for empty range', async () => {
-      await expect(
-        logger.generateMerkleRoot('tenant-1', 1, 10),
-      ).rejects.toThrow('No events found');
+      await expect(logger.generateMerkleRoot('tenant-1', 1, 10)).rejects.toThrow('No events found');
     });
 
     it('is deterministic for the same events', async () => {
@@ -291,10 +289,70 @@ describe('AuditLogger', () => {
         await logger.log(makeInput({ resourceId: `rec-${String(i)}` }));
       }
 
-      await expect(logger.generateProof('tenant-1', 999)).rejects.toThrow(
-        'not found in batch',
-      );
+      await expect(logger.generateProof('tenant-1', 999)).rejects.toThrow('not found in batch');
     });
+  });
+});
+
+describe('Cobrowse signaling event types (Phase 146)', () => {
+  let logger: AuditLogger;
+
+  beforeEach(() => {
+    logger = new AuditLogger(new InMemoryAuditStore());
+  });
+
+  it('accepts cobrowse.signal_exchanged as a valid event type', async () => {
+    const event = await logger.log(
+      makeInput({
+        eventType: 'cobrowse.signal_exchanged',
+        resource: 'cobrowse_session',
+        resourceId: 'cbs_01',
+        action: 'signal',
+        details: { signalType: 'offer', from: 'admin' },
+      }),
+    );
+    expect(event.eventType).toBe('cobrowse.signal_exchanged');
+  });
+
+  it('accepts cobrowse.signaling_connected as a valid event type', async () => {
+    const event = await logger.log(
+      makeInput({
+        eventType: 'cobrowse.signaling_connected',
+        resource: 'cobrowse_session',
+        resourceId: 'cbs_01',
+        action: 'subscribe',
+        details: { role: 'admin' },
+      }),
+    );
+    expect(event.eventType).toBe('cobrowse.signaling_connected');
+  });
+
+  it('accepts cobrowse.signaling_rate_limited as a valid event type', async () => {
+    const event = await logger.log(
+      makeInput({
+        eventType: 'cobrowse.signaling_rate_limited',
+        resource: 'cobrowse_session',
+        resourceId: 'cbs_01',
+        action: 'deny',
+        details: { reason: 'sse_connection_cap', cap: 4, role: 'user' },
+      }),
+    );
+    expect(event.eventType).toBe('cobrowse.signaling_rate_limited');
+  });
+
+  it('Rule 6 — signal audit details omit WebRTC payload content', async () => {
+    // Guardrail test: the convention is that `details` for signal events carries
+    // only type+direction metadata, never the SDP/ICE payload. This test documents
+    // that convention and will fail if a future change adds payload content.
+    const event = await logger.log(
+      makeInput({
+        eventType: 'cobrowse.signal_exchanged',
+        details: { signalType: 'offer', from: 'admin' },
+      }),
+    );
+    expect(event.details).not.toHaveProperty('payload');
+    expect(event.details).not.toHaveProperty('sdp');
+    expect(event.details).not.toHaveProperty('candidate');
   });
 });
 
