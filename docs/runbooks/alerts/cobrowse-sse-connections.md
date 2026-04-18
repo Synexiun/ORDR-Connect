@@ -59,12 +59,22 @@ This is a capacity / hygiene signal, not a security alert on its own — but the
 
 ### B — Stuck / idle clients
 
-1. The Node API process holds the SSE streams. Restart the affected pod(s):
+1. **First wait.** Since Phase 150 the server self-sheds SSE streams after
+   30 minutes via `MAX_SSE_CONNECTION_AGE_MS` (see
+   `apps/api/src/routes/cobrowse.ts`). Watch
+   `cobrowse_sse_idle_timeouts_total` — if it is climbing, the server is
+   already cleaning up stuck streams and the gauge should trend down on
+   its own within 30–35m. No action required unless the gauge stays high
+   past that window.
+
+2. **If self-shed is insufficient**, restart the affected pod(s):
    ```bash
    kubectl -n ordr-system rollout restart deployment/ordr-api
    ```
-   Rolling restart will drop all SSE streams; clients will reconnect, stuck ones will not. Gauge drops and stays down if the cause was stuck clients.
-2. If the gauge climbs back quickly after restart, escalate to case C.
+   Rolling restart drops all SSE streams; clients reconnect, stuck ones
+   do not. Gauge drops and stays down if the cause was stuck clients.
+
+3. If the gauge climbs back quickly after restart, escalate to case C.
 
 ### C — Subscriber leak
 

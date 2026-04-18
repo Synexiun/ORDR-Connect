@@ -129,6 +129,15 @@ const PREDEFINED_METRICS: readonly MetricDefinition[] = [
     type: 'counter',
     labelNames: ['tenant_id', 'reason'],
   },
+  // Phase 150 — server-initiated SSE closes after MAX_SSE_CONNECTION_AGE_MS.
+  // High values indicate either heavy long-running usage (expected, healthy
+  // reconnect pattern) or stuck-client shedding (the intended recovery).
+  {
+    name: 'cobrowse_sse_idle_timeouts_total',
+    help: 'Cobrowse SSE streams closed by server after max connection age',
+    type: 'counter',
+    labelNames: ['tenant_id'],
+  },
 ] as const;
 
 // ─── Metrics Registry ────────────────────────────────────────────

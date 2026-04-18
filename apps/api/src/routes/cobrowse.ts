@@ -86,6 +86,17 @@ const signalSubscribers = new Map<string, Set<SignalSubscriber>>();
 const MAX_SSE_CONNECTIONS_PER_SESSION = 4;
 const sseConnectionCount = new Map<string, number>();
 
+// Phase 150 — server-side SSE idle timeout. Client-initiated close is the
+// happy path (controller.abort() or tab unload), but a stuck client (crashed
+// browser, kernel-level TCP hang, captive-portal black-hole) can keep a
+// stream open indefinitely, inflating cobrowse_sse_connections_active and
+// defeating MAX_SSE_CONNECTIONS_PER_SESSION. Shedding streams at a fixed
+// max age is safer than relying on TCP keepalive: healthy clients simply
+// reconnect (the web SSE reader already tolerates drops), stuck ones are
+// released. Chosen well below the 2h session cap so every live session
+// cycles at least 3× before session expiry.
+const MAX_SSE_CONNECTION_AGE_MS = 30 * 60 * 1000;
+
 function publishSignal(sessionId: string, signal: CobrowseSignal): void {
   const subs = signalSubscribers.get(sessionId);
   if (subs !== undefined) for (const cb of subs) void cb(signal);
@@ -788,17 +799,34 @@ cobrowseRouter.get('/sessions/:id/events', requireAuth(), async (c) => {
           // Disconnected — suppress
         }
       });
-      // Heartbeat every 20s
+      // Heartbeat every 20s, with a hard max connection age (Phase 150).
+      const openedAt = Date.now();
       while (!stream.aborted) {
         await new Promise<void>((r) => setTimeout(r, 20_000));
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (!stream.aborted) {
-          await stream.writeSSE({
-            data: JSON.stringify({ ts: Date.now() }),
-            event: 'heartbeat',
-            id: String(id++),
+        if (stream.aborted) break;
+        if (Date.now() - openedAt >= MAX_SSE_CONNECTION_AGE_MS) {
+          _metrics?.incrementCounter('cobrowse_sse_idle_timeouts_total', {
+            tenant_id: ctx.tenantId,
           });
+          // Notify the client politely before tearing down so a reconnect
+          // loop starts from a clean state rather than a mid-write error.
+          try {
+            await stream.writeSSE({
+              data: JSON.stringify({ reason: 'max_age' }),
+              event: 'server_close',
+              id: String(id++),
+            });
+          } catch {
+            /* already gone — nothing to flush */
+          }
+          break;
         }
+        await stream.writeSSE({
+          data: JSON.stringify({ ts: Date.now() }),
+          event: 'heartbeat',
+          id: String(id++),
+        });
       }
     } finally {
       unsubscribe?.();
