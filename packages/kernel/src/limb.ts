@@ -26,6 +26,7 @@ import { LimbRegistrar } from './registrar.js';
 import { DiodeClient } from './diode-client.js';
 import { HeartbeatEmitter } from './heartbeat.js';
 import { KillSwitchReceiver } from './kill-switch.js';
+import { BudgetTracker } from './budget-tracker.js';
 import { ORDR_LIMB_ID } from './constants.js';
 import type { HealthBeacon, HealthStatus, RegisterResponse } from './types.js';
 
@@ -78,6 +79,7 @@ export class Limb {
     public readonly diode: DiodeClient,
     public readonly heartbeat: HeartbeatEmitter,
     public readonly killSwitch: KillSwitchReceiver,
+    public readonly budget: BudgetTracker,
   ) {}
 
   /**
@@ -105,6 +107,7 @@ export class Limb {
 
     const diode = new DiodeClient(identity, { coreUrl: env.coreUrl });
     const killSwitch = new KillSwitchReceiver(limbId);
+    const budget = new BudgetTracker();
 
     // Collector closure captures `killSwitch` and `heartbeat` after assignment.
     // We declare `limb` and let the collector close over it via reference.
@@ -130,7 +133,7 @@ export class Limb {
       heartbeatOpts,
     );
 
-    limb = new Limb(identity, registrar, diode, heartbeat, killSwitch);
+    limb = new Limb(identity, registrar, diode, heartbeat, killSwitch, budget);
 
     // Step 1: Register with Core (idempotent on restart)
     limb._certificate = await registrar.register();
@@ -196,11 +199,21 @@ export class Limb {
   /** Build the health beacon payload sent on each heartbeat tick. */
   private _collectHealth(): Omit<HealthBeacon, 'limb_id' | 'timestamp'> {
     return {
-      status: this.killSwitch.isActivated ? 'dead' : this.heartbeat.status,
-      budget_remaining: 1.0, // TODO: wire to real budget tracker in Phase 7
-      budget_total: 1.0,
-      epoch: 1,
+      status: this._computeStatus(),
+      budget_remaining: this.budget.remaining,
+      budget_total: this.budget.total,
+      epoch: this.budget.epoch,
       uptime_seconds: this.heartbeat.uptimeSeconds,
     };
+  }
+
+  /**
+   * Compose the effective health status from subsystem signals.
+   * Precedence: dead (killswitch) > draining (budget < 10%) > heartbeat.status.
+   */
+  private _computeStatus(): HealthStatus {
+    if (this.killSwitch.isActivated) return 'dead';
+    if (this.budget.isDraining) return 'draining';
+    return this.heartbeat.status;
   }
 }

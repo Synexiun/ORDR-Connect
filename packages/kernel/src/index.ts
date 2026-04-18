@@ -22,6 +22,8 @@ export type { HealthCollector, HeartbeatOptions } from './heartbeat.js';
 export { KillSwitchReceiver, KillSwitchActivatedError } from './kill-switch.js';
 export type { KillSwitchStatus } from './kill-switch.js';
 
+export { BudgetTracker } from './budget-tracker.js';
+
 export { LimbRegistrar, RegistrationError } from './registrar.js';
 export type { RegistrarOptions } from './registrar.js';
 
@@ -32,6 +34,7 @@ export type {
   HealthBeacon,
   HealthStatus,
   AuditReport,
+  BudgetAllocation,
   BudgetReport,
   UpwardMessage,
   UpwardMessageType,
@@ -46,6 +49,7 @@ export {
   HEARTBEAT_INTERVAL_MS,
   AUDIT_REPORT_INTERVAL_MS,
   BUDGET_REPORT_INTERVAL_MS,
+  BUDGET_DEGRADED_THRESHOLD,
   MAX_CLOCK_SKEW_MS,
   CONSECUTIVE_FAIL_WARN,
   CONSECUTIVE_FAIL_DEGRADE,
