@@ -27,6 +27,9 @@ export { BudgetTracker } from './budget-tracker.js';
 export { BudgetReporter } from './budget-reporter.js';
 export type { BudgetReporterOptions } from './budget-reporter.js';
 
+export { BudgetAllocationReceiver } from './budget-allocation-receiver.js';
+export type { BudgetAllocationReceiverOptions } from './budget-allocation-receiver.js';
+
 export { LimbRegistrar, RegistrationError } from './registrar.js';
 export type { RegistrarOptions } from './registrar.js';
 
@@ -52,6 +55,7 @@ export {
   HEARTBEAT_INTERVAL_MS,
   AUDIT_REPORT_INTERVAL_MS,
   BUDGET_REPORT_INTERVAL_MS,
+  BUDGET_ALLOCATION_POLL_INTERVAL_MS,
   BUDGET_DEGRADED_THRESHOLD,
   MAX_CLOCK_SKEW_MS,
   CONSECUTIVE_FAIL_WARN,

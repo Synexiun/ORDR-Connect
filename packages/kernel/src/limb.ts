@@ -28,6 +28,7 @@ import { HeartbeatEmitter } from './heartbeat.js';
 import { KillSwitchReceiver } from './kill-switch.js';
 import { BudgetTracker } from './budget-tracker.js';
 import { BudgetReporter } from './budget-reporter.js';
+import { BudgetAllocationReceiver } from './budget-allocation-receiver.js';
 import { ORDR_LIMB_ID } from './constants.js';
 import type { HealthBeacon, HealthStatus, RegisterResponse } from './types.js';
 
@@ -58,6 +59,8 @@ export interface LimbEnv {
   heartbeatIntervalMs?: number;
   /** Budget report interval in ms (default: 300_000 = 5min). */
   budgetReportIntervalMs?: number;
+  /** Budget allocation poll interval in ms (default: 60_000 = 1min). */
+  budgetAllocationPollIntervalMs?: number;
 }
 
 export interface LimbHealthSnapshot {
@@ -84,6 +87,7 @@ export class Limb {
     public readonly killSwitch: KillSwitchReceiver,
     public readonly budget: BudgetTracker,
     public readonly budgetReporter: BudgetReporter,
+    public readonly budgetAllocationReceiver: BudgetAllocationReceiver,
   ) {}
 
   /**
@@ -117,6 +121,17 @@ export class Limb {
       env.budgetReportIntervalMs !== undefined ? { intervalMs: env.budgetReportIntervalMs } : {};
     const budgetReporter = new BudgetReporter(limbId, budget, diode, budgetReporterOpts);
 
+    const allocationReceiverOpts: import('./budget-allocation-receiver.js').BudgetAllocationReceiverOptions =
+      env.budgetAllocationPollIntervalMs !== undefined
+        ? { intervalMs: env.budgetAllocationPollIntervalMs }
+        : {};
+    const budgetAllocationReceiver = new BudgetAllocationReceiver(
+      identity,
+      budget,
+      env.coreUrl,
+      allocationReceiverOpts,
+    );
+
     // Collector closure captures `killSwitch` and `heartbeat` after assignment.
     // We declare `limb` and let the collector close over it via reference.
     // `let` required here: heartbeat's collector closes over `limb`, which is
@@ -141,7 +156,16 @@ export class Limb {
       heartbeatOpts,
     );
 
-    limb = new Limb(identity, registrar, diode, heartbeat, killSwitch, budget, budgetReporter);
+    limb = new Limb(
+      identity,
+      registrar,
+      diode,
+      heartbeat,
+      killSwitch,
+      budget,
+      budgetReporter,
+      budgetAllocationReceiver,
+    );
 
     // Step 1: Register with Core (idempotent on restart)
     limb._certificate = await registrar.register();
@@ -153,6 +177,9 @@ export class Limb {
     // Step 3: Start budget reporter (first tick fires after BUDGET_REPORT_INTERVAL_MS)
     budgetReporter.start();
 
+    // Step 4: Start budget allocation receiver (pulls downward allocations from Core)
+    budgetAllocationReceiver.start();
+
     return limb;
   }
 
@@ -163,6 +190,7 @@ export class Limb {
   shutdown(): void {
     this.heartbeat.stop();
     this.budgetReporter.stop();
+    this.budgetAllocationReceiver.stop();
   }
 
   /** True if successfully registered with Core on this boot. */
@@ -192,6 +220,7 @@ export class Limb {
     this.killSwitch.activate(reason);
     this.heartbeat.stop();
     this.budgetReporter.stop();
+    this.budgetAllocationReceiver.stop();
   }
 
   /** Current health snapshot for observability endpoints. */

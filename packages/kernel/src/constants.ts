@@ -24,6 +24,14 @@ export const AUDIT_REPORT_INTERVAL_MS = 60_000;
 /** How often to emit a budget report (milliseconds). */
 export const BUDGET_REPORT_INTERVAL_MS = 300_000;
 
+/**
+ * How often to poll Core for a fresh BudgetAllocation (milliseconds).
+ * Faster than BUDGET_REPORT_INTERVAL_MS so epoch transitions are picked up
+ * before the next upward report, preventing the tracker from reporting into
+ * a stale epoch.
+ */
+export const BUDGET_ALLOCATION_POLL_INTERVAL_MS = 60_000;
+
 /** Maximum clock skew allowed for request timestamps (milliseconds). */
 export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1_000; // 5 minutes
 
