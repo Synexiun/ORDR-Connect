@@ -140,9 +140,7 @@ describe('EnrichmentPipeline', () => {
       (mockOps.getNode as ReturnType<typeof vi.fn>).mockResolvedValueOnce(ok(node));
 
       // Use a provider map with only Clearbit (supports Company only)
-      const limited = new Map<string, EnrichmentProvider>([
-        ['clearbit', new ClearbitProvider()],
-      ]);
+      const limited = new Map<string, EnrichmentProvider>([['clearbit', new ClearbitProvider()]]);
       const limitedPipeline = createPipeline(mockOps, limited);
 
       const result = await limitedPipeline.enrichNode('node-1', 'tenant-001');
@@ -343,6 +341,160 @@ describe('EnrichmentPipeline', () => {
       const provider = new ClearbitProvider();
       expect(provider.supportedNodeTypes).toContain('Company');
       expect(provider.supportedNodeTypes).not.toContain('Person');
+    });
+
+    it('returns synthetic data when no apiKey is configured', async () => {
+      // With no apiKey, provider must not call fetch.
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const provider = new ClearbitProvider();
+      const node = makeNode({ type: 'Company', properties: { domain: 'acme.com' } });
+
+      const result = await provider.enrich(node);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.fields['_enrichmentMode']).toBe('synthetic');
+      }
+      fetchSpy.mockRestore();
+    });
+
+    it('calls Clearbit API with bearer auth when apiKey is set', async () => {
+      const apiResponse = {
+        name: 'Acme Corp',
+        foundedYear: 2012,
+        category: { industry: 'Retail', sector: 'Consumer Goods' },
+        metrics: { employees: 420, annualRevenue: 50_000_000 },
+        tech: ['stripe', 'segment'],
+        geo: { city: 'Austin', state: 'TX', country: 'US' },
+      };
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify(apiResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const provider = new ClearbitProvider({ apiKey: 'sk_test_123' });
+      const node = makeNode({ type: 'Company', properties: { domain: 'acme.com' } });
+
+      const result = await provider.enrich(node);
+
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const [url, init] = fetchSpy.mock.calls[0]!;
+      expect(String(url)).toContain('company.clearbit.com');
+      expect(String(url)).toContain('domain=acme.com');
+      const headers = (init as RequestInit).headers as Record<string, string>;
+      expect(headers['Authorization']).toBe('Bearer sk_test_123');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.fields['_enrichmentMode']).toBe('clearbit-api');
+        expect(result.data.fields['industry']).toBe('Retail');
+        expect(result.data.fields['employeeCount']).toBe(420);
+        expect(result.data.fields['location']).toBe('Austin, TX, US');
+        expect(result.data.fields['techStack']).toEqual(['stripe', 'segment']);
+        expect(result.data.confidence).toBe(0.92);
+      }
+      fetchSpy.mockRestore();
+    });
+
+    it('extracts domain from email property if domain is missing', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ category: { industry: 'SaaS' } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      const provider = new ClearbitProvider({ apiKey: 'k' });
+      const node = makeNode({
+        type: 'Company',
+        properties: { email: 'sales@FooBar.com' },
+      });
+
+      await provider.enrich(node);
+
+      const [url] = fetchSpy.mock.calls[0]!;
+      // lowercased, @-stripped
+      expect(String(url)).toContain('domain=foobar.com');
+      fetchSpy.mockRestore();
+    });
+
+    it('returns NotFoundError on 404', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 404 }));
+      const provider = new ClearbitProvider({ apiKey: 'k' });
+      const node = makeNode({ type: 'Company', properties: { domain: 'unknown.dev' } });
+
+      const result = await provider.enrich(node);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeInstanceOf(NotFoundError);
+      }
+    });
+
+    it('returns InternalError on 401 with a key-rotation hint', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }));
+      const provider = new ClearbitProvider({ apiKey: 'bad' });
+      const node = makeNode({ type: 'Company', properties: { domain: 'acme.com' } });
+
+      const result = await provider.enrich(node);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toBeInstanceOf(InternalError);
+        expect(result.error.message).toMatch(/CLEARBIT_API_KEY/);
+      }
+    });
+
+    it('returns InternalError on 429 rate-limit', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 429 }));
+      const provider = new ClearbitProvider({ apiKey: 'k' });
+      const node = makeNode({ type: 'Company', properties: { domain: 'acme.com' } });
+
+      const result = await provider.enrich(node);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toMatch(/429/);
+      }
+    });
+
+    it('returns InternalError on 5xx', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream', { status: 503 }));
+      const provider = new ClearbitProvider({ apiKey: 'k' });
+      const node = makeNode({ type: 'Company', properties: { domain: 'acme.com' } });
+
+      const result = await provider.enrich(node);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toMatch(/HTTP 503/);
+      }
+    });
+
+    it('returns InternalError when fetch throws (network failure)', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('DNS failure'));
+      const provider = new ClearbitProvider({ apiKey: 'k' });
+      const node = makeNode({ type: 'Company', properties: { domain: 'acme.com' } });
+
+      const result = await provider.enrich(node);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toMatch(/DNS failure/);
+      }
+    });
+
+    it('returns ValidationError when apiKey is set but node has no domain/email', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const provider = new ClearbitProvider({ apiKey: 'k' });
+      const node = makeNode({ type: 'Company', properties: { name: 'No Domain Inc.' } });
+
+      const result = await provider.enrich(node);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      fetchSpy.mockRestore();
     });
   });
 

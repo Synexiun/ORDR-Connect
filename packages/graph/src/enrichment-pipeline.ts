@@ -13,22 +13,9 @@
  * - NEVER log node properties or enrichment data (PII/PHI risk)
  */
 
-import {
-  type Result,
-  ok,
-  err,
-  InternalError,
-  ValidationError,
-  NotFoundError,
-  type AppError,
-} from '@ordr/core';
+import { type Result, ok, err, InternalError, ValidationError, NotFoundError } from '@ordr/core';
 import type { GraphOperations } from './operations.js';
-import type {
-  GraphNode,
-  EnrichmentSource,
-  EnrichmentData,
-  EnrichmentProvider,
-} from './types.js';
+import type { GraphNode, EnrichmentSource, EnrichmentData, EnrichmentProvider } from './types.js';
 
 // ─── Rate Limiter ───────────────────────────────────────────────
 
@@ -88,7 +75,9 @@ class ProviderRateLimiter {
 
     // Trim old timestamps (keep last 60 seconds)
     const cutoff = now - 60_000;
-    while (this.timestamps.length > 0 && this.timestamps[0]! < cutoff) {
+    while (this.timestamps.length > 0) {
+      const head = this.timestamps[0];
+      if (head === undefined || head >= cutoff) break;
       this.timestamps.shift();
     }
   }
@@ -117,10 +106,7 @@ export class EnrichmentPipeline {
     for (const [name, provider] of this.providers) {
       this.rateLimiters.set(
         name,
-        new ProviderRateLimiter(
-          provider.rateLimit.maxPerSecond,
-          provider.rateLimit.maxPerDay,
-        ),
+        new ProviderRateLimiter(provider.rateLimit.maxPerSecond, provider.rateLimit.maxPerDay),
       );
     }
   }
@@ -139,7 +125,7 @@ export class EnrichmentPipeline {
     nodeId: string,
     tenantId: string,
     source?: EnrichmentSource,
-  ): Promise<Result<EnrichmentData, AppError>> {
+  ): Promise<Result<EnrichmentData>> {
     const tenantValidation = validateTenantId(tenantId);
     if (!tenantValidation.success) {
       return tenantValidation;
@@ -179,9 +165,7 @@ export class EnrichmentPipeline {
     const limiter = this.rateLimiters.get(provider.name);
     if (limiter && !limiter.canProceed()) {
       return err(
-        new InternalError(
-          `Rate limit exceeded for enrichment provider: ${provider.name}`,
-        ),
+        new InternalError(`Rate limit exceeded for enrichment provider: ${provider.name}`),
       );
     }
 
@@ -199,16 +183,12 @@ export class EnrichmentPipeline {
     const enrichmentData = enrichResult.data;
 
     // Merge enrichment data into node properties
-    const updateResult = await this.operations.updateNode(
-      nodeId,
-      tenantId,
-      {
-        ...enrichmentData.fields,
-        _lastEnrichedAt: enrichmentData.enrichedAt.toISOString(),
-        _lastEnrichedBy: enrichmentData.source,
-        _enrichmentConfidence: enrichmentData.confidence,
-      },
-    );
+    const updateResult = await this.operations.updateNode(nodeId, tenantId, {
+      ...enrichmentData.fields,
+      _lastEnrichedAt: enrichmentData.enrichedAt.toISOString(),
+      _lastEnrichedBy: enrichmentData.source,
+      _enrichmentConfidence: enrichmentData.confidence,
+    });
 
     if (!updateResult.success) {
       return updateResult;
@@ -230,7 +210,7 @@ export class EnrichmentPipeline {
     nodeIds: readonly string[],
     tenantId: string,
     source?: EnrichmentSource,
-  ): Promise<Result<number, AppError>> {
+  ): Promise<Result<number>> {
     const tenantValidation = validateTenantId(tenantId);
     if (!tenantValidation.success) {
       return tenantValidation;
@@ -261,9 +241,11 @@ export class EnrichmentPipeline {
    *
    * @param event - New node event with nodeId, nodeType, tenantId
    */
-  async handleNewNode(
-    event: { readonly nodeId: string; readonly nodeType: string; readonly tenantId: string },
-  ): Promise<void> {
+  async handleNewNode(event: {
+    readonly nodeId: string;
+    readonly nodeType: string;
+    readonly tenantId: string;
+  }): Promise<void> {
     // Only enrich Person and Company nodes
     if (event.nodeType !== 'Person' && event.nodeType !== 'Company') {
       return;
@@ -286,10 +268,7 @@ export class EnrichmentPipeline {
   /**
    * Select the best provider for a given node type and optional source preference.
    */
-  private selectProvider(
-    node: GraphNode,
-    source?: EnrichmentSource,
-  ): EnrichmentProvider | null {
+  private selectProvider(node: GraphNode, source?: EnrichmentSource): EnrichmentProvider | null {
     if (source) {
       const provider = this.providers.get(source);
       if (provider && provider.supportedNodeTypes.includes(node.type)) {
@@ -314,34 +293,220 @@ export class EnrichmentPipeline {
 // API integrations. The interface ensures drop-in replacement.
 
 /**
- * Clearbit stub provider — company enrichment data.
- * In production, replace with actual Clearbit API calls.
+ * Clearbit provider — company enrichment data.
+ *
+ * Dual-mode by apiKey presence:
+ * - No apiKey → synthetic firmographic data (dev, tests, and hermetic
+ *   environments where reaching Clearbit is not desirable).
+ * - apiKey present → real `https://company.clearbit.com/v2/companies/find`
+ *   lookup with bearer auth.
+ *
+ * Failure semantics: errors from the real API are surfaced as typed
+ * `AppError` values (NotFoundError for 404, InternalError for 401/429/5xx
+ * or network errors), so the pipeline can decide whether to retry, skip,
+ * or escalate per-call rather than silently masking data quality issues.
  */
+export interface ClearbitProviderOptions {
+  /** Clearbit API key. If absent, the provider returns synthetic data. */
+  readonly apiKey?: string;
+  /** HTTP timeout in ms. Default: 10 s. */
+  readonly timeoutMs?: number;
+  /** API base URL. Defaults to the Clearbit production endpoint. */
+  readonly baseUrl?: string;
+}
+
+interface ClearbitApiCompany {
+  readonly name?: string;
+  readonly legalName?: string;
+  readonly description?: string;
+  readonly foundedYear?: number;
+  readonly category?: {
+    readonly industry?: string;
+    readonly sector?: string;
+  };
+  readonly metrics?: {
+    readonly employees?: number;
+    readonly annualRevenue?: number;
+  };
+  readonly tech?: readonly string[];
+  readonly geo?: {
+    readonly city?: string;
+    readonly state?: string;
+    readonly country?: string;
+  };
+}
+
 export class ClearbitProvider implements EnrichmentProvider {
   readonly name = 'clearbit' as const;
   readonly supportedNodeTypes = ['Company'] as const;
   readonly rateLimit = { maxPerSecond: 10, maxPerDay: 10_000 } as const;
+  private readonly apiKey: string | undefined;
+  private readonly timeoutMs: number;
+  private readonly baseUrl: string;
 
-  async enrich(node: GraphNode): Promise<Result<EnrichmentData, AppError>> {
-    // Stub: return synthetic firmographic data
-    const domain = String(node.properties['domain'] ?? node.properties['email'] ?? '');
-    const enrichmentData: EnrichmentData = {
-      source: 'clearbit',
-      fields: {
-        industry: 'Technology',
-        employeeCount: 150,
-        annualRevenue: 25_000_000,
-        techStack: ['React', 'Node.js', 'PostgreSQL'],
-        founded: 2018,
-        location: 'San Francisco, CA',
-        _enrichmentDomain: domain,
-      },
-      enrichedAt: new Date(),
-      confidence: 0.85,
-    };
-
-    return ok(enrichmentData);
+  constructor(opts: ClearbitProviderOptions = {}) {
+    this.apiKey = opts.apiKey;
+    this.timeoutMs = opts.timeoutMs ?? 10_000;
+    this.baseUrl = opts.baseUrl ?? 'https://company.clearbit.com';
   }
+
+  async enrich(node: GraphNode): Promise<Result<EnrichmentData>> {
+    const domain = extractDomain(readStringProp(node, 'domain', 'email'));
+    const apiKey = this.apiKey;
+
+    // No key configured → return synthetic data so local dev and tests
+    // work without reaching the upstream.
+    if (apiKey === undefined || apiKey.length === 0) {
+      return ok(buildSyntheticClearbitData(domain));
+    }
+
+    if (domain.length === 0) {
+      return err(
+        new ValidationError('Clearbit enrichment requires a domain or email property', {
+          domain: ['Company node has no domain or email property'],
+        }),
+      );
+    }
+
+    return this.fetchLive(apiKey, domain);
+  }
+
+  private async fetchLive(apiKey: string, domain: string): Promise<Result<EnrichmentData>> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, this.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.baseUrl}/v2/companies/find?domain=${encodeURIComponent(domain)}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+          },
+          signal: controller.signal,
+        },
+      );
+    } catch (fetchError) {
+      clearTimeout(timer);
+      const message = fetchError instanceof Error ? fetchError.message : String(fetchError);
+      return err(new InternalError(`Clearbit fetch failed: ${message}`));
+    }
+    clearTimeout(timer);
+
+    if (response.status === 404 || response.status === 422) {
+      return err(new NotFoundError(`Clearbit has no record for domain: ${domain}`));
+    }
+    if (response.status === 401 || response.status === 403) {
+      return err(
+        new InternalError(
+          `Clearbit auth rejected (HTTP ${response.status.toString()}) — check CLEARBIT_API_KEY`,
+        ),
+      );
+    }
+    if (response.status === 429) {
+      return err(new InternalError('Clearbit rate limited (HTTP 429)'));
+    }
+    if (!response.ok) {
+      return err(new InternalError(`Clearbit fetch failed: HTTP ${response.status.toString()}`));
+    }
+
+    let body: ClearbitApiCompany;
+    try {
+      body = (await response.json()) as ClearbitApiCompany;
+    } catch (parseError) {
+      const message = parseError instanceof Error ? parseError.message : String(parseError);
+      return err(new InternalError(`Clearbit response parse failed: ${message}`));
+    }
+
+    return ok(mapClearbitCompany(body, domain));
+  }
+}
+
+function readStringProp(node: GraphNode, ...keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = node.properties[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return '';
+}
+
+function extractDomain(raw: string): string {
+  if (raw.length === 0) return '';
+  // If it's an email, take the part after the '@'.
+  const at = raw.indexOf('@');
+  return (at >= 0 ? raw.substring(at + 1) : raw).trim().toLowerCase();
+}
+
+function buildSyntheticClearbitData(domain: string): EnrichmentData {
+  return {
+    source: 'clearbit',
+    fields: {
+      industry: 'Technology',
+      employeeCount: 150,
+      annualRevenue: 25_000_000,
+      techStack: ['React', 'Node.js', 'PostgreSQL'],
+      founded: 2018,
+      location: 'San Francisco, CA',
+      _enrichmentDomain: domain,
+      _enrichmentMode: 'synthetic',
+    },
+    enrichedAt: new Date(),
+    confidence: 0.85,
+  };
+}
+
+function mapClearbitCompany(body: ClearbitApiCompany, domain: string): EnrichmentData {
+  const fields: Record<string, unknown> = {
+    _enrichmentDomain: domain,
+    _enrichmentMode: 'clearbit-api',
+  };
+
+  if (body.category?.industry !== undefined) {
+    fields['industry'] = body.category.industry;
+  }
+  if (body.category?.sector !== undefined) {
+    fields['sector'] = body.category.sector;
+  }
+  if (body.metrics?.employees !== undefined) {
+    fields['employeeCount'] = body.metrics.employees;
+  }
+  if (body.metrics?.annualRevenue !== undefined) {
+    fields['annualRevenue'] = body.metrics.annualRevenue;
+  }
+  if (body.tech && body.tech.length > 0) {
+    fields['techStack'] = [...body.tech];
+  }
+  if (body.foundedYear !== undefined) {
+    fields['founded'] = body.foundedYear;
+  }
+  if (body.name !== undefined) {
+    fields['companyName'] = body.name;
+  }
+  if (body.legalName !== undefined) {
+    fields['legalName'] = body.legalName;
+  }
+
+  const city = body.geo?.city;
+  const state = body.geo?.state;
+  const country = body.geo?.country;
+  const parts = [city, state, country].filter(
+    (x): x is string => typeof x === 'string' && x.length > 0,
+  );
+  if (parts.length > 0) {
+    fields['location'] = parts.join(', ');
+  }
+
+  return {
+    source: 'clearbit',
+    fields,
+    enrichedAt: new Date(),
+    // Real upstream data rates higher than synthetic.
+    confidence: 0.92,
+  };
 }
 
 /**
@@ -353,7 +518,7 @@ export class ApolloProvider implements EnrichmentProvider {
   readonly supportedNodeTypes = ['Person'] as const;
   readonly rateLimit = { maxPerSecond: 5, maxPerDay: 5_000 } as const;
 
-  async enrich(node: GraphNode): Promise<Result<EnrichmentData, AppError>> {
+  enrich(_node: GraphNode): Promise<Result<EnrichmentData>> {
     // Stub: return synthetic demographic/professional data
     const enrichmentData: EnrichmentData = {
       source: 'apollo',
@@ -369,7 +534,7 @@ export class ApolloProvider implements EnrichmentProvider {
       confidence: 0.78,
     };
 
-    return ok(enrichmentData);
+    return Promise.resolve(ok(enrichmentData));
   }
 }
 
@@ -382,7 +547,7 @@ export class InternalProvider implements EnrichmentProvider {
   readonly supportedNodeTypes = ['Person', 'Company', 'Deal'] as const;
   readonly rateLimit = { maxPerSecond: 100, maxPerDay: 1_000_000 } as const;
 
-  async enrich(node: GraphNode): Promise<Result<EnrichmentData, AppError>> {
+  enrich(node: GraphNode): Promise<Result<EnrichmentData>> {
     // Enrich from existing graph-computed properties
     const enrichmentData: EnrichmentData = {
       source: 'internal',
@@ -396,13 +561,13 @@ export class InternalProvider implements EnrichmentProvider {
       confidence: 1.0, // Internal data is fully trusted
     };
 
-    return ok(enrichmentData);
+    return Promise.resolve(ok(enrichmentData));
   }
 }
 
 // ─── Validation Helpers ───────────────────────────────────────────
 
-function validateTenantId(tenantId: string): Result<void, AppError> {
+function validateTenantId(tenantId: string): Result<void> {
   if (!tenantId || tenantId.trim().length === 0) {
     return err(
       new ValidationError('tenantId is required for enrichment operations', {
