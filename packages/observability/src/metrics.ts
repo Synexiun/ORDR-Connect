@@ -138,6 +138,24 @@ const PREDEFINED_METRICS: readonly MetricDefinition[] = [
     type: 'counter',
     labelNames: ['tenant_id'],
   },
+
+  // Shadow-model A/B harness (Phase 151) — Rule 9 AI governance observability.
+  // tenant_id intentionally omitted: shadow-vs-primary divergence is a
+  // property of the model pair, not the tenant. Full events (with tenantId)
+  // still flow through the ShadowComparisonSink audit/SIEM path for
+  // per-tenant correlation when needed.
+  {
+    name: 'shadow_comparisons_total',
+    help: 'Primary/shadow model comparison outcomes',
+    type: 'counter',
+    labelNames: ['model_name', 'shadow_name', 'status'],
+  },
+  {
+    name: 'shadow_divergence',
+    help: '|primaryScore - shadowScore| distribution per primary/shadow pair',
+    type: 'histogram',
+    labelNames: ['model_name', 'shadow_name'],
+  },
 ] as const;
 
 // ─── Metrics Registry ────────────────────────────────────────────

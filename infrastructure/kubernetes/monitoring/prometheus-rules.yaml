@@ -287,6 +287,27 @@ spec:
             description: 'PersistentVolume {{ $labels.persistentvolumeclaim }} has only {{ $value | humanizePercentage }} space remaining.'
             runbook: 'https://runbooks.ordr-connect.synexiun.com/p3/pv-space-low'
 
+        # Shadow-model health (Phase 151) — Rule 9 AI governance. A shadow
+        # erroring frequently is still isolated from the primary path by
+        # ShadowScorer, but it means promotion decisions cannot be based on
+        # the current metrics — the comparison corpus is polluted.
+        - alert: ShadowModelErrorRateHigh
+          expr: |
+            (
+              sum(rate(shadow_comparisons_total{status=~"error|missing_model"}[15m])) by (shadow_name)
+              /
+              sum(rate(shadow_comparisons_total[15m])) by (shadow_name)
+            ) > 0.05
+          for: 30m
+          labels:
+            severity: P3
+            team: platform
+            compliance: soc2-rule9
+          annotations:
+            summary: 'LOW: Shadow model {{ $labels.shadow_name }} error rate > 5%'
+            description: 'Shadow {{ $labels.shadow_name }} is returning errors or missing-model sentinels at {{ $value | humanizePercentage }} over 15m. Promotion decisions are not meaningful until this clears. Check the candidate bundle.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p3/shadow-model-errors'
+
         # Cobrowse capacity signal (Phase 148) — legitimate sessions only have
         # 2 subscribers; a single tenant holding >50 active SSE streams for
         # half an hour is a reconnect-loop or a DoS probe, not normal usage.

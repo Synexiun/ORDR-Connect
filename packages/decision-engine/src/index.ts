@@ -92,6 +92,8 @@ export type {
   ShadowDefinition,
   ShadowScorerOptions,
 } from './shadow-scorer.js';
+export { PrometheusShadowSink } from './prometheus-shadow-sink.js';
+export type { PrometheusShadowSinkOptions, ShadowMetricsSink } from './prometheus-shadow-sink.js';
 
 // ─── LLM Reasoner (Layer 3) ─────────────────────────────────────
 export { LLMReasoner } from './llm-reasoner.js';

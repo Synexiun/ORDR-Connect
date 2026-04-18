@@ -1,0 +1,108 @@
+{
+  "annotations": { "list": [] },
+  "description": "ORDR-Connect — Shadow Model A/B Harness: primary/shadow comparison outcomes and divergence distributions. Paired with PrometheusShadowSink (packages/decision-engine/src/prometheus-shadow-sink.ts).",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Comparison Outcomes (5m rate, by status)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(shadow_comparisons_total[5m])) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "description": "agreement (|div| <= 0.05) / divergence / error / missing_model. Error or missing_model spikes mean the shadow is not healthy — check before interpreting divergence numbers."
+    },
+    {
+      "title": "Divergence Rate (per shadow, 5m)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(shadow_comparisons_total{status=\"divergence\"}[5m])) by (model_name, shadow_name) / ignoring(status) sum(rate(shadow_comparisons_total{status=~\"divergence|agreement\"}[5m])) by (model_name, shadow_name)",
+          "legendFormat": "{{model_name}} vs {{shadow_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      },
+      "description": "Fraction of non-error comparisons where the shadow diverged beyond the 0.05 agreement band. Lower = shadow tracks primary well; sustained high = candidate is behaviorally different."
+    },
+    {
+      "title": "Divergence Distribution — P50 / P95 / P99",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(shadow_divergence_bucket[5m])) by (le, model_name, shadow_name))",
+          "legendFormat": "{{model_name}} / {{shadow_name}} — P50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(shadow_divergence_bucket[5m])) by (le, model_name, shadow_name))",
+          "legendFormat": "{{model_name}} / {{shadow_name}} — P95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(shadow_divergence_bucket[5m])) by (le, model_name, shadow_name))",
+          "legendFormat": "{{model_name}} / {{shadow_name}} — P99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "max": 1 }
+      },
+      "description": "|primaryScore - shadowScore| quantiles. Candidate is considered promotion-ready when P95 < 0.1 and P99 < 0.2 sustained across a representative workload window."
+    },
+    {
+      "title": "Shadow Errors (5m rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(shadow_comparisons_total{status=~\"error|missing_model\"}[5m])) by (shadow_name, status)",
+          "legendFormat": "{{shadow_name}} — {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "description": "Shadow failures are isolated by ShadowScorer (never affect primary decisions) but still indicate a broken candidate bundle."
+    },
+    {
+      "title": "Total Comparisons (24h)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(increase(shadow_comparisons_total[24h])) by (shadow_name)",
+          "legendFormat": "{{shadow_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "description": "Volume sanity — promotion decisions should be made from a meaningfully large comparison corpus, not a handful of events."
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ordr-connect", "decision-engine", "ai", "shadow-models", "rule-9"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "ORDR-Connect — Shadow Models (A/B Harness)",
+  "uid": "ordr-shadow-models",
+  "version": 1
+}
