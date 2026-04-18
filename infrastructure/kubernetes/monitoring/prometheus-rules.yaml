@@ -30,9 +30,9 @@ spec:
             team: security
             compliance: soc2-hipaa
           annotations:
-            summary: "CRITICAL: Audit hash chain integrity failure"
-            description: "Audit log chain verification has failed. Potential tampering detected. Immediate investigation required."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/audit-chain-broken"
+            summary: 'CRITICAL: Audit hash chain integrity failure'
+            description: 'Audit log chain verification has failed. Potential tampering detected. Immediate investigation required.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p0/audit-chain-broken'
 
         - alert: UnauthorizedDataAccess
           expr: |
@@ -43,9 +43,9 @@ spec:
             team: security
             compliance: hipaa
           annotations:
-            summary: "CRITICAL: Unauthorized data access detected"
-            description: "Unauthorized access to restricted data (PHI/PII) detected. Incident response required."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/unauthorized-access"
+            summary: 'CRITICAL: Unauthorized data access detected'
+            description: 'Unauthorized access to restricted data (PHI/PII) detected. Incident response required.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p0/unauthorized-access'
 
         - alert: AuthBypassDetected
           expr: |
@@ -56,9 +56,9 @@ spec:
             team: security
             compliance: soc2-iso27001
           annotations:
-            summary: "CRITICAL: Authentication bypass attempt detected"
-            description: "Requests bypassing authentication middleware detected. Immediate lockdown required."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/auth-bypass"
+            summary: 'CRITICAL: Authentication bypass attempt detected'
+            description: 'Requests bypassing authentication middleware detected. Immediate lockdown required.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p0/auth-bypass'
 
         - alert: EncryptionFailure
           expr: |
@@ -69,9 +69,9 @@ spec:
             team: security
             compliance: hipaa
           annotations:
-            summary: "CRITICAL: Encryption operation failure"
-            description: "PHI/PII encryption operations failing. Data may be stored unencrypted."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p0/encryption-failure"
+            summary: 'CRITICAL: Encryption operation failure'
+            description: 'PHI/PII encryption operations failing. Data may be stored unencrypted.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p0/encryption-failure'
 
     # ========================================================================
     # P1 — HIGH (1 hour response)
@@ -89,9 +89,9 @@ spec:
             team: platform
             compliance: soc2
           annotations:
-            summary: "HIGH: Agent safety boundary violation"
-            description: "AI agent exceeded permission boundaries or confidence threshold. Agent kill switch may be required."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/agent-safety"
+            summary: 'HIGH: Agent safety boundary violation'
+            description: 'AI agent exceeded permission boundaries or confidence threshold. Agent kill switch may be required.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p1/agent-safety'
 
         - alert: ServiceDown
           expr: |
@@ -101,9 +101,9 @@ spec:
             severity: P1
             team: platform
           annotations:
-            summary: "HIGH: Service {{ $labels.job }} is down"
-            description: "Service {{ $labels.job }} has been unreachable for 5 minutes."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/service-down"
+            summary: 'HIGH: Service {{ $labels.job }} is down'
+            description: 'Service {{ $labels.job }} has been unreachable for 5 minutes.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p1/service-down'
 
         - alert: HighErrorRate
           expr: |
@@ -117,9 +117,9 @@ spec:
             severity: P1
             team: platform
           annotations:
-            summary: "HIGH: Error rate above 5% for {{ $labels.service }}"
-            description: "{{ $labels.service }} has error rate {{ $value | humanizePercentage }} over last 5m."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/high-error-rate"
+            summary: 'HIGH: Error rate above 5% for {{ $labels.service }}'
+            description: '{{ $labels.service }} has error rate {{ $value | humanizePercentage }} over last 5m.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p1/high-error-rate'
 
         - alert: PodCrashLooping
           expr: |
@@ -129,9 +129,9 @@ spec:
             severity: P1
             team: platform
           annotations:
-            summary: "HIGH: Pod {{ $labels.pod }} crash looping"
-            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in 15 minutes."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/crash-loop"
+            summary: 'HIGH: Pod {{ $labels.pod }} crash looping'
+            description: 'Pod {{ $labels.pod }} has restarted {{ $value }} times in 15 minutes.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p1/crash-loop'
 
         - alert: TenantIsolationFailure
           expr: |
@@ -142,9 +142,9 @@ spec:
             team: security
             compliance: soc2-hipaa
           annotations:
-            summary: "HIGH: Tenant isolation boundary breach"
-            description: "Cross-tenant data access detected. RLS enforcement may be failing."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p1/tenant-isolation"
+            summary: 'HIGH: Tenant isolation boundary breach'
+            description: 'Cross-tenant data access detected. RLS enforcement may be failing.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p1/tenant-isolation'
 
     # ========================================================================
     # P2 — MEDIUM (24 hour response)
@@ -161,9 +161,9 @@ spec:
             severity: P2
             team: platform
           annotations:
-            summary: "MEDIUM: P99 latency above 5s for {{ $labels.service }}"
-            description: "{{ $labels.service }} P99 latency is {{ $value }}s."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/high-latency"
+            summary: 'MEDIUM: P99 latency above 5s for {{ $labels.service }}'
+            description: '{{ $labels.service }} P99 latency is {{ $value }}s.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p2/high-latency'
 
         - alert: HighMemoryUsage
           expr: |
@@ -177,9 +177,9 @@ spec:
             severity: P2
             team: platform
           annotations:
-            summary: "MEDIUM: Container {{ $labels.container }} memory usage above 85%"
-            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/high-memory"
+            summary: 'MEDIUM: Container {{ $labels.container }} memory usage above 85%'
+            description: 'Container {{ $labels.container }} in pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p2/high-memory'
 
         - alert: HighCPUUsage
           expr: |
@@ -193,9 +193,9 @@ spec:
             severity: P2
             team: platform
           annotations:
-            summary: "MEDIUM: Container {{ $labels.container }} CPU usage above 85%"
-            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of CPU limit."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/high-cpu"
+            summary: 'MEDIUM: Container {{ $labels.container }} CPU usage above 85%'
+            description: 'Container {{ $labels.container }} in pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of CPU limit.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p2/high-cpu'
 
         - alert: KafkaConsumerLagHigh
           expr: |
@@ -205,9 +205,9 @@ spec:
             severity: P2
             team: platform
           annotations:
-            summary: "MEDIUM: Kafka consumer lag above 10K for {{ $labels.group }}"
-            description: "Consumer group {{ $labels.group }} has lag of {{ $value }} messages."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/kafka-lag"
+            summary: 'MEDIUM: Kafka consumer lag above 10K for {{ $labels.group }}'
+            description: 'Consumer group {{ $labels.group }} has lag of {{ $value }} messages.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p2/kafka-lag'
 
         - alert: CertificateExpiringSoon
           expr: |
@@ -217,9 +217,26 @@ spec:
             severity: P2
             team: security
           annotations:
-            summary: "MEDIUM: TLS certificate expiring within 14 days"
-            description: "Certificate {{ $labels.name }} expires in {{ $value }} days."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p2/cert-expiry"
+            summary: 'MEDIUM: TLS certificate expiring within 14 days'
+            description: 'Certificate {{ $labels.name }} expires in {{ $value }} days.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p2/cert-expiry'
+
+        # Co-browse signal-layer alerts (Phase 148) — complements Phase 146 WORM
+        # audit + Phase 147 Prometheus metrics. Rate-limit signals indicate
+        # reconnect storms or abuse; sustained firing is worth investigating
+        # even though each event is already in the audit chain.
+        - alert: CobrowseSignalRateLimitSustained
+          expr: |
+            sum(rate(cobrowse_signals_rate_limited_total[10m])) by (tenant_id) > 0.05
+          for: 10m
+          labels:
+            severity: P2
+            team: platform
+            compliance: soc2
+          annotations:
+            summary: 'MEDIUM: Sustained co-browse SSE rate-limiting for tenant {{ $labels.tenant_id }}'
+            description: 'Tenant {{ $labels.tenant_id }} is hitting the MAX_SSE_CONNECTIONS_PER_SESSION cap repeatedly ({{ $value | humanize }}/s over 10m). Check audit events of type cobrowse.signaling_rate_limited for the session IDs.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p2/cobrowse-rate-limit'
 
     # ========================================================================
     # P3 — LOW (1 week response)
@@ -238,9 +255,9 @@ spec:
             severity: P3
             team: platform
           annotations:
-            summary: "LOW: HPA {{ $labels.horizontalpodautoscaler }} at max replicas"
-            description: "HPA has been at max replicas for 1 hour. Consider increasing max."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p3/hpa-maxed"
+            summary: 'LOW: HPA {{ $labels.horizontalpodautoscaler }} at max replicas'
+            description: 'HPA has been at max replicas for 1 hour. Consider increasing max.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p3/hpa-maxed'
 
         - alert: PodNotReady
           expr: |
@@ -250,9 +267,9 @@ spec:
             severity: P3
             team: platform
           annotations:
-            summary: "LOW: Pod {{ $labels.pod }} not ready for 30 minutes"
-            description: "Pod {{ $labels.pod }} has not been ready for 30 minutes."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p3/pod-not-ready"
+            summary: 'LOW: Pod {{ $labels.pod }} not ready for 30 minutes'
+            description: 'Pod {{ $labels.pod }} has not been ready for 30 minutes.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p3/pod-not-ready'
 
         - alert: PersistentVolumeSpaceLow
           expr: |
@@ -266,6 +283,21 @@ spec:
             severity: P3
             team: platform
           annotations:
-            summary: "LOW: PV {{ $labels.persistentvolumeclaim }} space below 20%"
-            description: "PersistentVolume {{ $labels.persistentvolumeclaim }} has only {{ $value | humanizePercentage }} space remaining."
-            runbook: "https://runbooks.ordr-connect.synexiun.com/p3/pv-space-low"
+            summary: 'LOW: PV {{ $labels.persistentvolumeclaim }} space below 20%'
+            description: 'PersistentVolume {{ $labels.persistentvolumeclaim }} has only {{ $value | humanizePercentage }} space remaining.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p3/pv-space-low'
+
+        # Cobrowse capacity signal (Phase 148) — legitimate sessions only have
+        # 2 subscribers; a single tenant holding >50 active SSE streams for
+        # half an hour is a reconnect-loop or a DoS probe, not normal usage.
+        - alert: CobrowseSseConnectionsHigh
+          expr: |
+            max(cobrowse_sse_connections_active) by (tenant_id) > 50
+          for: 30m
+          labels:
+            severity: P3
+            team: platform
+          annotations:
+            summary: 'LOW: Elevated co-browse SSE connections for tenant {{ $labels.tenant_id }}'
+            description: 'Tenant {{ $labels.tenant_id }} has {{ $value }} active SSE signal streams — normal is 2 per live session. Investigate for stuck clients or reconnect loops.'
+            runbook: 'https://runbooks.ordr-connect.synexiun.com/p3/cobrowse-sse-connections'

@@ -1,0 +1,106 @@
+{
+  "annotations": { "list": [] },
+  "description": "ORDR-Connect — Co-browse signaling: WebRTC signal throughput, SSE connections, rate-limit events. Complements WORM audit trail (Phase 146) with real-time operational view.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Signals per Minute (by type)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(cobrowse_signals_total[1m])) by (signal_type) * 60",
+          "legendFormat": "{{signal_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Signals per Minute (by originator role)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(cobrowse_signals_total[1m])) by (from_role) * 60",
+          "legendFormat": "{{from_role}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Active SSE Connections (total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(cobrowse_sse_connections_active)",
+          "legendFormat": "active",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active SSE Connections (by tenant)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(cobrowse_sse_connections_active) by (tenant_id)",
+          "legendFormat": "{{tenant_id}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Rate-Limited Subscriptions (5m rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(cobrowse_signals_rate_limited_total[5m])) by (tenant_id, reason)",
+          "legendFormat": "{{tenant_id}} — {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "description": "Spikes here indicate reconnect storms or abuse — each rate-limit hit also produces a WORM audit event (cobrowse.signaling_rate_limited)."
+    },
+    {
+      "title": "Cobrowse Audit Events (5m rate)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(audit_events_total{action_type=~\"cobrowse\\\\..*\"}[5m])) by (action_type)",
+          "legendFormat": "{{action_type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ordr-connect", "cobrowse", "webrtc", "observability"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "ORDR-Connect — Co-browse Signaling",
+  "uid": "ordr-cobrowse",
+  "version": 1
+}
