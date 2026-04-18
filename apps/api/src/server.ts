@@ -544,6 +544,13 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // ── 4.1. Metrics registry (Phase 147) ──────────────────────────────────
+  // Instantiated early so route configurators (e.g. cobrowse) can wire signal
+  // telemetry into Prometheus counters/gauges. The same instance is passed to
+  // createApp() later so the /metrics endpoint serves the unified registry.
+  // Rule 6: metric labels are opaque (tenant_id, enum roles) — no PHI/PII.
+  const metricsRegistry = new MetricsRegistry();
+
   // ── 4.4. Military-grade threat detection ───────────────────────────────
   // All security components are singletons — initialized here and wired into
   // the threat detection middleware via configureThreatDetection().
@@ -891,7 +898,9 @@ async function bootstrap(): Promise<void> {
   );
 
   // ── 4.15b. Cobrowse routes (remote assistance sessions) ──────────────────
-  configureCobrowseRoutes({ auditLogger });
+  // Metrics registry is instantiated early so cobrowse signal telemetry flows
+  // (Phase 147) — the same instance is reused when createApp() is called below.
+  configureCobrowseRoutes({ auditLogger, metrics: metricsRegistry });
 
   console.warn(
     JSON.stringify({
@@ -4086,10 +4095,8 @@ async function bootstrap(): Promise<void> {
   );
 
   // ── 9. Create and start Hono app ───────────────────────────────────────
-  // MetricsRegistry collects Node.js runtime defaults + ORDR-specific metrics.
-  // /metrics is network-restricted — NOT behind the public load balancer.
-  const metricsRegistry = new MetricsRegistry();
-
+  // metricsRegistry was hoisted to §4.1 so route configurators can wire into
+  // it. /metrics is network-restricted — NOT behind the public load balancer.
   const app = createApp({
     corsOrigins: config.corsOrigins,
     nodeEnv: config.nodeEnv,

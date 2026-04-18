@@ -66,6 +66,26 @@ describe('MetricsRegistry', () => {
     it('includes encryption_operations_total counter', () => {
       expect(registry.hasCounter('encryption_operations_total')).toBe(true);
     });
+
+    // Phase 147 — cobrowse signal-layer telemetry (complements Phase 146 audit)
+    it('includes cobrowse_signals_total counter', () => {
+      expect(registry.hasCounter('cobrowse_signals_total')).toBe(true);
+    });
+
+    it('includes cobrowse_sse_connections_active gauge', () => {
+      expect(registry.hasGauge('cobrowse_sse_connections_active')).toBe(true);
+    });
+
+    it('includes cobrowse_signals_rate_limited_total counter', () => {
+      expect(registry.hasCounter('cobrowse_signals_rate_limited_total')).toBe(true);
+    });
+
+    it('cobrowse_signals_total labels are PHI-safe (no userId/email/sdp)', () => {
+      const def = PREDEFINED_METRICS.find((m) => m.name === 'cobrowse_signals_total');
+      expect(def).toBeDefined();
+      // Rule 6: labels must never leak PHI/PII — only opaque IDs and enum roles.
+      expect(def?.labelNames).toEqual(['tenant_id', 'signal_type', 'from_role']);
+    });
   });
 
   describe('counter operations', () => {
@@ -82,9 +102,13 @@ describe('MetricsRegistry', () => {
     });
 
     it('increments a counter by a custom value', async () => {
-      registry.incrementCounter('audit_events_total', {
-        action_type: 'data.created',
-      }, 5);
+      registry.incrementCounter(
+        'audit_events_total',
+        {
+          action_type: 'data.created',
+        },
+        5,
+      );
 
       const output = await registry.getMetricsEndpoint();
       expect(output).toContain('audit_events_total');
@@ -111,10 +135,14 @@ describe('MetricsRegistry', () => {
 
   describe('histogram operations', () => {
     it('records a histogram observation', async () => {
-      registry.observeHistogram('http_request_duration_seconds', {
-        method: 'GET',
-        path: '/api/v1/customers',
-      }, 0.125);
+      registry.observeHistogram(
+        'http_request_duration_seconds',
+        {
+          method: 'GET',
+          path: '/api/v1/customers',
+        },
+        0.125,
+      );
 
       const output = await registry.getMetricsEndpoint();
       expect(output).toContain('http_request_duration_seconds');
@@ -122,10 +150,14 @@ describe('MetricsRegistry', () => {
 
     it('records multiple histogram values', async () => {
       for (let i = 0; i < 10; i++) {
-        registry.observeHistogram('db_query_duration_seconds', {
-          operation: 'select',
-          table: 'customers',
-        }, Math.random() * 0.5);
+        registry.observeHistogram(
+          'db_query_duration_seconds',
+          {
+            operation: 'select',
+            table: 'customers',
+          },
+          Math.random() * 0.5,
+        );
       }
 
       const output = await registry.getMetricsEndpoint();
@@ -141,10 +173,14 @@ describe('MetricsRegistry', () => {
 
   describe('gauge operations', () => {
     it('sets a gauge value', async () => {
-      registry.setGauge('active_agent_sessions', {
-        agent_role: 'sales',
-        tenant_id: 'tenant-1',
-      }, 5);
+      registry.setGauge(
+        'active_agent_sessions',
+        {
+          agent_role: 'sales',
+          tenant_id: 'tenant-1',
+        },
+        5,
+      );
 
       const output = await registry.getMetricsEndpoint();
       expect(output).toContain('active_agent_sessions');
@@ -161,15 +197,23 @@ describe('MetricsRegistry', () => {
     });
 
     it('decrements a gauge', async () => {
-      registry.setGauge('kafka_consumer_lag', {
-        topic: 'events',
-        consumer_group: 'worker-1',
-      }, 100);
+      registry.setGauge(
+        'kafka_consumer_lag',
+        {
+          topic: 'events',
+          consumer_group: 'worker-1',
+        },
+        100,
+      );
 
-      registry.decrementGauge('kafka_consumer_lag', {
-        topic: 'events',
-        consumer_group: 'worker-1',
-      }, 10);
+      registry.decrementGauge(
+        'kafka_consumer_lag',
+        {
+          topic: 'events',
+          consumer_group: 'worker-1',
+        },
+        10,
+      );
 
       const output = await registry.getMetricsEndpoint();
       expect(output).toContain('kafka_consumer_lag');

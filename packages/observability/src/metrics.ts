@@ -11,45 +11,124 @@
  * - No query content, user names, emails, or health data in labels
  */
 
-import {
-  Registry,
-  Counter,
-  Histogram,
-  Gauge,
-  collectDefaultMetrics,
-} from 'prom-client';
-import type { MetricDefinition, MetricType } from './types.js';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
+import type { MetricDefinition } from './types.js';
 
 // ─── Metric Definitions ──────────────────────────────────────────
 
 const PREDEFINED_METRICS: readonly MetricDefinition[] = [
   // HTTP
-  { name: 'http_requests_total', help: 'Total HTTP requests', type: 'counter', labelNames: ['method', 'path', 'status', 'tenant_id'] },
-  { name: 'http_request_duration_seconds', help: 'HTTP request duration in seconds', type: 'histogram', labelNames: ['method', 'path'] },
+  {
+    name: 'http_requests_total',
+    help: 'Total HTTP requests',
+    type: 'counter',
+    labelNames: ['method', 'path', 'status', 'tenant_id'],
+  },
+  {
+    name: 'http_request_duration_seconds',
+    help: 'HTTP request duration in seconds',
+    type: 'histogram',
+    labelNames: ['method', 'path'],
+  },
 
   // Database
-  { name: 'db_query_duration_seconds', help: 'Database query duration in seconds', type: 'histogram', labelNames: ['operation', 'table'] },
+  {
+    name: 'db_query_duration_seconds',
+    help: 'Database query duration in seconds',
+    type: 'histogram',
+    labelNames: ['operation', 'table'],
+  },
 
   // Agent
-  { name: 'agent_execution_duration_seconds', help: 'Agent execution duration in seconds', type: 'histogram', labelNames: ['agent_role', 'outcome'] },
-  { name: 'agent_tool_calls_total', help: 'Total agent tool calls', type: 'counter', labelNames: ['tool_name', 'success'] },
-  { name: 'active_agent_sessions', help: 'Currently active agent sessions', type: 'gauge', labelNames: ['agent_role', 'tenant_id'] },
+  {
+    name: 'agent_execution_duration_seconds',
+    help: 'Agent execution duration in seconds',
+    type: 'histogram',
+    labelNames: ['agent_role', 'outcome'],
+  },
+  {
+    name: 'agent_tool_calls_total',
+    help: 'Total agent tool calls',
+    type: 'counter',
+    labelNames: ['tool_name', 'success'],
+  },
+  {
+    name: 'active_agent_sessions',
+    help: 'Currently active agent sessions',
+    type: 'gauge',
+    labelNames: ['agent_role', 'tenant_id'],
+  },
 
   // LLM
-  { name: 'llm_inference_duration_seconds', help: 'LLM inference duration in seconds', type: 'histogram', labelNames: ['model', 'provider'] },
-  { name: 'llm_tokens_total', help: 'Total LLM tokens consumed', type: 'counter', labelNames: ['model', 'type'] },
+  {
+    name: 'llm_inference_duration_seconds',
+    help: 'LLM inference duration in seconds',
+    type: 'histogram',
+    labelNames: ['model', 'provider'],
+  },
+  {
+    name: 'llm_tokens_total',
+    help: 'Total LLM tokens consumed',
+    type: 'counter',
+    labelNames: ['model', 'type'],
+  },
 
   // Kafka
-  { name: 'kafka_consumer_lag', help: 'Kafka consumer lag (messages behind)', type: 'gauge', labelNames: ['topic', 'consumer_group'] },
+  {
+    name: 'kafka_consumer_lag',
+    help: 'Kafka consumer lag (messages behind)',
+    type: 'gauge',
+    labelNames: ['topic', 'consumer_group'],
+  },
 
   // Compliance
-  { name: 'compliance_violations_total', help: 'Total compliance violations detected', type: 'counter', labelNames: ['regulation', 'rule', 'severity'] },
+  {
+    name: 'compliance_violations_total',
+    help: 'Total compliance violations detected',
+    type: 'counter',
+    labelNames: ['regulation', 'rule', 'severity'],
+  },
 
   // Audit
-  { name: 'audit_events_total', help: 'Total audit events recorded', type: 'counter', labelNames: ['action_type'] },
+  {
+    name: 'audit_events_total',
+    help: 'Total audit events recorded',
+    type: 'counter',
+    labelNames: ['action_type'],
+  },
 
   // Encryption
-  { name: 'encryption_operations_total', help: 'Total encryption operations', type: 'counter', labelNames: ['operation'] },
+  {
+    name: 'encryption_operations_total',
+    help: 'Total encryption operations',
+    type: 'counter',
+    labelNames: ['operation'],
+  },
+
+  // Cobrowse signaling (Phase 147) — complements Phase 146 audit events.
+  // Label set is deliberately minimal & PHI-safe (Rule 6):
+  //   - signal_type: offer|answer|ice-candidate|annotation|pointer (enum, not free text)
+  //   - from_role : 'admin' | 'user' (role, not userId)
+  //   - tenant_id : opaque tenant reference
+  //   - reason    : short enum for rate-limit cause (e.g. 'sse_connection_cap')
+  {
+    name: 'cobrowse_signals_total',
+    help: 'Total WebRTC signals relayed',
+    type: 'counter',
+    labelNames: ['tenant_id', 'signal_type', 'from_role'],
+  },
+  {
+    name: 'cobrowse_sse_connections_active',
+    help: 'Currently active cobrowse SSE subscriptions',
+    type: 'gauge',
+    labelNames: ['tenant_id'],
+  },
+  {
+    name: 'cobrowse_signals_rate_limited_total',
+    help: 'Cobrowse SSE subscriptions denied due to rate/conn caps',
+    type: 'counter',
+    labelNames: ['tenant_id', 'reason'],
+  },
 ] as const;
 
 // ─── Metrics Registry ────────────────────────────────────────────

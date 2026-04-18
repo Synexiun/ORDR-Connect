@@ -30,9 +30,17 @@ import { streamSSE } from 'hono/streaming';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AuditLogger } from '@ordr/audit';
+import type { MetricsRegistry } from '@ordr/observability';
 import type { Env } from '../types.js';
 import { requireAuth } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
+
+// Narrow interface — we never need read-side metrics from the cobrowse route,
+// so take only the gauge/counter mutators (easier to stub in tests).
+type CobrowseMetrics = Pick<
+  MetricsRegistry,
+  'incrementCounter' | 'incrementGauge' | 'decrementGauge'
+>;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -125,9 +133,14 @@ const signalSchema = z.object({
 // ─── Module-level deps ──────────────────────────────────────────────────────
 
 let _auditLogger: Pick<AuditLogger, 'log'> | null = null;
+let _metrics: CobrowseMetrics | null = null;
 
-export function configureCobrowseRoutes(deps: { auditLogger: Pick<AuditLogger, 'log'> }): void {
+export function configureCobrowseRoutes(deps: {
+  auditLogger: Pick<AuditLogger, 'log'>;
+  metrics?: CobrowseMetrics;
+}): void {
   _auditLogger = deps.auditLogger;
+  _metrics = deps.metrics ?? null;
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -633,6 +646,13 @@ cobrowseRouter.post('/sessions/:id/signal', requireAuth(), rateLimit('write'), a
   };
   publishSignal(session.id, signal);
 
+  // Ops metric — per-tenant/type/direction counter (no payload, no userId).
+  _metrics?.incrementCounter('cobrowse_signals_total', {
+    tenant_id: ctx.tenantId,
+    signal_type: signal.type,
+    from_role: signal.from,
+  });
+
   // WORM audit — every signal is a state change (HIPAA §164.312(b), Rule 3).
   // Payload is NOT logged: WebRTC SDP can contain IP candidates that count as
   // personal data, so we persist only type+direction metadata (Rule 6).
@@ -699,6 +719,10 @@ cobrowseRouter.get('/sessions/:id/events', requireAuth(), async (c) => {
   // allows a small margin for brief reconnect overlap.
   const currentCount = sseConnectionCount.get(session.id) ?? 0;
   if (currentCount >= MAX_SSE_CONNECTIONS_PER_SESSION) {
+    _metrics?.incrementCounter('cobrowse_signals_rate_limited_total', {
+      tenant_id: ctx.tenantId,
+      reason: 'sse_connection_cap',
+    });
     if (_auditLogger) {
       await _auditLogger.log({
         tenantId: ctx.tenantId,
@@ -725,6 +749,7 @@ cobrowseRouter.get('/sessions/:id/events', requireAuth(), async (c) => {
     );
   }
   sseConnectionCount.set(session.id, currentCount + 1);
+  _metrics?.incrementGauge('cobrowse_sse_connections_active', { tenant_id: ctx.tenantId });
 
   // WORM audit — signaling channel opened (HIPAA §164.312(b)).
   if (_auditLogger) {
@@ -780,6 +805,7 @@ cobrowseRouter.get('/sessions/:id/events', requireAuth(), async (c) => {
       const c2 = sseConnectionCount.get(session.id) ?? 0;
       if (c2 <= 1) sseConnectionCount.delete(session.id);
       else sseConnectionCount.set(session.id, c2 - 1);
+      _metrics?.decrementGauge('cobrowse_sse_connections_active', { tenant_id: ctx.tenantId });
     }
   });
 });
