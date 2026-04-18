@@ -256,13 +256,18 @@ Scope:
 | Item | Control(s) | Owner | Target |
 |------|------------|-------|--------|
 | Annual third-party penetration test | Rule 10, SOC 2 CC4.1, ISO A.8.29 | Security Lead | Q3 2026 |
-| Subprocessor register | CC9.2, P6.1, HIPAA §164.308(b) | Compliance + Legal | Q2 2026 |
 | External-facing privacy policy | P1.1 | Legal + Marketing | Q2 2026 |
-| DSR (Data Subject Request) endpoint | P5.1, GDPR Art. 15–22 | Platform | Q2 2026 |
 | CCPA / CPRA rule set | State privacy | Compliance + Platform | Q3 2026 |
 | BAA templates executed with all PHI vendors | HIPAA §164.308(b) | Legal | Continuous |
 | SOC 2 Type II attestation report | — | External auditor | Year-end 2026 |
 | ISO 27001 certification | — | External auditor | Year-end 2026 |
+
+**Recently closed (Phase 141, 2026-04-18):**
+
+| Item | Control(s) | Closed by |
+|------|------------|-----------|
+| Subprocessor register | CC9.2, P6.1, HIPAA §164.308(b), GDPR Art. 28 | [`docs/compliance/subprocessor-register.md`](./subprocessor-register.md) |
+| DSR endpoint | P5.1, GDPR Art. 15–22, HIPAA §164.524 | [`apps/api/src/routes/dsr.ts`](../../apps/api/src/routes/dsr.ts) — create / list / detail / approve / reject / cancel with 30-day deadline tracking |
 
 This gap list is the canonical source for compliance-driven roadmap work.
 
