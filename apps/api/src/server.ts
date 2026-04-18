@@ -1414,7 +1414,10 @@ async function bootstrap(): Promise<void> {
       timeoutMs: 30_000,
       maxRetries: 3,
     });
-    configureAiRoutes({ llmClient });
+    configureAiRoutes({
+      llmClient,
+      ...(limbInstance !== null && { budget: limbInstance.budget }),
+    });
     console.warn(
       JSON.stringify({
         level: 'info',
