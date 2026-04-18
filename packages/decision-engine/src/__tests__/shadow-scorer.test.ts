@@ -260,6 +260,42 @@ describe('ShadowScorer — error isolation', () => {
     const result = await scorer.score(ctx(), 'churn_risk');
     expect(result.success).toBe(true);
   });
+
+  it('invokes onSinkError with the failed event so Prometheus can count the gap', async () => {
+    const throwingSink = {
+      record: (): Promise<void> => Promise.reject(new Error('sink down')),
+    };
+    const observed: Array<{ shadow: string; model: string; err: string }> = [];
+    const primary = scorerWith('churn_risk', 0.7);
+    const scorer = new ShadowScorer({
+      primary,
+      shadows: [{ name: 'candidate', scorer: scorerWith('churn_risk', 0.3) }],
+      sink: throwingSink,
+      onSinkError: (ev, err) => {
+        observed.push({ shadow: ev.shadowName, model: ev.modelName, err: err.message });
+      },
+    });
+    const result = await scorer.score(ctx(), 'churn_risk');
+    expect(result.success).toBe(true);
+    expect(observed).toEqual([{ shadow: 'candidate', model: 'churn_risk', err: 'sink down' }]);
+  });
+
+  it('swallows an onSinkError callback that itself throws (never propagates)', async () => {
+    const throwingSink = {
+      record: (): Promise<void> => Promise.reject(new Error('sink down')),
+    };
+    const primary = scorerWith('churn_risk', 0.7);
+    const scorer = new ShadowScorer({
+      primary,
+      shadows: [{ name: 'candidate', scorer: scorerWith('churn_risk', 0.3) }],
+      sink: throwingSink,
+      onSinkError: () => {
+        throw new Error('callback exploded');
+      },
+    });
+    const result = await scorer.score(ctx(), 'churn_risk');
+    expect(result.success).toBe(true);
+  });
 });
 
 // ─── scoreAll + introspection ────────────────────────────────────

@@ -78,6 +78,15 @@ export interface ShadowScorerOptions {
   readonly primary: MLScorer;
   readonly shadows: readonly ShadowDefinition[];
   readonly sink?: ShadowComparisonSink;
+  /**
+   * Called when the comparison sink fails to persist an event. Intended
+   * for wiring a Prometheus `shadow_audit_sink_errors_total` counter or
+   * forwarding to an out-of-band alert path so the audit-chain gap
+   * becomes observable (Rule 3: every comparison event MUST be
+   * recorded — a silently-dropped sink write violates that guarantee).
+   * If omitted, the error is still logged as structured JSON.
+   */
+  readonly onSinkError?: (event: ShadowComparisonEvent, error: Error) => void;
 }
 
 // ─── Scorer ──────────────────────────────────────────────────────
@@ -91,11 +100,13 @@ export class ShadowScorer implements MLScorerLike {
   private readonly primary: MLScorer;
   private readonly shadows: readonly ShadowDefinition[];
   private readonly sink: ShadowComparisonSink | undefined;
+  private readonly onSinkError: ((event: ShadowComparisonEvent, error: Error) => void) | undefined;
 
   constructor(opts: ShadowScorerOptions) {
     this.primary = opts.primary;
     this.shadows = opts.shadows;
     this.sink = opts.sink;
+    this.onSinkError = opts.onSinkError;
   }
 
   /**
@@ -154,11 +165,43 @@ export class ShadowScorer implements MLScorerLike {
     await Promise.all(
       this.shadows.map((shadow) =>
         this.compareOne(context, modelName, primary, shadow).then(
-          (event) => sink.record(event).catch(() => undefined),
+          (event) =>
+            sink.record(event).catch((err: unknown) => {
+              this.reportSinkError(event, err);
+            }),
           () => undefined,
         ),
       ),
     );
+  }
+
+  /**
+   * Structured warn log + optional callback when a sink write fails. Never
+   * throws — a failing sink must not propagate into the primary path. But
+   * silent swallowing would hide audit-chain gaps, which violates Rule 3;
+   * this is the minimum observability floor.
+   */
+  private reportSinkError(event: ShadowComparisonEvent, err: unknown): void {
+    const error = err instanceof Error ? err : new Error(String(err));
+
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        component: 'decision-engine-shadow-scorer',
+        event: 'shadow_sink_record_failed',
+        shadowName: event.shadowName,
+        modelName: event.modelName,
+        tenantId: event.tenantId,
+        error: error.message,
+      }),
+    );
+    if (this.onSinkError !== undefined) {
+      try {
+        this.onSinkError(event, error);
+      } catch {
+        /* user-supplied callback must never propagate */
+      }
+    }
   }
 
   private async compareOne(

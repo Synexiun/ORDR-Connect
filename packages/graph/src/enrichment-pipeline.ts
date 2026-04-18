@@ -174,15 +174,18 @@ export class EnrichmentPipeline {
       );
     }
 
-    // Call the provider
+    // Call the provider. Record the rate-limit tick BEFORE we inspect the
+    // result: the limiter is protecting the provider's external quota,
+    // which is consumed whether the call returns 200, 404, 429, or 5xx.
+    // Only recording on success meant a burst of 429s never incremented the
+    // local counter, so the limiter never throttled even though Clearbit had
+    // already exhausted the daily quota.
     const enrichResult = await provider.enrich(node);
-    if (!enrichResult.success) {
-      return enrichResult;
-    }
-
-    // Record the rate limit hit
     if (limiter) {
       limiter.record();
+    }
+    if (!enrichResult.success) {
+      return enrichResult;
     }
 
     const enrichmentData = enrichResult.data;

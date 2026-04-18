@@ -212,6 +212,11 @@ export class TorExitRefresher {
     }
 
     if (!response.ok) {
+      // Cancel the unread body so undici releases the underlying TCP
+      // connection immediately. Without this, the Response waits for GC
+      // to release the socket — under flapping upstream conditions that
+      // accumulates dangling connections and exhausts the pool.
+      void response.body?.cancel().catch(() => undefined);
       throw new Error(`TOR list fetch failed: HTTP ${response.status.toString()}`);
     }
 

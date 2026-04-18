@@ -338,18 +338,28 @@ function WebRtcViewer({ sessionId, onClose }: WebRtcViewerProps): ReactNode {
         await pc.setLocalDescription(offer);
         await sendCobrowseSignal(sessionId, 'offer', { sdp: offer });
 
-        const unsubscribe = subscribeCobrowseEvents(sessionId, (signal: CobrowseSignal) => {
-          if (signal.type === 'answer') {
-            const { sdp } = signal.payload as { sdp: RTCSessionDescriptionInit };
-            void pc.setRemoteDescription(new RTCSessionDescription(sdp)).catch(() => undefined);
-          } else if (signal.type === 'ice-candidate') {
-            const candidate = signal.payload as RTCIceCandidateInit;
-            void pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => undefined);
-          } else if (signal.type === 'end') {
-            setErrMsg('Customer ended screen sharing.');
+        const unsubscribe = subscribeCobrowseEvents(
+          sessionId,
+          (signal: CobrowseSignal) => {
+            if (signal.type === 'answer') {
+              const { sdp } = signal.payload as { sdp: RTCSessionDescriptionInit };
+              void pc.setRemoteDescription(new RTCSessionDescription(sdp)).catch(() => undefined);
+            } else if (signal.type === 'ice-candidate') {
+              const candidate = signal.payload as RTCIceCandidateInit;
+              void pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => undefined);
+            } else if (signal.type === 'end') {
+              setErrMsg('Customer ended screen sharing.');
+              setConnState('error');
+            }
+          },
+          (reason: string) => {
+            // Without this handler, a dropped SSE stream leaves the viewer in
+            // "Waiting for customer…" forever because the WebRTC `answer` can
+            // only arrive over this channel. Surface the drop instead.
+            setErrMsg(`Signal stream lost — ${reason}. Close and retry.`);
             setConnState('error');
-          }
-        });
+          },
+        );
         cleanupRef.current = unsubscribe;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -744,12 +754,33 @@ export function CoBrowse(): ReactNode {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showInitiate, setShowInitiate] = useState(false);
 
+  // Guards against two hazards: (1) setState after unmount when the user
+  // navigates away mid-fetch, (2) a stacked/out-of-order response where an
+  // earlier slow fetch overwrites fresher data from a later call (handleCreated
+  // triggers loadSessions immediately after session creation).
+  const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const loadSessions = useCallback(() => {
+    const myRequestId = ++requestIdRef.current;
     setLoading(true);
-    void listCobrowseSessions().then((data) => {
-      setSessions(data);
-      setLoading(false);
-    });
+    void listCobrowseSessions().then(
+      (data) => {
+        if (!mountedRef.current || myRequestId !== requestIdRef.current) return;
+        setSessions(data);
+        setLoading(false);
+      },
+      () => {
+        if (!mountedRef.current || myRequestId !== requestIdRef.current) return;
+        setLoading(false);
+      },
+    );
   }, []);
 
   useEffect(() => {
