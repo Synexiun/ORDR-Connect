@@ -23,6 +23,7 @@ import { SentimentAnalyzer, LlmSentimentBackend } from '@ordr/ai';
 import type { LLMClient } from '@ordr/ai';
 import { ValidationError, AuthorizationError } from '@ordr/core';
 import type { TenantContext } from '@ordr/core';
+import type { BudgetTracker } from '@ordr/kernel';
 import type { Env } from '../types.js';
 import { requireAuth, requirePermissionMiddleware } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -52,6 +53,13 @@ const routeEntitySchema = z.object({
 
 interface AIDependencies {
   readonly llmClient: LLMClient;
+  /**
+   * Optional kernel budget tracker. When present, every successful AI call
+   * reports its costCents into the Synexiun budget protocol, driving the
+   * `draining` health status and upward BudgetReport messages.
+   * RULE 9 (Agent Safety): "Agent budgets: Token limits, action limits, cost limits per execution."
+   */
+  readonly budget?: BudgetTracker;
 }
 
 let deps: AIDependencies | null = null;
@@ -90,7 +98,7 @@ aiRouter.use('*', featureGate(FEATURES.AI_AGENTS));
 // ─── POST /sentiment — Batch sentiment analysis ──────────────────
 
 aiRouter.post('/sentiment', rateLimit('agent'), async (c): Promise<Response> => {
-  const { llmClient } = ensureDeps();
+  const { llmClient, budget } = ensureDeps();
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
 
@@ -115,13 +123,17 @@ aiRouter.post('/sentiment', rateLimit('agent'), async (c): Promise<Response> => 
   // Estimate total cost (budget tier for all sentiment calls)
   const modelUsed = 'claude-haiku-4-5-20251001';
   const estimatedCostCents = batchResult.data.length * 0.05; // ~$0.0005 per call, rough estimate
+  const costCents = Math.round(estimatedCostCents * 100) / 100;
+
+  // Report consumption to kernel budget tracker (no-op pre-allocation)
+  budget?.consume(costCents);
 
   return c.json({
     success: true as const,
     data: {
       results: batchResult.data,
       modelUsed,
-      costCents: Math.round(estimatedCostCents * 100) / 100,
+      costCents,
     },
   });
 });
@@ -129,7 +141,7 @@ aiRouter.post('/sentiment', rateLimit('agent'), async (c): Promise<Response> => 
 // ─── POST /insights — Agent insight generation ───────────────────
 
 aiRouter.post('/insights', rateLimit('agent'), async (c): Promise<Response> => {
-  const { llmClient } = ensureDeps();
+  const { llmClient, budget } = ensureDeps();
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
 
@@ -183,6 +195,11 @@ Provide an operational insight and recommended action.`;
       throw new Error('Invalid response schema');
     }
     const typed = parsed2 as { insight: string; recommendedAction: string; confidence: number };
+    const costCents =
+      result.data.tokenUsage.total > 0 ? Math.ceil(result.data.tokenUsage.total * 0.018) : 1;
+
+    budget?.consume(costCents);
+
     return c.json({
       success: true as const,
       data: {
@@ -190,8 +207,7 @@ Provide an operational insight and recommended action.`;
         recommendedAction: typed.recommendedAction.slice(0, 200),
         confidence: Math.max(0, Math.min(1, typed.confidence)),
         modelUsed: 'claude-sonnet-4-6',
-        costCents:
-          result.data.tokenUsage.total > 0 ? Math.ceil(result.data.tokenUsage.total * 0.018) : 1,
+        costCents,
       },
     });
   } catch {
@@ -205,7 +221,7 @@ Provide an operational insight and recommended action.`;
 // ─── POST /route — Entity routing decision ───────────────────────
 
 aiRouter.post('/route', rateLimit('agent'), async (c): Promise<Response> => {
-  const { llmClient } = ensureDeps();
+  const { llmClient, budget } = ensureDeps();
   const ctx = ensureTenantContext(c);
   const correlationId = c.get('requestId');
 
@@ -262,6 +278,11 @@ Select the optimal route.`;
       ? typed.selectedRoute
       : (parsed.data.availableRoutes[0] ?? 'default');
 
+    const costCents =
+      result.data.tokenUsage.total > 0 ? Math.ceil(result.data.tokenUsage.total * 0.018) : 1;
+
+    budget?.consume(costCents);
+
     return c.json({
       success: true as const,
       data: {
@@ -269,6 +290,7 @@ Select the optimal route.`;
         confidence: Math.max(0, Math.min(1, typed.confidence)),
         reasoning: typed.reasoning.slice(0, 200),
         modelUsed: 'claude-sonnet-4-6',
+        costCents,
       },
     });
   } catch {
