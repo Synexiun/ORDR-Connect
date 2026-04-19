@@ -389,9 +389,8 @@ function parseValidationErrors(issues: z.ZodIssue[]): Record<string, string[]> {
 
 decisionEngineRouter.use('*', async (c, next) => {
   const d = ensureDeps();
-  const token = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  const result = authenticateRequest(token, d.jwtConfig);
-  if (result.success !== true) {
+  const authHeader = c.req.header('Authorization') ?? c.req.header('authorization');
+  if (authHeader === undefined || authHeader.length === 0) {
     return c.json(
       {
         success: false as const,
@@ -400,7 +399,17 @@ decisionEngineRouter.use('*', async (c, next) => {
       401,
     );
   }
-  c.set('tenantContext', result.data as TenantContext);
+  const result = await authenticateRequest({ authorization: authHeader }, d.jwtConfig);
+  if (!result.authenticated) {
+    return c.json(
+      {
+        success: false as const,
+        error: { code: 'UNAUTHENTICATED', message: 'Authentication required' },
+      },
+      401,
+    );
+  }
+  c.set('tenantContext', result.context);
   await next();
 });
 
