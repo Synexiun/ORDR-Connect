@@ -4,7 +4,12 @@
  * Responsibilities:
  *  - Delegates persistence to SCIMUserStore / SCIMGroupStore
  *  - Emits WORM audit events (Rule 3) for every state-changing operation
- *  - Publishes Kafka identity events best-effort (.catch(() => undefined))
+ *  - Publishes Kafka identity events best-effort (see publishIdentityEvent).
+ *    Kafka publishes DELIBERATELY never block the SCIM response path — the
+ *    authoritative record of each operation is the audit event, written
+ *    BEFORE the Kafka call. Kafka is only a CQRS projection feed.
+ *    Publish failures DO emit a structured warn log so the projection lag
+ *    is observable (metric: scim_identity_event_publish_failures_total).
  *  - Implements atomic deprovisioning in deleteUser via db.transaction()
  *
  * Security / compliance:
@@ -57,6 +62,36 @@ const SCIM_ACTOR = 'scim-system' as const;
 export class SCIMHandler {
   constructor(private readonly deps: SCIMHandlerDeps) {}
 
+  /**
+   * Publish an identity event to Kafka best-effort. Never awaited; failures
+   * are converted to a structured warn log so the projection lag is
+   * observable without blocking the SCIM response.
+   */
+  private publishIdentityEvent(
+    eventType: string,
+    tenantId: string,
+    payload: Record<string, unknown>,
+  ): void {
+    void this.deps.eventProducer
+      .publish(
+        TOPICS.IDENTITY_EVENTS,
+        createEventEnvelope(eventType, tenantId, payload, { source: 'scim-handler' }),
+      )
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            component: 'scim-handler',
+            event: 'identity_event_publish_failed',
+            scim_event_type: eventType,
+            tenant_id: tenantId,
+            error: message,
+          }),
+        );
+      });
+  }
+
   // =========================================================================
   // USER OPERATIONS
   // =========================================================================
@@ -89,18 +124,10 @@ export class SCIMHandler {
       timestamp: new Date(),
     });
 
-    // Kafka — best-effort, never blocks
-    void this.deps.eventProducer
-      .publish(
-        TOPICS.IDENTITY_EVENTS,
-        createEventEnvelope(
-          'user.provisioned',
-          tenantId,
-          { userId: user.id, userName: user.userName },
-          { source: 'scim-handler' },
-        ),
-      )
-      .catch(() => undefined);
+    this.publishIdentityEvent('user.provisioned', tenantId, {
+      userId: user.id,
+      userName: user.userName,
+    });
 
     return user;
   }
@@ -225,18 +252,10 @@ export class SCIMHandler {
       });
     });
 
-    // Kafka — best-effort, after commit, never blocks
-    void this.deps.eventProducer
-      .publish(
-        TOPICS.IDENTITY_EVENTS,
-        createEventEnvelope(
-          'user.deprovisioned',
-          tenantId,
-          { userId, userName: user.userName },
-          { source: 'scim-handler' },
-        ),
-      )
-      .catch(() => undefined);
+    this.publishIdentityEvent('user.deprovisioned', tenantId, {
+      userId,
+      userName: user.userName,
+    });
   }
 
   // =========================================================================
@@ -277,17 +296,10 @@ export class SCIMHandler {
       timestamp: new Date(),
     });
 
-    void this.deps.eventProducer
-      .publish(
-        TOPICS.IDENTITY_EVENTS,
-        createEventEnvelope(
-          'group.created',
-          tenantId,
-          { groupId: group.id, displayName: group.displayName },
-          { source: 'scim-handler' },
-        ),
-      )
-      .catch(() => undefined);
+    this.publishIdentityEvent('group.created', tenantId, {
+      groupId: group.id,
+      displayName: group.displayName,
+    });
 
     return group;
   }
@@ -351,17 +363,10 @@ export class SCIMHandler {
       timestamp: new Date(),
     });
 
-    void this.deps.eventProducer
-      .publish(
-        TOPICS.IDENTITY_EVENTS,
-        createEventEnvelope(
-          'group.updated',
-          tenantId,
-          { groupId: group.id, displayName: group.displayName },
-          { source: 'scim-handler' },
-        ),
-      )
-      .catch(() => undefined);
+    this.publishIdentityEvent('group.updated', tenantId, {
+      groupId: group.id,
+      displayName: group.displayName,
+    });
 
     // Return refreshed group record reflecting new members
     return this.deps.groupStore.getById(tenantId, id);
@@ -418,12 +423,7 @@ export class SCIMHandler {
       timestamp: new Date(),
     });
 
-    void this.deps.eventProducer
-      .publish(
-        TOPICS.IDENTITY_EVENTS,
-        createEventEnvelope('group.updated', tenantId, { groupId: id }, { source: 'scim-handler' }),
-      )
-      .catch(() => undefined);
+    this.publishIdentityEvent('group.updated', tenantId, { groupId: id });
 
     return this.deps.groupStore.getById(tenantId, id);
   }
@@ -447,11 +447,6 @@ export class SCIMHandler {
       timestamp: new Date(),
     });
 
-    void this.deps.eventProducer
-      .publish(
-        TOPICS.IDENTITY_EVENTS,
-        createEventEnvelope('group.deleted', tenantId, { groupId: id }, { source: 'scim-handler' }),
-      )
-      .catch(() => undefined);
+    this.publishIdentityEvent('group.deleted', tenantId, { groupId: id });
   }
 }
