@@ -1499,7 +1499,21 @@ integrationsRouter.post(
             errorSummary:
               err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
           })
-          .catch(() => undefined);
+          .catch((logErr: unknown) => {
+            const message = logErr instanceof Error ? logErr.message : String(logErr);
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                component: 'integrations',
+                event: 'sync_event_write_failed',
+                tenant_id: ctx.tenantId,
+                provider,
+                direction: 'inbound',
+                external_id: record.externalId,
+                error: message,
+              }),
+            );
+          });
       }
     }
 
@@ -1707,7 +1721,21 @@ integrationsRouter.post(
               errorSummary:
                 err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
             })
-            .catch(() => undefined);
+            .catch((logErr: unknown) => {
+              const message = logErr instanceof Error ? logErr.message : String(logErr);
+              console.warn(
+                JSON.stringify({
+                  level: 'warn',
+                  component: 'integrations',
+                  event: 'sync_event_write_failed',
+                  tenant_id: ctx.tenantId,
+                  provider,
+                  direction: 'outbound',
+                  entity_id: result.ordrEntityId,
+                  error: message,
+                }),
+              );
+            });
         }
       }
 

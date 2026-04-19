@@ -1694,7 +1694,24 @@ async function bootstrap(): Promise<void> {
             auditEntryIds,
           };
 
-          await writeDecisionLog(db, logEntry).catch(() => undefined);
+          await writeDecisionLog(db, logEntry).catch((err: unknown) => {
+            // Rule 9 — agent reasoning chain observability. A failed decision-log
+            // write breaks the "full prompt → reasoning → action → outcome" audit
+            // trail. We don't re-throw (the decision itself already completed) but
+            // emit a structured warn so log-based alerting can detect the gap.
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                component: 'nba-pipeline',
+                event: 'decision_log_write_failed',
+                tenant_id: logEntry.tenantId,
+                customer_id: logEntry.customerId,
+                layer_reached: logEntry.layerReached,
+                error: message,
+              }),
+            );
+          });
           broadcastDecisionEvent(logEntry);
         }
       },
