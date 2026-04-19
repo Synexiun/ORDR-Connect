@@ -20,6 +20,10 @@ export type AuditEventType =
   | 'agent.killed'
   | 'compliance.check'
   | 'compliance.violation'
+  // Decision-engine rule lifecycle (Phase 163)
+  | 'compliance.rule_created'
+  | 'compliance.rule_updated'
+  | 'compliance.rule_deleted'
   | 'system.config_change'
   | 'system.deployment'
   | 'phi.accessed'

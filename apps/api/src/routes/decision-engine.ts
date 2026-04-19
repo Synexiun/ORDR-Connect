@@ -36,6 +36,7 @@ import {
   getDecisionStats,
   getLayerStats,
   listDecisionLog,
+  type ListDecisionLogParams,
   type WriteDecisionLogEntry,
 } from '../lib/decision-engine-queries.js';
 
@@ -460,12 +461,17 @@ decisionEngineRouter.get('/records', rateLimit('read'), async (c): Promise<Respo
     );
   }
 
-  const rows = await listDecisionLog(d.db, ctx.tenantId, {
-    decisionType: parsed.data.decisionType,
-    layer: parsed.data.layer,
-    outcome: parsed.data.outcome,
-    limit: parsed.data.limit,
-  });
+  // exactOptionalPropertyTypes: spread only defined values so we don't pass
+  // `undefined` to an optional-but-not-undefined-accepting param.
+  const { decisionType, layer, outcome, limit } = parsed.data;
+  const listParams: ListDecisionLogParams = {
+    ...(decisionType !== undefined && { decisionType }),
+    ...(layer !== undefined && { layer }),
+    ...(outcome !== undefined && { outcome }),
+    ...(limit !== undefined && { limit }),
+  };
+
+  const rows = await listDecisionLog(d.db, ctx.tenantId, listParams);
 
   // Map to web DecisionRecord shape
   const data = rows.map((row) => ({
@@ -722,7 +728,7 @@ decisionEngineRouter.post('/rules/:id/test', rateLimit('write'), async (c): Prom
 //
 // PHI rule: customerId is masked to CUST-****{last4} before emission.
 
-decisionEngineRouter.get('/stream', (c): Promise<Response> => {
+decisionEngineRouter.get('/stream', (c): Response | Promise<Response> => {
   const ctx = c.get('tenantContext');
   if (ctx === undefined) {
     return Promise.resolve(
