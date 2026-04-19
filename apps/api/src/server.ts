@@ -130,7 +130,7 @@ import { configureOnboardingRoutes } from './routes/onboarding.js';
 import { configureFeatureFlagRoutes } from './routes/feature-flags.js';
 import { configureAiRoutes } from './routes/ai.js';
 import { configureEventsRoute } from './routes/events.js';
-import { writeDecisionLog } from './lib/decision-engine-queries.js';
+import { writeDecisionLog, type WriteDecisionLogEntry } from './lib/decision-engine-queries.js';
 import { broadcastDecisionEvent } from './routes/decision-engine.js';
 import { configureNotificationsRoute } from './routes/notifications.js';
 import { configureAuditLogsRoute } from './routes/audit-logs.js';
@@ -1459,6 +1459,10 @@ async function bootstrap(): Promise<void> {
   }
 
   // ── 5.6. Agent routes (sessions, HITL queue, kill switch) ─────────────────
+  // nbaRuleStore hoisted outside the block so configureDecisionEngineRoutes
+  // (which needs jwtConfig) can be deferred to after step 6 where jwtConfig
+  // is guaranteed non-null.
+  const nbaRuleStore = new DrizzleRuleStore(db);
   {
     const hitlQueue = new HitlQueue();
     const agentEngineDeps = {
@@ -1528,7 +1532,6 @@ async function bootstrap(): Promise<void> {
     // DrizzleRuleStore merges built-in rules with per-tenant DB rules on every
     // getRules() call. The CRUD API (GET/POST/PUT/DELETE /agents/rules) manages
     // custom rules stored in the decision_rules table.
-    const nbaRuleStore = new DrizzleRuleStore(db);
     const nbaRulesEngine = new RulesEngine(nbaRuleStore);
 
     // Phase 143 — primary ML scorer. If ML_BUNDLE_PATH is set, load the
@@ -1678,7 +1681,7 @@ async function bootstrap(): Promise<void> {
           const totalLatency = entries.reduce((sum, e) => sum + e.durationMs, 0);
           const auditEntryIds = entries.map(() => finalEntry.decisionId);
 
-          const logEntry = {
+          const logEntry: WriteDecisionLogEntry = {
             tenantId: finalEntry.tenantId,
             customerId: finalEntry.customerId,
             decisionType: 'next_best_action',
@@ -1889,23 +1892,6 @@ async function bootstrap(): Promise<void> {
       }),
     );
 
-    // ── 4.15c. Decision Engine routes — stats, records, rules CRUD, SSE feed ─
-    // Placed here (inside the agent block) so nbaRuleStore is in scope.
-    configureDecisionEngineRoutes({
-      ruleStore: nbaRuleStore,
-      auditLogger,
-      db,
-      jwtConfig: activeJwtConfig,
-    });
-    console.warn(
-      JSON.stringify({
-        level: 'info',
-        component: 'api-bootstrap',
-        event: 'route_configured',
-        route: 'decision-engine',
-      }),
-    );
-
     // ── 4.15d. Predictive Intelligence routes — at-risk, opportunities, model stats ─
     configurePredictiveRoutes({ db, auditLogger });
     console.warn(
@@ -1938,6 +1924,24 @@ async function bootstrap(): Promise<void> {
     );
     process.exit(1);
   }
+
+  // ── 6.1. Decision Engine routes — deferred to here so jwtConfig is non-null ─
+  // configureDecisionEngineRoutes captures jwtConfig in request-handler closures;
+  // registering before step 6 would capture null and break auth on every request.
+  configureDecisionEngineRoutes({
+    ruleStore: nbaRuleStore,
+    auditLogger,
+    db,
+    jwtConfig: activeJwtConfig,
+  });
+  console.warn(
+    JSON.stringify({
+      level: 'info',
+      component: 'api-bootstrap',
+      event: 'route_configured',
+      route: 'decision-engine',
+    }),
+  );
 
   // ── 7. Configure middleware ────────────────────────────────────────────
   configureAuth(activeJwtConfig);
