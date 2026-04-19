@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { messagesRouter, configureMessageRoutes } from '../routes/messages.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -91,13 +92,10 @@ function createTestApp(): Hono<Env> {
   // Simulate authenticated user
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [
-        { resource: 'messages', action: 'create' },
-        { resource: 'messages', action: 'read' },
-      ],
+      permissions: [],
     });
     await next();
   });
@@ -239,7 +237,7 @@ describe('Message Routes', () => {
       const res = await app.request('/api/v1/messages/msg-1');
 
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { success: boolean; data: Record<string, unknown> };
+      const body = (await res.json()) as { success: boolean; data: { id: string } };
       expect(body.success).toBe(true);
       expect(body.data.id).toBe('msg-1');
     });

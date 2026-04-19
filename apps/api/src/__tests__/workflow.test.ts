@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { workflowRouter, configureWorkflowRoutes } from '../routes/workflow.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -110,10 +111,10 @@ function createTestApp(): Hono<Env> {
 
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [{ resource: 'workflow', action: 'read' }],
+      permissions: [],
     });
     await next();
   });
@@ -143,6 +144,7 @@ describe('Workflow Routes', () => {
     configureWorkflowRoutes({
       engine: mockEngine as never,
       instanceStore: mockInstanceStore as never,
+      auditLogger: { log: vi.fn() } as never,
     });
 
     const subStore = new InMemorySubscriptionStore();

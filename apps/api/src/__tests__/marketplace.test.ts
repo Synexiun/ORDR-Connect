@@ -371,7 +371,7 @@ describe('GET /api/v1/marketplace', () => {
     expect(res.status).toBe(200);
     const body = await asJson<ListBody>(res);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].name).toBe('billing-agent');
+    expect(body.data[0]?.name).toBe('billing-agent');
   });
 
   it('returns meta with total count', async () => {
@@ -1123,7 +1123,7 @@ describe('GET /api/v1/marketplace/:agentId/reviews', () => {
     expect(res.status).toBe(200);
     const body = await asJson<ReviewsBody>(res);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].rating).toBe(5);
+    expect(body.data[0]?.rating).toBe(5);
   });
 
   it('returns empty array when no reviews', async () => {
@@ -1168,7 +1168,7 @@ describe('GET /api/v1/marketplace/:agentId/reviews', () => {
     });
 
     const body = await asJson<ReviewsBody>(res);
-    expect(body.data[0].reviewerId).toBe('rev-42');
+    expect(body.data[0]?.reviewerId).toBe('rev-42');
   });
 });
 

@@ -83,8 +83,8 @@ function buildApp(adapters?: Map<string, never>): Hono<Env> {
     credManagerDeps: {} as never,
     oauthConfigs: new Map(),
     eventProducer: { publish: mockPublish } as never,
-    auditLogger: { log: mockAuditLog },
-  });
+    auditLogger: { log: mockAuditLog } as never,
+  } as never);
 
   const app = new Hono<Env>();
   app.use('*', requestId);
@@ -112,7 +112,7 @@ describe('POST /integrations/:provider/webhook', () => {
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as Record<string, unknown>;
-    expect(json.received).toBe(true);
+    expect(json['received']).toBe(true);
     expect(mockPublish).toHaveBeenCalledOnce();
     expect(mockUpdateWebhookLogProcessed).toHaveBeenCalledWith({ id: 'wh-log-1' });
   });
@@ -176,7 +176,7 @@ describe('POST /integrations/:provider/webhook', () => {
     });
     expect(res.status).toBe(200);
     const json = (await res.json()) as Record<string, unknown>;
-    expect(json.received).toBe(true);
+    expect(json['received']).toBe(true);
   });
 
   it('malformed JSON → 400', async () => {

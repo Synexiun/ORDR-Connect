@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { integrationsRouter, configureIntegrationRoutes } from '../routes/integrations.js';
 import type { CRMAdapter } from '../routes/integrations.js';
@@ -132,16 +133,16 @@ function createTestApp(adapters?: Map<string, CRMAdapter>): Hono<Env> {
 
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [{ resource: 'integrations', action: 'read' }],
+      permissions: [],
     });
     await next();
   });
 
   if (adapters) {
-    configureIntegrationRoutes({ adapters });
+    configureIntegrationRoutes({ adapters } as never);
   }
 
   app.route('/api/v1/integrations', integrationsRouter);
@@ -166,7 +167,7 @@ describe('Integrations Routes', () => {
 
     mockAdapter = createMockAdapter();
     adapters = new Map([['salesforce', mockAdapter]]);
-    configureIntegrationRoutes({ adapters });
+    configureIntegrationRoutes({ adapters } as never);
 
     const subStore = new InMemorySubscriptionStore();
     await subStore.saveSubscription({
@@ -503,10 +504,10 @@ function createAppWithExtendedDeps(): Hono<Env> {
   app.use('*', requestId);
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [{ resource: 'integrations', action: 'read' }],
+      permissions: [],
     });
     await next();
   });

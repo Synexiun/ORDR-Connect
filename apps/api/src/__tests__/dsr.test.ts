@@ -92,24 +92,38 @@ const mockPublishApproved = vi.fn().mockResolvedValue(undefined);
 async function buildApp(): Promise<Hono<Env>> {
   const auditStore = new InMemoryAuditStore();
   const auditLogger = new AuditLogger(auditStore);
-  const fieldEncryptor = new FieldEncryptor('test-encryption-key-32bytes!!!!!');
+  const fieldEncryptor = new FieldEncryptor(Buffer.from('test-encryption-key-32bytes!!!!!'));
 
   const subStore = new InMemorySubscriptionStore();
   await subStore.saveSubscription({
     id: 'sub-test',
     tenant_id: TENANT_ID,
-    plan_id: 'enterprise',
+    stripe_subscription_id: 'stripe-test',
+    plan_tier: 'enterprise',
     status: 'active',
-    current_period_start: new Date(Date.now() - 86400000).toISOString(),
-    current_period_end: new Date(Date.now() + 86400000).toISOString(),
+    current_period_start: new Date(Date.now() - 86400000),
+    current_period_end: new Date(Date.now() + 86400000),
     cancel_at_period_end: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: new Date(),
+    updated_at: new Date(),
   });
-  const billing = new SubscriptionManager(subStore, new MockStripeClient());
-  configureBillingGate({ billing, fieldEncryptor });
+  configureBillingGate(
+    new SubscriptionManager({
+      store: subStore,
+      stripe: new MockStripeClient(),
+      auditLogger,
+      fieldEncryptor,
+    }),
+  );
 
-  configureAuth({ auditLogger });
+  configureAuth({
+    publicKey: 'test-key',
+    privateKey: 'test-key',
+    issuer: 'test',
+    audience: 'test',
+    accessTokenTtl: 3600,
+    refreshTokenTtl: 86400,
+  } as never);
   configureDsrRoutes({
     createDsr: mockCreateDsr,
     listDsrs: mockListDsrs,

@@ -13,6 +13,22 @@ import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
 
+// ─── Response type helper ─────────────────────────────────────────
+
+interface OpenApiBody {
+  openapi: string;
+  info: { title: string; version: string };
+  components: {
+    securitySchemes: {
+      bearerAuth: { scheme: string; bearerFormat: string };
+      apiKeyAuth: unknown;
+    };
+  };
+  paths: Record<string, unknown>;
+  servers: Array<{ url: string }>;
+  tags: Array<{ name: string }>;
+}
+
 // ─── Setup ──────────────────────────────────────────────────────────
 
 function createTestApp(): Hono<Env> {
@@ -34,7 +50,7 @@ describe('GET /api/v1/openapi.json', () => {
     const res = await app.request('/api/v1/openapi.json');
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
     expect(body).toBeDefined();
     expect(typeof body).toBe('object');
   });
@@ -43,7 +59,7 @@ describe('GET /api/v1/openapi.json', () => {
     const app = createTestApp();
 
     const res = await app.request('/api/v1/openapi.json');
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
 
     expect(body.openapi).toBe('3.1.0');
   });
@@ -52,7 +68,7 @@ describe('GET /api/v1/openapi.json', () => {
     const app = createTestApp();
 
     const res = await app.request('/api/v1/openapi.json');
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
 
     expect(body.info).toBeDefined();
     expect(body.info.title).toBe('ORDR-Connect API');
@@ -63,7 +79,7 @@ describe('GET /api/v1/openapi.json', () => {
     const app = createTestApp();
 
     const res = await app.request('/api/v1/openapi.json');
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
 
     expect(body.components).toBeDefined();
     expect(body.components.securitySchemes).toBeDefined();
@@ -77,7 +93,7 @@ describe('GET /api/v1/openapi.json', () => {
     const app = createTestApp();
 
     const res = await app.request('/api/v1/openapi.json');
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
 
     const paths = Object.keys(body.paths);
     expect(paths.length).toBeGreaterThan(0);
@@ -120,18 +136,18 @@ describe('GET /api/v1/openapi.json', () => {
     const app = createTestApp();
 
     const res = await app.request('/api/v1/openapi.json');
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
 
     expect(body.servers).toBeDefined();
     expect(body.servers.length).toBeGreaterThan(0);
-    expect(body.servers[0].url).toBeDefined();
+    expect(body.servers[0]?.url).toBeDefined();
   });
 
   it('includes tags for grouping endpoints', async () => {
     const app = createTestApp();
 
     const res = await app.request('/api/v1/openapi.json');
-    const body = await res.json();
+    const body = (await res.json()) as OpenApiBody;
 
     expect(body.tags).toBeDefined();
     expect(body.tags.length).toBeGreaterThan(0);
@@ -160,7 +176,7 @@ describe('GET /api/v1/openapi.json', () => {
 describe('OPENAPI_SPEC structure', () => {
   it('every path has at least one HTTP method', () => {
     const paths = OPENAPI_SPEC.paths;
-    for (const [_path, methods] of Object.entries(paths)) {
+    for (const [, methods] of Object.entries(paths)) {
       const methodKeys = Object.keys(methods);
       expect(methodKeys.length).toBeGreaterThan(0);
     }
@@ -168,8 +184,8 @@ describe('OPENAPI_SPEC structure', () => {
 
   it('every endpoint has a summary', () => {
     const paths = OPENAPI_SPEC.paths;
-    for (const [_path, methods] of Object.entries(paths)) {
-      for (const [_method, config] of Object.entries(methods)) {
+    for (const [, methods] of Object.entries(paths)) {
+      for (const [, config] of Object.entries(methods)) {
         const typedConfig = config as { summary?: string };
         expect(typedConfig.summary).toBeDefined();
         expect(typedConfig.summary!.length).toBeGreaterThan(0);
@@ -179,8 +195,8 @@ describe('OPENAPI_SPEC structure', () => {
 
   it('every endpoint has responses defined', () => {
     const paths = OPENAPI_SPEC.paths;
-    for (const [_path, methods] of Object.entries(paths)) {
-      for (const [_method, config] of Object.entries(methods)) {
+    for (const [, methods] of Object.entries(paths)) {
+      for (const [, config] of Object.entries(methods)) {
         const typedConfig = config as { responses?: Record<string, unknown> };
         expect(typedConfig.responses).toBeDefined();
         expect(Object.keys(typedConfig.responses!).length).toBeGreaterThan(0);
@@ -191,7 +207,7 @@ describe('OPENAPI_SPEC structure', () => {
   it('is JSON-serializable', () => {
     const serialized = JSON.stringify(OPENAPI_SPEC);
     expect(serialized).toBeDefined();
-    const parsed = JSON.parse(serialized);
+    const parsed = JSON.parse(serialized) as { openapi: string };
     expect(parsed.openapi).toBe('3.1.0');
   });
 });

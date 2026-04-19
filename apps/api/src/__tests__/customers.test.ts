@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { customersRouter, configureCustomerRoutes } from '../routes/customers.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -97,9 +98,9 @@ function createMockDeps() {
   };
 
   return {
-    fieldEncryptor: mockEncryptor as never,
-    auditLogger: mockAuditLogger as never,
-    eventProducer: mockEventProducer as never,
+    fieldEncryptor: mockEncryptor,
+    auditLogger: mockAuditLogger,
+    eventProducer: mockEventProducer,
     findCustomerById: vi.fn().mockResolvedValue(MOCK_CUSTOMER),
     listCustomers: vi.fn().mockResolvedValue({ data: [MOCK_CUSTOMER], total: 1 }),
     createCustomer: vi.fn().mockResolvedValue(MOCK_CUSTOMER),
@@ -117,7 +118,7 @@ function createTestApp(): Hono<Env> {
 
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
       permissions: [],
@@ -153,7 +154,7 @@ describe('Customers Routes', () => {
     } as never);
 
     mockDeps = createMockDeps();
-    configureCustomerRoutes(mockDeps);
+    configureCustomerRoutes(mockDeps as never);
 
     // Billing gate — needed for POST / which uses quotaGate('contacts')
     const subStore = new InMemorySubscriptionStore();
@@ -450,7 +451,7 @@ describe('Customers Routes', () => {
       const { authenticateRequest } = await import('@ordr/auth');
       vi.mocked(authenticateRequest).mockResolvedValueOnce({
         authenticated: false,
-        context: undefined as never,
+        error: new Error('Unauthenticated') as never,
       });
 
       const app = createUnauthApp();

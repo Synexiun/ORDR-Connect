@@ -18,6 +18,7 @@ import { requestId } from '../middleware/request-id.js';
 import { agentsRouter, configureAgentRoutes } from '../routes/agents.js';
 import { configureAuth } from '../middleware/auth.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
+import { createTenantId } from '@ordr/core';
 
 // Mock @ordr/auth so requireAuth() succeeds with our test context
 vi.mock('@ordr/auth', () => ({
@@ -84,15 +85,13 @@ function createMockAgentEngine() {
 function createMockHitlQueue() {
   return {
     enqueue: vi.fn().mockReturnValue('hitl-1'),
-    approve: vi
-      .fn()
-      .mockReturnValue({
-        action: 'send_sms',
-        confidence: 0.5,
-        reasoning: 'test',
-        parameters: {},
-        requiresApproval: true,
-      }),
+    approve: vi.fn().mockReturnValue({
+      action: 'send_sms',
+      confidence: 0.5,
+      reasoning: 'test',
+      parameters: {},
+      requiresApproval: true,
+    }),
     reject: vi.fn(),
     getPending: vi.fn().mockReturnValue([]),
     getItem: vi.fn().mockReturnValue(undefined),
@@ -122,15 +121,10 @@ function createTestApp(): Hono<Env> {
   // Simulate authenticated user
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [
-        { resource: 'agents', action: 'create' },
-        { resource: 'agents', action: 'read' },
-        { resource: 'agents', action: 'update' },
-        { resource: 'agents', action: 'delete' },
-      ],
+      permissions: [],
     });
     await next();
   });

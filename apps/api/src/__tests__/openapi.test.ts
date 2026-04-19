@@ -10,10 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  RouteRegistry,
-  createDefaultRegistry,
-} from '../openapi/metadata.js';
+import { RouteRegistry, createDefaultRegistry } from '../openapi/metadata.js';
 import type { RouteMetadata } from '../openapi/metadata.js';
 import { generateOpenAPISpec } from '../openapi/spec-generator.js';
 import type { OpenAPIDocument } from '../openapi/spec-generator.js';
@@ -50,12 +47,24 @@ describe('RouteRegistry', () => {
 
   it('registers multiple routes', () => {
     registry.register({
-      path: '/a', method: 'GET', summary: 'A', description: 'A',
-      tags: ['a'], auth: 'required', rateLimit: 100, errors: [],
+      path: '/a',
+      method: 'GET',
+      summary: 'A',
+      description: 'A',
+      tags: ['a'],
+      auth: 'required',
+      rateLimit: 100,
+      errors: [],
     });
     registry.register({
-      path: '/b', method: 'POST', summary: 'B', description: 'B',
-      tags: ['b'], auth: 'none', rateLimit: 50, errors: [400],
+      path: '/b',
+      method: 'POST',
+      summary: 'B',
+      description: 'B',
+      tags: ['b'],
+      auth: 'none',
+      rateLimit: 50,
+      errors: [400],
     });
 
     expect(registry.getAll()).toHaveLength(2);
@@ -63,16 +72,34 @@ describe('RouteRegistry', () => {
 
   it('filters routes by tag', () => {
     registry.register({
-      path: '/a', method: 'GET', summary: 'A', description: 'A',
-      tags: ['alpha', 'common'], auth: 'required', rateLimit: 100, errors: [],
+      path: '/a',
+      method: 'GET',
+      summary: 'A',
+      description: 'A',
+      tags: ['alpha', 'common'],
+      auth: 'required',
+      rateLimit: 100,
+      errors: [],
     });
     registry.register({
-      path: '/b', method: 'POST', summary: 'B', description: 'B',
-      tags: ['beta'], auth: 'none', rateLimit: 50, errors: [],
+      path: '/b',
+      method: 'POST',
+      summary: 'B',
+      description: 'B',
+      tags: ['beta'],
+      auth: 'none',
+      rateLimit: 50,
+      errors: [],
     });
     registry.register({
-      path: '/c', method: 'GET', summary: 'C', description: 'C',
-      tags: ['alpha'], auth: 'optional', rateLimit: 60, errors: [],
+      path: '/c',
+      method: 'GET',
+      summary: 'C',
+      description: 'C',
+      tags: ['alpha'],
+      auth: 'optional',
+      rateLimit: 60,
+      errors: [],
     });
 
     const alphaRoutes = registry.getByTag('alpha');
@@ -87,14 +114,20 @@ describe('RouteRegistry', () => {
 
   it('getAll returns a copy (immutable)', () => {
     registry.register({
-      path: '/test', method: 'GET', summary: 'T', description: 'T',
-      tags: ['test'], auth: 'required', rateLimit: 100, errors: [],
+      path: '/test',
+      method: 'GET',
+      summary: 'T',
+      description: 'T',
+      tags: ['test'],
+      auth: 'required',
+      rateLimit: 100,
+      errors: [],
     });
 
     const all1 = registry.getAll();
     const all2 = registry.getAll();
     expect(all1).not.toBe(all2); // Different array references
-    expect(all1).toEqual(all2);  // Same content
+    expect(all1).toEqual(all2); // Same content
   });
 });
 
@@ -312,13 +345,15 @@ describe('generateOpenAPISpec', () => {
     const postOp = customerPath!['post']!;
     expect(postOp.requestBody).toBeDefined();
     expect(postOp.requestBody!.required).toBe(true);
-    expect(postOp.requestBody!.content['application/json'].schema['$ref']).toContain('CreateCustomerRequest');
+    expect(postOp.requestBody!.content['application/json'].schema['$ref']).toContain(
+      'CreateCustomerRequest',
+    );
   });
 
   it('is JSON-serializable', () => {
     const serialized = JSON.stringify(spec);
     expect(serialized).toBeDefined();
-    const parsed = JSON.parse(serialized);
+    const parsed = JSON.parse(serialized) as { openapi: string };
     expect(parsed.openapi).toBe('3.1.0');
   });
 });

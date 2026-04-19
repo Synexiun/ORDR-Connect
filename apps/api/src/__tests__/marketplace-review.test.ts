@@ -7,18 +7,40 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
-import { marketplaceReviewRouter, configureMarketplaceReviewRoutes } from '../routes/marketplace-review.js';
+import {
+  marketplaceReviewRouter,
+  configureMarketplaceReviewRoutes,
+} from '../routes/marketplace-review.js';
 import { configureAuth } from '../middleware/auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
 import { generateKeyPair } from '@ordr/crypto';
+
+// ─── Response type helper ─────────────────────────────────────────
+
+interface ReviewBody {
+  success?: boolean;
+  data: {
+    id?: string;
+    name?: string;
+    author?: string;
+    version?: string;
+    status?: string;
+    rejectionReason?: string | null;
+    length?: number;
+  } & Array<{
+    id?: string;
+    name?: string;
+    author?: string;
+    version?: string;
+    status?: string;
+  }>;
+  error?: { message?: string; code?: string };
+}
 
 // ─── Mock Data ──────────────────────────────────────────────────
 
@@ -48,11 +70,13 @@ let idCounter: number;
 
 const VALID_HASH = 'b'.repeat(64);
 
-async function makeAdminJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeAdminJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'admin-001',
     tid: overrides.tid ?? 'system',
@@ -103,7 +127,7 @@ function seedAgent(overrides: Partial<MockAgent> = {}): MockAgent {
 // ─── Setup ──────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -118,22 +142,24 @@ beforeEach(async () => {
 
   configureMarketplaceReviewRoutes({
     auditLogger,
-    listPendingAgents: vi.fn(async () => {
-      return [...agentStore.values()].filter((a) => a.status === 'review');
-    }),
-    findAgentById: vi.fn(async (id: string) => agentStore.get(id) ?? null),
-    updateAgentStatus: vi.fn(async (id: string, status: 'published' | 'rejected' | 'suspended', reason?: string) => {
-      const agent = agentStore.get(id);
-      if (!agent) return null;
-      const updated: MockAgent = {
-        ...agent,
-        status,
-        rejectionReason: reason ?? null,
-        updatedAt: new Date(),
-      };
-      agentStore.set(id, updated);
-      return updated;
-    }),
+    listPendingAgents: vi.fn(() =>
+      Promise.resolve([...agentStore.values()].filter((a) => a.status === 'review')),
+    ),
+    findAgentById: vi.fn((id: string) => Promise.resolve(agentStore.get(id) ?? null)),
+    updateAgentStatus: vi.fn(
+      (id: string, status: 'published' | 'rejected' | 'suspended', reason?: string) => {
+        const agent = agentStore.get(id);
+        if (!agent) return Promise.resolve(null);
+        const updated: MockAgent = {
+          ...agent,
+          status,
+          rejectionReason: reason ?? null,
+          updatedAt: new Date(),
+        };
+        agentStore.set(id, updated);
+        return Promise.resolve(updated);
+      },
+    ),
   });
 });
 
@@ -152,7 +178,7 @@ describe('GET /api/v1/admin/marketplace/queue', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as ReviewBody;
     expect(body.data).toHaveLength(2);
   });
 
@@ -163,7 +189,7 @@ describe('GET /api/v1/admin/marketplace/queue', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as ReviewBody;
     expect(body.data).toHaveLength(0);
   });
 
@@ -182,10 +208,10 @@ describe('GET /api/v1/admin/marketplace/queue', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
-    expect(body.data[0].name).toBe('detailed-agent');
-    expect(body.data[0].author).toBe('Test Dev');
-    expect(body.data[0].version).toBe('2.1.0');
+    const body = (await res.json()) as ReviewBody;
+    expect(body.data[0]?.name).toBe('detailed-agent');
+    expect(body.data[0]?.author).toBe('Test Dev');
+    expect(body.data[0]?.version).toBe('2.1.0');
   });
 });
 
@@ -203,7 +229,7 @@ describe('POST /api/v1/admin/marketplace/:agentId/approve', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as ReviewBody;
     expect(body.data.status).toBe('published');
   });
 
@@ -229,8 +255,8 @@ describe('POST /api/v1/admin/marketplace/:agentId/approve', () => {
     });
 
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error.message).toContain('security review');
+    const body = (await res.json()) as ReviewBody;
+    expect(body.error?.message).toContain('security review');
   });
 
   it('rejects agent with budget exceeding platform limits', async () => {
@@ -365,7 +391,7 @@ describe('POST /api/v1/admin/marketplace/:agentId/reject', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as ReviewBody;
     expect(body.data.status).toBe('rejected');
     expect(body.data.rejectionReason).toBe('Does not meet security requirements');
   });
@@ -476,7 +502,7 @@ describe('POST /api/v1/admin/marketplace/:agentId/suspend', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as ReviewBody;
     expect(body.data.status).toBe('suspended');
   });
 
@@ -549,10 +575,12 @@ describe('RBAC enforcement', () => {
     for (const route of routes) {
       const res = await app.request(route.path, {
         method: route.method,
-        ...(route.method === 'POST' ? {
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason: 'test' }),
-        } : {}),
+        ...(route.method === 'POST'
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason: 'test' }),
+            }
+          : {}),
       });
       expect(res.status).toBe(401);
     }

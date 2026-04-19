@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { teamRouter, configureTeamRoutes } from '../routes/team.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -133,7 +134,7 @@ function createTestApp(): Hono<Env> {
 
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
       permissions: [],
@@ -436,8 +437,8 @@ describe('Team Routes', () => {
       const { authenticateRequest } = await import('@ordr/auth');
       vi.mocked(authenticateRequest).mockResolvedValueOnce({
         authenticated: false,
-        context: undefined as never,
-      });
+        error: new Error('Unauthenticated') as never,
+      } as never);
 
       const app = createUnauthApp();
       const res = await app.request('/api/v1/team/members');

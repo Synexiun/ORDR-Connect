@@ -12,10 +12,7 @@ import { configureAuth } from '../middleware/auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
 import { generateKeyPair, hashPassword } from '@ordr/crypto';
@@ -65,11 +62,13 @@ let keyStore: Map<string, MockKey>;
 let sandboxStore: Map<string, MockSandbox>;
 let idCounter: number;
 
-async function makeDevJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeDevJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'dev-001',
     tid: overrides.tid ?? 'developer-portal',
@@ -89,7 +88,7 @@ function createTestApp(): Hono<Env> {
 // ─── Setup ──────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -109,95 +108,115 @@ beforeEach(async () => {
   configureDeveloperRoutes({
     jwtConfig,
     auditLogger,
-    findDeveloperByEmail: vi.fn(async (email: string) => {
-      return emailIndex.get(email) ?? null;
-    }),
-    findDeveloperById: vi.fn(async (id: string) => {
-      return developerStore.get(id) ?? null;
-    }),
-    createDeveloper: vi.fn(async (data) => {
-      const id = `dev-${String(idCounter++).padStart(3, '0')}`;
-      const dev: MockDeveloper = {
-        id,
-        email: data.email,
-        displayName: data.displayName,
-        organization: data.organization,
-        passwordHash: data.passwordHash,
-        tier: data.tier as 'free' | 'pro' | 'enterprise',
-        rateLimitRpm: 60,
-        status: 'active',
-        createdAt: new Date(),
-        lastActiveAt: null,
-      };
-      developerStore.set(id, dev);
-      emailIndex.set(data.email, dev);
-      return dev;
-    }),
-    createDeveloperKey: vi.fn(async (data) => {
-      const id = `key-${String(idCounter++).padStart(3, '0')}`;
-      const key: MockKey = {
-        id,
-        developerId: data.developerId,
-        name: data.name,
-        keyHash: data.keyHash,
-        keyPrefix: data.keyPrefix,
-        createdAt: new Date(),
-        expiresAt: data.expiresAt,
-        revokedAt: null,
-      };
-      keyStore.set(id, key);
-      return key;
-    }),
-    listDeveloperKeys: vi.fn(async (developerId: string) => {
+    findDeveloperByEmail: vi.fn((email: string) => Promise.resolve(emailIndex.get(email) ?? null)),
+    findDeveloperById: vi.fn((id: string) => Promise.resolve(developerStore.get(id) ?? null)),
+    createDeveloper: vi.fn(
+      (data: {
+        email: string;
+        displayName: string;
+        organization: string | null;
+        passwordHash: string;
+        tier: string;
+      }) => {
+        const id = `dev-${String(idCounter++).padStart(3, '0')}`;
+        const dev: MockDeveloper = {
+          id,
+          email: data.email,
+          displayName: data.displayName,
+          organization: data.organization,
+          passwordHash: data.passwordHash,
+          tier: data.tier as 'free' | 'pro' | 'enterprise',
+          rateLimitRpm: 60,
+          status: 'active',
+          createdAt: new Date(),
+          lastActiveAt: null,
+        };
+        developerStore.set(id, dev);
+        emailIndex.set(data.email, dev);
+        return Promise.resolve(dev);
+      },
+    ),
+    createDeveloperKey: vi.fn(
+      (data: {
+        developerId: string;
+        name: string;
+        keyHash: string;
+        keyPrefix: string;
+        expiresAt: Date | null;
+      }) => {
+        const id = `key-${String(idCounter++).padStart(3, '0')}`;
+        const key: MockKey = {
+          id,
+          developerId: data.developerId,
+          name: data.name,
+          keyHash: data.keyHash,
+          keyPrefix: data.keyPrefix,
+          createdAt: new Date(),
+          expiresAt: data.expiresAt,
+          revokedAt: null,
+        };
+        keyStore.set(id, key);
+        return Promise.resolve(key);
+      },
+    ),
+    listDeveloperKeys: vi.fn((developerId: string) => {
       const keys: MockKey[] = [];
       for (const k of keyStore.values()) {
         if (k.developerId === developerId) keys.push(k);
       }
-      return keys;
+      return Promise.resolve(keys);
     }),
-    findKeyById: vi.fn(async (developerId: string, keyId: string) => {
+    findKeyById: vi.fn((developerId: string, keyId: string) => {
       const key = keyStore.get(keyId);
-      if (!key || key.developerId !== developerId) return null;
-      return key;
+      if (!key || key.developerId !== developerId) return Promise.resolve(null);
+      return Promise.resolve(key);
     }),
-    revokeKey: vi.fn(async (developerId: string, keyId: string) => {
+    revokeKey: vi.fn((developerId: string, keyId: string) => {
       const key = keyStore.get(keyId);
-      if (!key || key.developerId !== developerId) return false;
+      if (!key || key.developerId !== developerId) return Promise.resolve(false);
       keyStore.set(keyId, { ...key, revokedAt: new Date() });
-      return true;
+      return Promise.resolve(true);
     }),
-    createSandbox: vi.fn(async (data) => {
-      const id = `sb-${String(idCounter++).padStart(3, '0')}`;
-      const sandbox: MockSandbox = {
-        id,
-        developerId: data.developerId,
-        tenantId: data.tenantId,
-        name: data.name,
-        seedDataProfile: data.seedDataProfile,
-        status: 'active',
-        expiresAt: data.expiresAt,
-        createdAt: new Date(),
-      };
-      sandboxStore.set(id, sandbox);
-      return sandbox;
-    }),
-    listSandboxes: vi.fn(async (developerId: string) => {
+    createSandbox: vi.fn(
+      (data: {
+        developerId: string;
+        name: string;
+        tenantId: string;
+        seedDataProfile: string;
+        expiresAt: Date;
+      }) => {
+        const id = `sb-${String(idCounter++).padStart(3, '0')}`;
+        const sandbox: MockSandbox = {
+          id,
+          developerId: data.developerId,
+          tenantId: data.tenantId,
+          name: data.name,
+          seedDataProfile: data.seedDataProfile,
+          status: 'active',
+          expiresAt: data.expiresAt,
+          createdAt: new Date(),
+        };
+        sandboxStore.set(id, sandbox);
+        return Promise.resolve(sandbox);
+      },
+    ),
+    listSandboxes: vi.fn((developerId: string) => {
       const sandboxes: MockSandbox[] = [];
       for (const s of sandboxStore.values()) {
         if (s.developerId === developerId) sandboxes.push(s);
       }
-      return sandboxes;
+      return Promise.resolve(sandboxes);
     }),
-    findSandboxById: vi.fn(async (developerId: string, sandboxId: string) => {
+    findSandboxById: vi.fn((developerId: string, sandboxId: string) => {
       const sandbox = sandboxStore.get(sandboxId);
-      if (!sandbox || sandbox.developerId !== developerId) return null;
-      return sandbox;
+      if (!sandbox || sandbox.developerId !== developerId) return Promise.resolve(null);
+      return Promise.resolve(sandbox);
     }),
-    destroySandbox: vi.fn(async (developerId: string, sandboxId: string) => {
+    destroySandbox: vi.fn((developerId: string, sandboxId: string) => {
       const sandbox = sandboxStore.get(sandboxId);
-      if (!sandbox || sandbox.developerId !== developerId) return false;
+      if (!sandbox || sandbox.developerId !== developerId) return Promise.resolve(false);
       sandboxStore.set(sandboxId, { ...sandbox, status: 'destroyed' });
-      return true;
+      return Promise.resolve(true);
     }),
   });
 });
@@ -244,7 +263,10 @@ describe('POST /api/v1/developers/register', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { email: string; displayName: string; tier: string };
+    };
     expect(body.success).toBe(true);
     expect(body.data.email).toBe('new@example.com');
     expect(body.data.displayName).toBe('New Developer');
@@ -265,7 +287,7 @@ describe('POST /api/v1/developers/register', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as { data: { tier: string } };
     expect(body.data.tier).toBe('free');
   });
 
@@ -349,7 +371,7 @@ describe('POST /api/v1/developers/register', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as { data: { organization: string } };
     expect(body.data.organization).toBe('Acme Corp');
   });
 
@@ -383,7 +405,7 @@ describe('POST /api/v1/developers/register', () => {
       }),
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { data: { passwordHash?: unknown; password?: unknown } };
     expect(body.data.passwordHash).toBeUndefined();
     expect(body.data.password).toBeUndefined();
   });
@@ -420,7 +442,10 @@ describe('POST /api/v1/developers/login', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { accessToken: string; tokenType: string };
+    };
     expect(body.success).toBe(true);
     expect(body.data.accessToken).toBeDefined();
     expect(body.data.tokenType).toBe('Bearer');
@@ -500,7 +525,7 @@ describe('POST /api/v1/developers/login', () => {
       }),
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { error: { correlationId: string } };
     expect(body.error.correlationId).toBeDefined();
   });
 });
@@ -520,7 +545,7 @@ describe('GET /api/v1/developers/me', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { success: boolean; data: { email: string; tier: string } };
     expect(body.success).toBe(true);
     expect(body.data.email).toBe('dev@example.com');
     expect(body.data.tier).toBe('free');
@@ -553,7 +578,7 @@ describe('GET /api/v1/developers/me', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { data: { passwordHash?: unknown } };
     expect(body.data.passwordHash).toBeUndefined();
   });
 });
@@ -577,7 +602,10 @@ describe('POST /api/v1/developers/keys', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { key: string; prefix: string; name: string };
+    };
     expect(body.success).toBe(true);
     expect(body.data.key).toBeDefined();
     expect(body.data.key).toContain('ordr_');
@@ -603,7 +631,7 @@ describe('POST /api/v1/developers/keys', () => {
       expect(key.keyHash).toBeDefined();
       expect(key.keyHash.length).toBeGreaterThan(0);
       // The stored object should not have a 'key' field (only hash/prefix)
-      expect((key as Record<string, unknown>)['key']).toBeUndefined();
+      expect((key as unknown as Record<string, unknown>)['key']).toBeUndefined();
     }
   });
 
@@ -621,7 +649,7 @@ describe('POST /api/v1/developers/keys', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as { data: { expiresAt: string | null } };
     expect(body.data.expiresAt).toBeDefined();
   });
 
@@ -712,13 +740,16 @@ describe('GET /api/v1/developers/keys', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { prefix: string; key?: unknown; keyHash?: unknown }[];
+    };
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].prefix).toBe('ordr_abc123');
+    expect(body.data[0]?.prefix).toBe('ordr_abc123');
     // Verify full key and hash are NOT exposed
-    expect(body.data[0].key).toBeUndefined();
-    expect(body.data[0].keyHash).toBeUndefined();
+    expect(body.data[0]?.key).toBeUndefined();
+    expect(body.data[0]?.keyHash).toBeUndefined();
   });
 
   it('returns empty array when no keys exist', async () => {
@@ -730,7 +761,7 @@ describe('GET /api/v1/developers/keys', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { data: unknown[] };
     expect(body.data).toHaveLength(0);
   });
 
@@ -769,9 +800,9 @@ describe('GET /api/v1/developers/keys', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { data: { prefix: string }[] };
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].prefix).toBe('ordr_mine00');
+    expect(body.data[0]?.prefix).toBe('ordr_mine00');
   });
 });
 
@@ -801,7 +832,7 @@ describe('DELETE /api/v1/developers/keys/:keyId', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(true);
   });
 
@@ -871,7 +902,10 @@ describe('POST /api/v1/developers/sandbox', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { tenantId: string; name: string; status: string };
+    };
     expect(body.success).toBe(true);
     expect(body.data.tenantId).toContain('sandbox_');
     expect(body.data.name).toBe('Test Sandbox');
@@ -892,7 +926,7 @@ describe('POST /api/v1/developers/sandbox', () => {
       body: JSON.stringify({ name: 'Default Seed' }),
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { data: { seedDataProfile: string } };
     expect(body.data.seedDataProfile).toBe('minimal');
   });
 
@@ -911,7 +945,7 @@ describe('POST /api/v1/developers/sandbox', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as { data: { seedDataProfile: string } };
     expect(body.data.seedDataProfile).toBe('healthcare');
   });
 
@@ -943,7 +977,7 @@ describe('POST /api/v1/developers/sandbox', () => {
     });
 
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toContain('limit');
   });
 
@@ -1113,10 +1147,10 @@ describe('GET /api/v1/developers/sandbox', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { success: boolean; data: { name: string }[] };
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].name).toBe('My Sandbox');
+    expect(body.data[0]?.name).toBe('My Sandbox');
   });
 
   it('returns empty array when no sandboxes exist', async () => {
@@ -1127,7 +1161,7 @@ describe('GET /api/v1/developers/sandbox', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { data: unknown[] };
     expect(body.data).toHaveLength(0);
   });
 
@@ -1160,9 +1194,9 @@ describe('GET /api/v1/developers/sandbox', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { data: { name: string }[] };
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].name).toBe('Mine');
+    expect(body.data[0]?.name).toBe('Mine');
   });
 
   it('returns 401 without authentication', async () => {
@@ -1198,7 +1232,7 @@ describe('DELETE /api/v1/developers/sandbox/:sandboxId', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { success: boolean };
     expect(body.success).toBe(true);
   });
 

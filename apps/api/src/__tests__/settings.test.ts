@@ -25,6 +25,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { settingsRouter, configureSettingsRoutes } from '../routes/settings.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -90,7 +91,7 @@ function createTestApp() {
   app.use('*', requestId);
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
       permissions: [],
@@ -228,7 +229,7 @@ describe('Settings Routes', () => {
     });
 
     // insert chain — returns appropriate inserted row by context
-    db.insert.mockImplementation((table: unknown) => {
+    db.insert.mockImplementation(((table: unknown) => {
       const tableName = (table as Record<symbol, string>)[Symbol.for('drizzle:Name')] ?? '';
       const chain: Record<string, unknown> = {};
       chain['values'] = vi.fn(() => chain);
@@ -238,7 +239,7 @@ describe('Settings Routes', () => {
           : [{ id: 'new-sso-1' }], // SSO insert
       );
       return chain as never;
-    });
+    }) as never);
 
     // update chain
     db.update.mockImplementation(() => {

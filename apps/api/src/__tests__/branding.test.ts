@@ -12,14 +12,35 @@ import { configureAuth } from '../middleware/auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
 import { generateKeyPair } from '@ordr/crypto';
 import type { BrandConfigUpdate } from '@ordr/core';
+
+// ─── Response type helper ─────────────────────────────────────────
+
+interface BrandingBody {
+  success: boolean;
+  data: {
+    id?: string;
+    tenantId?: string;
+    primaryColor?: string;
+    accentColor?: string;
+    bgColor?: string;
+    textColor?: string;
+    logoUrl?: string | null;
+    faviconUrl?: string | null;
+    emailFromName?: string | null;
+    emailFromAddress?: string | null;
+    customCss?: string | null;
+    footerText?: string | null;
+    customDomain?: string | null;
+    domain?: string;
+    sslStatus?: string;
+  };
+  error?: { message?: string; code?: string };
+}
 
 // ─── Fixtures ─────────────────────────────────────────────────────
 
@@ -64,11 +85,13 @@ let auditLogger: AuditLogger;
 let brandStore: Map<string, MockBrandConfig>;
 let domainIndex: Map<string, MockBrandConfig>;
 
-async function makeJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'user-001',
     tid: overrides.tid ?? 'tenant-001',
@@ -88,7 +111,7 @@ function createTestApp(): Hono<Env> {
 // ─── Setup ────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -104,35 +127,33 @@ beforeEach(async () => {
 
   configureBrandingRoutes({
     auditLogger,
-    getBrandConfig: vi.fn(async (tenantId: string) => {
-      return brandStore.get(tenantId) ?? null;
-    }),
-    upsertBrandConfig: vi.fn(async (tenantId: string, data: BrandConfigUpdate) => {
+    getBrandConfig: vi.fn((tenantId: string) => Promise.resolve(brandStore.get(tenantId) ?? null)),
+    upsertBrandConfig: vi.fn((tenantId: string, data: BrandConfigUpdate) => {
       const existing = brandStore.get(tenantId) ?? { ...DEFAULT_CONFIG, tenantId };
       const updated = { ...existing, ...data, updatedAt: new Date() };
       brandStore.set(tenantId, updated);
-      if (updated.customDomain) {
+      if (updated.customDomain !== null) {
         domainIndex.set(updated.customDomain, updated);
       }
-      return updated;
+      return Promise.resolve(updated);
     }),
-    getBrandConfigByDomain: vi.fn(async (domain: string) => {
-      return domainIndex.get(domain) ?? null;
-    }),
-    setCustomDomain: vi.fn(async (tenantId: string, domain: string) => {
+    getBrandConfigByDomain: vi.fn((domain: string) =>
+      Promise.resolve(domainIndex.get(domain) ?? null),
+    ),
+    setCustomDomain: vi.fn((tenantId: string, domain: string) => {
       const existing = brandStore.get(tenantId) ?? { ...DEFAULT_CONFIG, tenantId };
       const updated = { ...existing, customDomain: domain, updatedAt: new Date() };
       brandStore.set(tenantId, updated);
       domainIndex.set(domain, updated);
-      return updated;
+      return Promise.resolve(updated);
     }),
-    removeCustomDomain: vi.fn(async (tenantId: string) => {
+    removeCustomDomain: vi.fn((tenantId: string) => {
       const existing = brandStore.get(tenantId);
-      if (!existing || !existing.customDomain) return false;
+      if (!existing || existing.customDomain === null) return Promise.resolve(false);
       domainIndex.delete(existing.customDomain);
       const updated = { ...existing, customDomain: null, updatedAt: new Date() };
       brandStore.set(tenantId, updated);
-      return true;
+      return Promise.resolve(true);
     }),
   });
 });
@@ -149,7 +170,7 @@ describe('GET /api/v1/branding', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.success).toBe(true);
     expect(body.data.primaryColor).toBe('#3b82f6');
     expect(body.data.accentColor).toBe('#10b981');
@@ -170,7 +191,7 @@ describe('GET /api/v1/branding', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.primaryColor).toBe('#ff0000');
     expect(body.data.logoUrl).toBe('https://example.com/logo.png');
   });
@@ -196,7 +217,7 @@ describe('GET /api/v1/branding', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     // tenant-001 has no config, so defaults returned (not tenant-002's config)
     expect(body.data.primaryColor).toBe('#3b82f6');
   });
@@ -222,7 +243,7 @@ describe('PUT /api/v1/branding', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.success).toBe(true);
     expect(body.data.primaryColor).toBe('#ff0000');
     expect(body.data.logoUrl).toBe('https://example.com/logo.png');
@@ -318,7 +339,7 @@ describe('PUT /api/v1/branding', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.logoUrl).toBeNull();
     expect(body.data.faviconUrl).toBeNull();
   });
@@ -400,7 +421,7 @@ describe('GET /api/v1/branding/domain', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data).toBeNull();
   });
 
@@ -418,7 +439,7 @@ describe('GET /api/v1/branding/domain', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.domain).toBe('app.example.com');
     expect(body.data.sslStatus).toBe('pending');
   });
@@ -445,7 +466,7 @@ describe('POST /api/v1/branding/domain', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.domain).toBe('app.example.com');
     expect(body.data.sslStatus).toBe('pending');
   });
@@ -534,7 +555,7 @@ describe('POST /api/v1/branding/domain', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.domain).toBe('app.example.com');
   });
 });
@@ -556,7 +577,7 @@ describe('DELETE /api/v1/branding/domain', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.success).toBe(true);
   });
 
@@ -643,7 +664,7 @@ describe('Audit logging', () => {
         tenantId: 'tenant-001',
         eventType: 'config.updated',
         action: 'register_domain',
-        details: expect.objectContaining({ domain: 'app.example.com' }),
+        details: expect.objectContaining({ domain: 'app.example.com' }) as Record<string, unknown>,
       }),
     );
   });
@@ -669,7 +690,7 @@ describe('Audit logging', () => {
         tenantId: 'tenant-001',
         eventType: 'config.updated',
         action: 'remove_domain',
-        details: expect.objectContaining({ domain: 'app.example.com' }),
+        details: expect.objectContaining({ domain: 'app.example.com' }) as Record<string, unknown>,
       }),
     );
   });
@@ -694,8 +715,8 @@ describe('Audit logging', () => {
     expect(logSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         details: expect.objectContaining({
-          changedFields: expect.arrayContaining(['primaryColor', 'accentColor']),
-        }),
+          changedFields: expect.arrayContaining(['primaryColor', 'accentColor']) as string[],
+        }) as Record<string, unknown>,
       }),
     );
   });
@@ -772,7 +793,7 @@ describe('PUT /api/v1/branding — extended validation', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.primaryColor).toBe('#111111');
     expect(body.data.accentColor).toBe('#222222');
     expect(body.data.bgColor).toBe('#333333');
@@ -809,7 +830,7 @@ describe('PUT /api/v1/branding — extended validation', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.faviconUrl).toBe('https://example.com/favicon.ico');
   });
 
@@ -827,7 +848,7 @@ describe('PUT /api/v1/branding — extended validation', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.footerText).toBe('Powered by ACME Corp');
   });
 
@@ -845,7 +866,7 @@ describe('PUT /api/v1/branding — extended validation', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.emailFromName).toBe('Support Team');
   });
 
@@ -980,7 +1001,7 @@ describe('GET /api/v1/branding — default shape', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.bgColor).toBe('#0f172a');
     expect(body.data.textColor).toBe('#e2e8f0');
     expect(body.data.customDomain).toBeNull();
@@ -1000,7 +1021,7 @@ describe('GET /api/v1/branding — default shape', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as BrandingBody;
     expect(body.data.tenantId).toBe('tenant-xyz');
   });
 });

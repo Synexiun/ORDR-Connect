@@ -17,6 +17,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { requestId } from '../middleware/request-id.js';
 import { analyticsRouter, configureAnalyticsRoutes } from '../routes/analytics.js';
+import { createTenantId } from '@ordr/core';
 import { configureAuth } from '../middleware/auth.js';
 import { configureBillingGate } from '../middleware/plan-gate.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
@@ -162,10 +163,10 @@ function createTestApp(): Hono<Env> {
   // Simulate authenticated user
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [{ resource: 'analytics', action: 'read' }],
+      permissions: [],
     });
     await next();
   });

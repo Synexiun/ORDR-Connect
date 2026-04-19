@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { slaRouter, configureSlaRoutes } from '../routes/sla.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -59,7 +60,7 @@ function createTestApp(withTenantContext = true): Hono<Env> {
   if (withTenantContext) {
     app.use('*', async (c, next) => {
       c.set('tenantContext', {
-        tenantId: 'tenant-1',
+        tenantId: createTenantId('tenant-1'),
         userId: 'user-1',
         roles: ['tenant_admin'],
         permissions: [],
@@ -88,7 +89,7 @@ describe('SLA Routes', () => {
     } as never);
 
     mockChecker = createMockChecker();
-    configureSlaRoutes(mockChecker as never);
+    configureSlaRoutes(mockChecker as never, {} as never, { log: vi.fn() } as never);
   });
 
   // ─── POST /check ─────────────────────────────────────────────
@@ -122,7 +123,7 @@ describe('SLA Routes', () => {
     });
 
     it('returns breachesFound: 0 when checker finds no breaches', async () => {
-      configureSlaRoutes(createMockChecker(0) as never);
+      configureSlaRoutes(createMockChecker(0) as never, {} as never, { log: vi.fn() } as never);
 
       const app = createTestApp();
       const res = await app.request('/api/v1/sla/check', {

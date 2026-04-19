@@ -9,7 +9,7 @@
  * SECURITY: Webhook routes do NOT use JWT auth — they use Twilio signature validation
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { requestId } from '../middleware/request-id.js';
@@ -102,10 +102,11 @@ function setupApp(signatureValid = true) {
 
   configureVoiceWebhookRoutes({
     ...mocks,
+    auditLogger: mocks.auditLogger as never,
     voiceWebhookUrl: 'https://example.com/api/v1/webhooks/twilio/voice/status',
     voiceRecordingWebhookUrl: 'https://example.com/api/v1/webhooks/twilio/voice/recording',
     voiceGatherWebhookUrl: 'https://example.com/api/v1/webhooks/twilio/voice/gather',
-  });
+  } as never);
 
   const app = new Hono<Env>();
   app.use('*', requestId);

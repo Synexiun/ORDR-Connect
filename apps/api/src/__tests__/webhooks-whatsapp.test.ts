@@ -7,11 +7,14 @@
  * SECURITY: Webhook routes do NOT use JWT auth — they use Twilio signature validation
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { requestId } from '../middleware/request-id.js';
-import { whatsappWebhooksRouter, configureWhatsAppWebhookRoutes } from '../routes/webhooks-whatsapp.js';
+import {
+  whatsappWebhooksRouter,
+  configureWhatsAppWebhookRoutes,
+} from '../routes/webhooks-whatsapp.js';
 
 // ---- Test Helpers -----------------------------------------------------------
 
@@ -117,8 +120,9 @@ function setupApp(signatureValid = true, isOptOut = false) {
 
   configureWhatsAppWebhookRoutes({
     ...mocks,
+    auditLogger: mocks.auditLogger as never,
     whatsAppWebhookUrl: 'https://example.com/api/v1/webhooks/twilio/whatsapp',
-  });
+  } as never);
 
   const app = new Hono<Env>();
   app.use('*', requestId);

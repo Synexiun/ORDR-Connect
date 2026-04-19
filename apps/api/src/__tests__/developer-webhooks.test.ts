@@ -141,9 +141,9 @@ describe('GET /api/v1/developers/webhooks', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: unknown[] };
+    const body = (await res.json()) as { data: { id: string; hmacSecretEncrypted?: string }[] };
     expect(body.data).toHaveLength(1);
-    const item = body.data[0] as Record<string, unknown>;
+    const item = body.data[0] as { id: string; hmacSecretEncrypted?: string };
     expect(item.id).toBe(existing.id);
     expect(item.hmacSecretEncrypted).toBeUndefined();
   });
@@ -167,9 +167,11 @@ describe('POST /api/v1/developers/webhooks', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { data: Record<string, unknown> };
+    const body = (await res.json()) as {
+      data: { hmacSecret: string; hmacSecretEncrypted?: string };
+    };
     expect(typeof body.data.hmacSecret).toBe('string');
-    expect((body.data.hmacSecret as string).length).toBe(64);
+    expect(body.data.hmacSecret.length).toBe(64);
     expect(body.data.hmacSecretEncrypted).toBeUndefined();
   });
 
@@ -296,7 +298,7 @@ describe('PATCH /api/v1/developers/webhooks/:webhookId/toggle', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: Record<string, unknown> };
+    const body = (await res.json()) as { data: { active: boolean; hmacSecretEncrypted?: string } };
     expect(body.data.active).toBe(false);
     expect(body.data.hmacSecretEncrypted).toBeUndefined();
   });

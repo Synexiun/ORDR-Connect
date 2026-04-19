@@ -15,9 +15,9 @@
  * HIPAA §164.312(a)(1) — Access controls include throttling.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import {
   rateLimitMiddleware,
@@ -135,10 +135,10 @@ describe('rateLimitMiddleware — authenticated request', () => {
     // Simulate auth middleware setting tenantContext
     app.use('*', async (c, next) => {
       c.set('tenantContext', {
-        tenantId: 'tenant-abc',
+        tenantId: createTenantId('tenant-abc'),
         userId: 'user-1',
+        roles: [],
         permissions: [],
-        planTier: 'pro',
       });
       await next();
     });

@@ -11,12 +11,7 @@ import { configureAuth } from '../middleware/auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  OrganizationManager,
-  InMemoryOrgStore,
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { OrganizationManager, InMemoryOrgStore, loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
 import { generateKeyPair } from '@ordr/crypto';
@@ -25,11 +20,13 @@ import { generateKeyPair } from '@ordr/crypto';
 
 let jwtConfig: JwtConfig;
 
-async function makeJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'user-001',
     tid: overrides.tid ?? 'tenant-001',
@@ -49,7 +46,7 @@ function createTestApp(): Hono<Env> {
 // ─── Setup ────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -202,10 +199,9 @@ describe('Organization hierarchy', () => {
     const parent = (await parentRes.json()) as { data: { id: string } };
 
     // Get hierarchy
-    const hierarchyRes = await app.request(
-      `/api/v1/organizations/${parent.data.id}/hierarchy`,
-      { headers },
-    );
+    const hierarchyRes = await app.request(`/api/v1/organizations/${parent.data.id}/hierarchy`, {
+      headers,
+    });
     expect(hierarchyRes.status).toBe(200);
     const body = (await hierarchyRes.json()) as {
       success: boolean;

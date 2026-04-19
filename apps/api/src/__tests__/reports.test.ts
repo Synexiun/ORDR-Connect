@@ -20,6 +20,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { reportsRouter, configureReportRoutes } from '../routes/reports.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -150,7 +151,7 @@ function createTestApp() {
   app.use('*', requestId);
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
       permissions: [],
@@ -181,7 +182,7 @@ describe('Reports Routes', () => {
     // Rebuild fresh counts per test
     mockDb.select.mockImplementation(buildPerTestSelectMock(mockDb));
 
-    configureReportRoutes({ db: mockDb as never });
+    configureReportRoutes({ db: mockDb as never, auditLogger: { log: vi.fn() } as never });
   });
 
   /** Returns a fresh table-name-aware select mock for each test. */

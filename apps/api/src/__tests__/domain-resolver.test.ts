@@ -70,7 +70,7 @@ describe('domain resolver — resolution', () => {
       headers: { Host: 'app.acme.com' },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { resolved: boolean; tenantId: string | null };
     expect(body.resolved).toBe(true);
     expect(body.tenantId).toBe('tenant-abc');
     expect(lookup).toHaveBeenCalledWith('app.acme.com');
@@ -85,7 +85,7 @@ describe('domain resolver — resolution', () => {
       headers: { Host: 'unknown.com' },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { resolved: boolean; tenantId: string | null };
     expect(body.resolved).toBe(false);
     expect(body.tenantId).toBeNull();
   });
@@ -127,7 +127,7 @@ describe('domain resolver — skip rules', () => {
       headers: { Host: 'localhost' },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { resolved: boolean };
     expect(body.resolved).toBe(false);
     expect(lookup).not.toHaveBeenCalled();
   });
@@ -141,7 +141,7 @@ describe('domain resolver — skip rules', () => {
       headers: { Host: '192.168.1.1' },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { resolved: boolean };
     expect(body.resolved).toBe(false);
     expect(lookup).not.toHaveBeenCalled();
   });
@@ -155,7 +155,7 @@ describe('domain resolver — skip rules', () => {
       headers: { Host: 'api.service.internal' },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as { resolved: boolean };
     expect(body.resolved).toBe(false);
     expect(lookup).not.toHaveBeenCalled();
   });
@@ -167,7 +167,7 @@ describe('domain resolver — skip rules', () => {
     const app = createTestApp();
     const res = await app.request('http://example.com/test');
 
-    const body = await res.json();
+    await res.json();
     // Without explicit Host header, Hono may or may not provide one.
     // The middleware should handle gracefully either way.
     expect(res.status).toBe(200);
@@ -219,7 +219,7 @@ describe('domain resolver — cache', () => {
     });
     expect(lookup).toHaveBeenCalledTimes(1); // Still 1 — cache hit
 
-    const body = await res2.json();
+    const body = (await res2.json()) as { tenantId: string | null };
     expect(body.tenantId).toBe('tenant-abc');
   });
 
@@ -277,9 +277,7 @@ describe('domain resolver — cache', () => {
   });
 
   it('caches different domains independently', async () => {
-    const lookup = vi.fn()
-      .mockResolvedValueOnce('tenant-1')
-      .mockResolvedValueOnce('tenant-2');
+    const lookup = vi.fn().mockResolvedValueOnce('tenant-1').mockResolvedValueOnce('tenant-2');
     configureDomainResolver(lookup);
 
     const app = createTestApp();

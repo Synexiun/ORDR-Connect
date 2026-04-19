@@ -12,13 +12,41 @@ import { configureAuth } from '../middleware/auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig } from '@ordr/auth';
 import { AuditLogger, InMemoryAuditStore } from '@ordr/audit';
 import { generateKeyPair } from '@ordr/crypto';
+
+// ─── Response type helper ─────────────────────────────────────────
+
+type PartnerDataItem = {
+  id?: string;
+  name?: string;
+  email?: string;
+  company?: string;
+  tier?: string;
+  status?: string;
+  revenueSharePct?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  totalCents?: number;
+  pendingCents?: number;
+  paidCents?: number;
+  currency?: string;
+  amountCents?: number;
+  periodStart?: string;
+  periodEnd?: string;
+  paidAt?: string | null;
+  partnerId?: string;
+};
+
+type PartnerData = PartnerDataItem & PartnerDataItem[];
+
+interface PartnerBody {
+  success: boolean;
+  data: PartnerData;
+  error?: { message?: string; code?: string };
+}
 
 // ─── Mock Data ──────────────────────────────────────────────────────
 
@@ -54,11 +82,13 @@ let emailIndex: Map<string, MockPartner>;
 let payoutStore: Map<string, MockPayout>;
 let idCounter: number;
 
-async function makeJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'partner-001',
     tid: overrides.tid ?? 'partner-program',
@@ -78,7 +108,7 @@ function createTestApp(): Hono<Env> {
 // ─── Setup ──────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -96,13 +126,9 @@ beforeEach(async () => {
 
   configurePartnerRoutes({
     auditLogger,
-    findPartnerByEmail: vi.fn(async (email: string) => {
-      return emailIndex.get(email) ?? null;
-    }),
-    findPartnerById: vi.fn(async (id: string) => {
-      return partnerStore.get(id) ?? null;
-    }),
-    createPartner: vi.fn(async (data) => {
+    findPartnerByEmail: vi.fn((email: string) => Promise.resolve(emailIndex.get(email) ?? null)),
+    findPartnerById: vi.fn((id: string) => Promise.resolve(partnerStore.get(id) ?? null)),
+    createPartner: vi.fn((data: { name: string; email: string; company: string; tier: string }) => {
       const id = `partner-${String(idCounter++).padStart(3, '0')}`;
       const partner: MockPartner = {
         id,
@@ -117,11 +143,11 @@ beforeEach(async () => {
       };
       partnerStore.set(id, partner);
       emailIndex.set(data.email, partner);
-      return partner;
+      return Promise.resolve(partner);
     }),
-    updatePartner: vi.fn(async (id: string, data: { name?: string; company?: string }) => {
+    updatePartner: vi.fn((id: string, data: { name?: string; company?: string }) => {
       const partner = partnerStore.get(id);
-      if (!partner) return null;
+      if (!partner) return Promise.resolve(null);
       const updated: MockPartner = {
         ...partner,
         name: data.name ?? partner.name,
@@ -130,20 +156,22 @@ beforeEach(async () => {
       };
       partnerStore.set(id, updated);
       emailIndex.set(updated.email, updated);
-      return updated;
+      return Promise.resolve(updated);
     }),
-    getEarnings: vi.fn(async () => ({
-      totalCents: 458200,
-      pendingCents: 85000,
-      paidCents: 373200,
-      currency: 'USD',
-    })),
-    listPayouts: vi.fn(async (partnerId: string) => {
+    getEarnings: vi.fn(() =>
+      Promise.resolve({
+        totalCents: 458200,
+        pendingCents: 85000,
+        paidCents: 373200,
+        currency: 'USD',
+      }),
+    ),
+    listPayouts: vi.fn((partnerId: string) => {
       const payouts: MockPayout[] = [];
       for (const p of payoutStore.values()) {
         if (p.partnerId === partnerId) payouts.push(p);
       }
-      return payouts;
+      return Promise.resolve(payouts);
     }),
   });
 });
@@ -206,7 +234,7 @@ describe('POST /api/v1/partners/register', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.success).toBe(true);
     expect(body.data.email).toBe('new@partner.com');
     expect(body.data.company).toBe('Partner Inc');
@@ -228,7 +256,7 @@ describe('POST /api/v1/partners/register', () => {
     });
 
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.data.tier).toBe('silver');
   });
 
@@ -383,7 +411,7 @@ describe('GET /api/v1/partners/me', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.success).toBe(true);
     expect(body.data.name).toBe('Test Partner');
     expect(body.data.company).toBe('Partner Corp');
@@ -423,7 +451,7 @@ describe('GET /api/v1/partners/me', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.data).toHaveProperty('id');
     expect(body.data).toHaveProperty('name');
     expect(body.data).toHaveProperty('email');
@@ -453,7 +481,7 @@ describe('PUT /api/v1/partners/me', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.data.name).toBe('Updated Name');
   });
 
@@ -469,7 +497,7 @@ describe('PUT /api/v1/partners/me', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.data.company).toBe('New Corp');
   });
 
@@ -546,7 +574,7 @@ describe('GET /api/v1/partners/earnings', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.success).toBe(true);
     expect(body.data).toHaveProperty('totalCents');
     expect(body.data).toHaveProperty('pendingCents');
@@ -586,7 +614,7 @@ describe('GET /api/v1/partners/earnings', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(typeof body.data.totalCents).toBe('number');
     expect(typeof body.data.pendingCents).toBe('number');
     expect(typeof body.data.paidCents).toBe('number');
@@ -611,7 +639,7 @@ describe('GET /api/v1/partners/payouts', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.success).toBe(true);
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.data.length).toBe(2);
@@ -628,7 +656,7 @@ describe('GET /api/v1/partners/payouts', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     expect(body.data).toEqual([]);
   });
 
@@ -665,7 +693,7 @@ describe('GET /api/v1/partners/payouts', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     const payout = body.data[0];
     expect(payout).toHaveProperty('id');
     expect(payout).toHaveProperty('amountCents');
@@ -686,7 +714,7 @@ describe('GET /api/v1/partners/payouts', () => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const body = await res.json();
+    const body = (await res.json()) as PartnerBody;
     const payout = body.data[0];
     expect(payout).not.toHaveProperty('partnerId');
   });

@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { billingRouter, configureBillingRoutes } from '../routes/billing.js';
 import { configureAuth } from '../middleware/auth.js';
@@ -67,6 +68,7 @@ const mockSubscription: Subscription = {
 };
 
 const mockUsageSummary: UsageSummary = {
+  tenant_id: 'tenant-1',
   agents: 2,
   contacts: 150,
   messages: 3200,
@@ -122,10 +124,10 @@ function createTestApp(): Hono<Env> {
   // Simulate authenticated user context for all routes in the test app
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: 'tenant-1',
+      tenantId: createTenantId('tenant-1'),
       userId: 'user-1',
       roles: ['tenant_admin'],
-      permissions: [{ resource: 'billing', action: 'read' }],
+      permissions: [],
     });
     await next();
   });
@@ -168,6 +170,7 @@ describe('Billing Routes', () => {
       subscriptionManager: mockManager as never,
       usageTracker: mockTracker as never,
       stripeWebhookSecret: TEST_WEBHOOK_KEY,
+      auditLogger: { log: vi.fn().mockResolvedValue(undefined) } as never,
     });
 
     // Configure billing gate — required because plan-gate middleware reads SubscriptionManager

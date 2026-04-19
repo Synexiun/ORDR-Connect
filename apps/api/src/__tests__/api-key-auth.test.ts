@@ -7,16 +7,25 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
-import {
-  requireApiKeyAuth,
-  configureApiKeyAuth,
-} from '../middleware/api-key-auth.js';
+import { requireApiKeyAuth, configureApiKeyAuth } from '../middleware/api-key-auth.js';
 import type { DeveloperKeyRecord } from '../middleware/api-key-auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
 import { hashApiKey, generateApiKey } from '@ordr/crypto';
 import { InMemoryRateLimiter } from '@ordr/auth';
+
+// ─── Response Body Types ─────────────────────────────────────────────
+
+interface ApiKeyBody {
+  success?: boolean;
+  message?: string;
+  error?: {
+    code?: string;
+    message?: string;
+    correlationId?: string;
+  };
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -67,12 +76,11 @@ beforeEach(() => {
   updateLastActiveCalls = [];
 
   configureApiKeyAuth({
-    findKeyByPrefix: vi.fn(async (prefix: string) => {
-      return keyStore.get(prefix) ?? null;
-    }),
+    findKeyByPrefix: vi.fn((prefix: string) => Promise.resolve(keyStore.get(prefix) ?? null)),
     rateLimiter,
-    updateLastActive: vi.fn(async (developerId: string) => {
+    updateLastActive: vi.fn((developerId: string) => {
       updateLastActiveCalls.push(developerId);
+      return Promise.resolve();
     }),
   });
 });
@@ -91,7 +99,7 @@ describe('API Key extraction', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as ApiKeyBody;
     expect(body.success).toBe(true);
   });
 
@@ -101,8 +109,8 @@ describe('API Key extraction', () => {
     const res = await app.request('/api/v1/protected/data');
 
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error.code).toBeDefined();
+    const body = (await res.json()) as ApiKeyBody;
+    expect(body.error?.code).toBeDefined();
   });
 
   it('rejects Authorization header without Bearer prefix', async () => {
@@ -174,8 +182,8 @@ describe('API Key status checks', () => {
     });
 
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error.message).toContain('expired');
+    const body = (await res.json()) as ApiKeyBody;
+    expect(body.error?.message).toContain('expired');
   });
 
   it('rejects revoked key (status = revoked)', async () => {
@@ -187,8 +195,8 @@ describe('API Key status checks', () => {
     });
 
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error.message).toContain('revoked');
+    const body = (await res.json()) as ApiKeyBody;
+    expect(body.error?.message).toContain('revoked');
   });
 
   it('rejects suspended key', async () => {
@@ -308,9 +316,9 @@ describe('API Key error responses', () => {
     const res = await app.request('/api/v1/protected/data');
 
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error.correlationId).toBeDefined();
-    expect(typeof body.error.correlationId).toBe('string');
+    const body = (await res.json()) as ApiKeyBody;
+    expect(body.error?.correlationId).toBeDefined();
+    expect(typeof body.error?.correlationId).toBe('string');
   });
 
   it('never exposes internal error details', async () => {
@@ -318,7 +326,7 @@ describe('API Key error responses', () => {
 
     const res = await app.request('/api/v1/protected/data');
 
-    const body = await res.json();
+    const body = (await res.json()) as ApiKeyBody;
     // Should not contain stack traces or internal paths
     expect(JSON.stringify(body)).not.toContain('node_modules');
     expect(JSON.stringify(body)).not.toContain('at ');

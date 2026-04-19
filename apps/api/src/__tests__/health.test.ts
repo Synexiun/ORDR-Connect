@@ -8,7 +8,7 @@
  * - /health/ready returns 200 when all checks pass
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import { healthRouter, configureHealthChecks } from '../routes/health.js';
 import type { Env } from '../types.js';
@@ -83,8 +83,8 @@ describe('Health Endpoints', () => {
 
     it('returns 200 with ready status when all checks pass', async () => {
       configureHealthChecks({
-        checkDb: async () => true,
-        checkKafka: async () => true,
+        checkDb: () => Promise.resolve(true),
+        checkKafka: () => Promise.resolve(true),
       });
 
       const app = createTestApp();
@@ -104,8 +104,8 @@ describe('Health Endpoints', () => {
 
     it('returns 503 when database check fails', async () => {
       configureHealthChecks({
-        checkDb: async () => false,
-        checkKafka: async () => true,
+        checkDb: () => Promise.resolve(false),
+        checkKafka: () => Promise.resolve(true),
       });
 
       const app = createTestApp();
@@ -124,8 +124,8 @@ describe('Health Endpoints', () => {
 
     it('returns 503 when kafka check fails', async () => {
       configureHealthChecks({
-        checkDb: async () => true,
-        checkKafka: async () => false,
+        checkDb: () => Promise.resolve(true),
+        checkKafka: () => Promise.resolve(false),
       });
 
       const app = createTestApp();
@@ -144,8 +144,8 @@ describe('Health Endpoints', () => {
 
     it('handles check exceptions gracefully', async () => {
       configureHealthChecks({
-        checkDb: async () => { throw new Error('DB unreachable'); },
-        checkKafka: async () => { throw new Error('Kafka timeout'); },
+        checkDb: () => Promise.reject(new Error('DB unreachable')),
+        checkKafka: () => Promise.reject(new Error('Kafka timeout')),
       });
 
       const app = createTestApp();

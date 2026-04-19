@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
+import { createTenantId } from '@ordr/core';
 import { requestId } from '../middleware/request-id.js';
 import { featureGate, planGate, quotaGate, configureBillingGate } from '../middleware/plan-gate.js';
 import { SubscriptionManager, MockStripeClient } from '@ordr/billing';
@@ -102,13 +103,14 @@ const FREE_SUB: Subscription = {
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-function makeApp(mw: Parameters<Hono<Env>['use']>[1], withTenantContext = true) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeApp(mw: any, withTenantContext = true) {
   const app = new Hono<Env>();
   app.use('*', requestId);
   if (withTenantContext) {
     app.use('*', async (c, next) => {
       c.set('tenantContext', {
-        tenantId: TENANT_ID,
+        tenantId: createTenantId(TENANT_ID),
         userId: 'user-1',
         roles: ['tenant_admin'],
         permissions: [],
@@ -116,7 +118,7 @@ function makeApp(mw: Parameters<Hono<Env>['use']>[1], withTenantContext = true) 
       await next();
     });
   }
-  app.use('*', mw);
+  app.use('*', mw as Parameters<Hono<Env>['use']>[1]);
   app.get('/test', (c) => c.json({ ok: true }));
   app.post('/test', (c) => c.json({ ok: true }));
   return app;

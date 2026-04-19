@@ -17,6 +17,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
+import { createTenantId } from '@ordr/core';
 import { rateLimit, configureRateLimit } from '../rate-limit.js';
 import { RedisRateLimiter } from '@ordr/auth';
 import type { RateLimiter, RateLimitConfig, RateLimitResult } from '@ordr/auth';
@@ -63,7 +64,7 @@ function buildApp(tier: Parameters<typeof rateLimit>[0], agentIdInPath = false):
   const app = new Hono<Env>();
   app.use('*', async (c, next) => {
     c.set('tenantContext', {
-      tenantId: TENANT,
+      tenantId: createTenantId(TENANT),
       userId: 'user-1',
       roles: [],
       permissions: [],
@@ -98,7 +99,12 @@ describe('rateLimit -- no-op when limiter is null', () => {
 
     const app = new Hono<Env>();
     app.use('*', async (c, next) => {
-      c.set('tenantContext', { tenantId: TENANT, userId: 'user-1', roles: [], permissions: [] });
+      c.set('tenantContext', {
+        tenantId: createTenantId(TENANT),
+        userId: 'user-1',
+        roles: [],
+        permissions: [],
+      });
       await next();
     });
     app.post('/action', freshRateLimit('write'), (c) => c.json({ ok: true }));

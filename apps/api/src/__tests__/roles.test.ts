@@ -11,12 +11,7 @@ import { configureAuth } from '../middleware/auth.js';
 import { requestId } from '../middleware/request-id.js';
 import { globalErrorHandler } from '../middleware/error-handler.js';
 import type { Env } from '../types.js';
-import {
-  CustomRoleManager,
-  InMemoryRoleStore,
-  loadKeyPair,
-  createAccessToken,
-} from '@ordr/auth';
+import { CustomRoleManager, InMemoryRoleStore, loadKeyPair, createAccessToken } from '@ordr/auth';
 import type { JwtConfig, RoleAuditLogger } from '@ordr/auth';
 import { generateKeyPair } from '@ordr/crypto';
 
@@ -24,11 +19,13 @@ import { generateKeyPair } from '@ordr/crypto';
 
 let jwtConfig: JwtConfig;
 
-async function makeJwt(overrides: {
-  readonly sub?: string;
-  readonly tid?: string;
-  readonly role?: string;
-} = {}): Promise<string> {
+async function makeJwt(
+  overrides: {
+    readonly sub?: string;
+    readonly tid?: string;
+    readonly role?: string;
+  } = {},
+): Promise<string> {
   return createAccessToken(jwtConfig, {
     sub: overrides.sub ?? 'user-001',
     tid: overrides.tid ?? 'tenant-001',
@@ -48,7 +45,7 @@ function createTestApp(): Hono<Env> {
 // ─── Setup ────────────────────────────────────────────────────────
 
 beforeEach(async () => {
-  const { privateKey, publicKey } = await generateKeyPair();
+  const { privateKey, publicKey } = generateKeyPair();
   jwtConfig = await loadKeyPair(privateKey, publicKey, {
     issuer: 'ordr-connect',
     audience: 'ordr-connect',
@@ -124,9 +121,7 @@ describe('Role CRUD', () => {
         name: 'Support Lead',
         description: 'Extended support access',
         baseRole: 'agent',
-        permissions: [
-          { resource: 'customers', action: 'read', scope: 'team' },
-        ],
+        permissions: [{ resource: 'customers', action: 'read', scope: 'team' }],
       }),
     });
 
