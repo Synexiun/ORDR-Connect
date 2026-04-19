@@ -190,15 +190,42 @@ export async function runKeyRotation(deps: KeyRotationDeps): Promise<{ rowsProce
     return { rowsProcessed: rowsDone };
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'unknown error';
-    // Best-effort: don't let failJob/emitAudit throw hide the original error
-    await deps.failJob(jobId).catch(() => undefined);
+    // Primary error MUST win — we never let a failing cleanup hide the
+    // root cause. But a silent swallow of the cleanup failures would
+    // create an audit-chain gap (Rule 3), so emit a structured warn so
+    // the gap is observable via log-based alerting.
+    await deps.failJob(jobId).catch((cleanupErr: unknown) => {
+      const msg = cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'key-rotation',
+          event: 'fail_job_write_failed',
+          job_id: jobId,
+          root_cause: reason,
+          cleanup_error: msg,
+        }),
+      );
+    });
     await deps
       .emitAudit('KEY_ROTATION_FAILED', {
         key_name: 'ENCRYPTION_MASTER_KEY',
         rows_done: rowsDone,
         reason,
       })
-      .catch(() => undefined);
+      .catch((auditErr: unknown) => {
+        const msg = auditErr instanceof Error ? auditErr.message : String(auditErr);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            component: 'key-rotation',
+            event: 'failure_audit_write_failed',
+            job_id: jobId,
+            root_cause: reason,
+            audit_error: msg,
+          }),
+        );
+      });
     throw err;
   }
 }

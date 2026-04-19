@@ -155,6 +155,57 @@ describe('runKeyRotation — per-row validation', () => {
   });
 });
 
+describe('runKeyRotation — failure-path observability', () => {
+  it('emits a structured warn log when emitAudit fails during the failure-path cleanup', async () => {
+    const rows = [{ id: 'row-1', dek_envelope: makeValidEnvelope('1') }];
+    const deps = makeTestDeps(rows);
+
+    // Force the primary path to fail so the catch block runs.
+    const primaryError = new Error('updateRows boom');
+    deps.updateRows = vi.fn(() => Promise.reject(primaryError));
+
+    // Make the failure-path audit also reject — this is the audit-chain
+    // gap we MUST make observable (Rule 3).
+    const auditError = new Error('audit write failed');
+    const originalEmit = deps.emitAudit;
+    deps.emitAudit = vi.fn((eventType: string, details: Record<string, unknown>) => {
+      if (eventType === 'KEY_ROTATION_FAILED') {
+        return Promise.reject(auditError);
+      }
+      return originalEmit(eventType, details);
+    });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(runKeyRotation(deps as never)).rejects.toThrow('updateRows boom');
+
+    // Must have emitted a structured warn for the audit-write gap
+    const warnCalls = warnSpy.mock.calls.flat().map(String);
+    const failureAuditGap = warnCalls.find((s) => s.includes('failure_audit_write_failed'));
+    expect(failureAuditGap).toBeDefined();
+    expect(failureAuditGap).toContain('audit write failed');
+
+    warnSpy.mockRestore();
+  });
+
+  it('emits a structured warn log when failJob fails during cleanup', async () => {
+    const rows = [{ id: 'row-1', dek_envelope: makeValidEnvelope('1') }];
+    const deps = makeTestDeps(rows);
+    deps.updateRows = vi.fn(() => Promise.reject(new Error('updateRows boom')));
+    deps.failJob = vi.fn(() => Promise.reject(new Error('failJob write failed')));
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(runKeyRotation(deps as never)).rejects.toThrow('updateRows boom');
+
+    const warnCalls = warnSpy.mock.calls.flat().map(String);
+    const failJobGap = warnCalls.find((s) => s.includes('fail_job_write_failed'));
+    expect(failJobGap).toBeDefined();
+
+    warnSpy.mockRestore();
+  });
+});
+
 describe('runKeyRotation — multi-page', () => {
   it('paginates correctly across two pages', async () => {
     // Create 3 rows — with pageSize=2, should produce 2 pages
