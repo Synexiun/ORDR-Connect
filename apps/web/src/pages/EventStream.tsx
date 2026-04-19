@@ -161,7 +161,7 @@ function makeMockEvents(topic: string): KafkaEvent[] {
   const types = typeMap[topic] ?? ['event.unknown'];
 
   return Array.from({ length: 30 }, (_, i) => {
-    const eventType = types[i % types.length];
+    const eventType = types[i % types.length] ?? 'event.unknown';
     const isPhiTopic = topic === 'ordr.customers.events' || topic === 'ordr.messages.outbound';
 
     const basePayload: Record<string, unknown> = {
@@ -352,11 +352,11 @@ function fmtRelative(iso: string): string {
 
 const CONSUMER_STATE_CFG: Record<
   ConsumerGroupState,
-  { variant: 'success' | 'warning' | 'error' | 'default'; label: string }
+  { variant: 'success' | 'warning' | 'danger' | 'default'; label: string }
 > = {
   Stable: { variant: 'success', label: 'Stable' },
   Rebalancing: { variant: 'warning', label: 'Rebalancing' },
-  Dead: { variant: 'error', label: 'Dead' },
+  Dead: { variant: 'danger', label: 'Dead' },
   Empty: { variant: 'default', label: 'Empty' },
 };
 

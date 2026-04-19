@@ -1043,7 +1043,7 @@ function CreateModal({ onClose, onSave }: CreateModalProps) {
             disabled={saving}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {saving && <Spinner size="xs" />}
+            {saving && <Spinner size="sm" />}
             Create Campaign
           </button>
         </div>
@@ -1102,7 +1102,7 @@ function DeleteModal({
             disabled={loading}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {loading && <Spinner size="xs" />}
+            {loading && <Spinner size="sm" />}
             Delete
           </button>
         </div>

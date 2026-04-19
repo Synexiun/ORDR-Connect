@@ -29,6 +29,7 @@ import {
   Shield,
   Clock,
   X,
+  XCircle,
 } from '../components/icons';
 import {
   type ApiKey,

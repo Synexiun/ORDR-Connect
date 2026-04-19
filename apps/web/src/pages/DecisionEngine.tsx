@@ -924,7 +924,7 @@ function RuleModal({ rule, onClose, onSave }: RuleModalProps) {
             disabled={saving}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {saving && <Spinner size="xs" />}
+            {saving && <Spinner size="sm" />}
             {isEdit ? 'Save Changes' : 'Create Rule'}
           </button>
         </div>
@@ -981,7 +981,7 @@ function DeleteRuleModal({
             disabled={deleting}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {deleting && <Spinner size="xs" />}
+            {deleting && <Spinner size="sm" />}
             Delete
           </button>
         </div>

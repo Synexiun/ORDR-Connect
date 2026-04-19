@@ -543,7 +543,7 @@ function SegmentModal({ segment, onClose, onSave }: SegmentModalProps) {
               disabled={previewing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface-secondary hover:bg-surface-tertiary text-content-secondary transition-colors disabled:opacity-50"
             >
-              {previewing ? <Spinner size="xs" /> : <Users size={12} />}
+              {previewing ? <Spinner size="sm" /> : <Users size={12} />}
               Preview count
             </button>
             {previewCount !== null && (
@@ -575,7 +575,7 @@ function SegmentModal({ segment, onClose, onSave }: SegmentModalProps) {
             disabled={saving}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {saving && <Spinner size="xs" />}
+            {saving && <Spinner size="sm" />}
             {isEdit ? 'Save Changes' : 'Create Segment'}
           </button>
         </div>
@@ -634,7 +634,7 @@ function ArchiveModal({
             disabled={loading}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {loading && <Spinner size="xs" />}
+            {loading && <Spinner size="sm" />}
             Archive
           </button>
         </div>
@@ -693,7 +693,7 @@ function DeleteModal({
             disabled={loading}
             className="px-4 py-1.5 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {loading && <Spinner size="xs" />}
+            {loading && <Spinner size="sm" />}
             Delete
           </button>
         </div>
@@ -882,12 +882,12 @@ export function ContactSegments() {
     .reduce((acc, s) => acc + s.memberCount, 0);
   const largest = [...segments].sort((a, b) => b.memberCount - a.memberCount)[0];
 
-  async function handleSave(body: Parameters<typeof segmentsApi.createSegment>[0]) {
+  async function handleSave(body: CreateSegmentBody | UpdateSegmentBody) {
     if (modal?.type === 'edit' && modal.segment !== null) {
-      const updated = await segmentsApi.updateSegment(modal.segment.id, body);
+      const updated = await segmentsApi.updateSegment(modal.segment.id, body as UpdateSegmentBody);
       setSegments((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
     } else {
-      const created = await segmentsApi.createSegment(body);
+      const created = await segmentsApi.createSegment(body as CreateSegmentBody);
       setSegments((prev) => [...prev, created]);
     }
   }

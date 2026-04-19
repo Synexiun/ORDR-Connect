@@ -95,9 +95,9 @@ const TYPE_LABELS: Record<SecurityEventType, string> = {
 
 const STATUS_CONFIG: Record<
   SecurityEventStatus,
-  { label: string; variant: 'default' | 'success' | 'warning' | 'error' }
+  { label: string; variant: 'default' | 'success' | 'warning' | 'danger' }
 > = {
-  open: { label: 'Open', variant: 'error' },
+  open: { label: 'Open', variant: 'danger' },
   investigating: { label: 'Investigating', variant: 'warning' },
   resolved: { label: 'Resolved', variant: 'success' },
   false_positive: { label: 'False Positive', variant: 'default' },

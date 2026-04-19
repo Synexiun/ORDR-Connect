@@ -43,11 +43,11 @@ import {
 
 const STATUS_CONFIG: Record<
   KeyStatus,
-  { label: string; variant: 'success' | 'warning' | 'error' | 'default'; dot: string }
+  { label: string; variant: 'success' | 'warning' | 'danger' | 'default'; dot: string }
 > = {
   active: { label: 'Active', variant: 'success', dot: 'bg-emerald-400' },
   rotation_due: { label: 'Rotation Due', variant: 'warning', dot: 'bg-amber-400' },
-  rotation_overdue: { label: 'Overdue — P2', variant: 'error', dot: 'bg-red-400 animate-pulse' },
+  rotation_overdue: { label: 'Overdue — P2', variant: 'danger', dot: 'bg-red-400 animate-pulse' },
   rotating: { label: 'Rotating…', variant: 'warning', dot: 'bg-blue-400 animate-pulse' },
   retired: { label: 'Retired', variant: 'default', dot: 'bg-content-tertiary' },
 };

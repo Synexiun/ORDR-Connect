@@ -144,6 +144,7 @@ export {
   Boxes,
   ArrowRight,
   ArrowLeft,
+  ArrowUpDown,
   MoreVertical,
   Info,
 

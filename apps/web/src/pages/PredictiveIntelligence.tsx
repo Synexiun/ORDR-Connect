@@ -21,7 +21,7 @@ import {
   Gauge,
   Brain,
   Crosshair,
-  CheckCircle,
+  CheckCircle2,
   ChevronRight,
   RefreshCw,
 } from '../components/icons';
@@ -492,7 +492,7 @@ function ModelStatsTab({
               </div>
               <p className="text-xs text-content-tertiary font-mono">{s.model}</p>
             </div>
-            <Badge variant="secondary" size="sm">
+            <Badge variant="neutral" size="sm">
               {s.total.toLocaleString()} decisions
             </Badge>
           </div>
@@ -791,7 +791,7 @@ export function PredictiveIntelligence(): ReactNode {
           label="Approval Rate"
           value={`${overview.approvalRate}%`}
           sub={`${overview.totalDecisions.toLocaleString()} total decisions`}
-          icon={<CheckCircle size={16} />}
+          icon={<CheckCircle2 size={16} />}
           accent="blue"
           trend={trendData}
         />

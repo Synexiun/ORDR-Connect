@@ -923,7 +923,7 @@ export function UserSessions(): ReactNode {
                           <Badge
                             variant={
                               fl.reason === 'account_locked'
-                                ? 'error'
+                                ? 'danger'
                                 : fl.reason === 'mfa_failed'
                                   ? 'warning'
                                   : 'default'
