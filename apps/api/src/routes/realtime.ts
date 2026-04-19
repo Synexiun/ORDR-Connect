@@ -5,13 +5,14 @@
  * ISO 27001 A.8.16 — Monitoring activities.
  * HIPAA §164.312 — No PHI in SSE payloads; IDs and metadata only.
  *
- * GET /stream   — SSE connection authenticated via ?token= query param.
+ * GET /stream   — SSE connection authenticated via Authorization header (Phase 161).
  * POST /publish — Internal event broadcast (tenant_admin only).
  * GET /stats    — Channel statistics (tenant_admin only).
  *
- * SSE uses query-param token because browser EventSource API cannot
- * set Authorization headers. Token is validated with the same JWT config
- * as all other routes — the trust boundary is identical.
+ * Rule 2 (CLAUDE.md) forbids session tokens in URLs or query parameters.
+ * Clients MUST use `fetch()` with an `Authorization: Bearer <jwt>` header
+ * and parse the `text/event-stream` body manually — EventSource is
+ * unsuitable because it cannot set custom headers.
  *
  * CRITICAL: Event payloads MUST NEVER contain plaintext PHI.
  * Use tokenized/pseudonymized IDs and metadata only.
@@ -90,23 +91,24 @@ const realtimeRouter = new Hono<Env>();
 // ISO 27001 A.8.16 — Monitoring stream requires valid JWT.
 // HIPAA §164.312 — No PHI in payload; IDs and metadata only.
 //
-// Authentication is via ?token= query param because the browser EventSource
-// API does not support custom request headers. The token is validated with
-// the exact same JwtConfig used by all other API routes.
+// Phase 161: Authentication is via the Authorization header only. The old
+// `?token=` query-param fallback was removed to comply with Rule 2 (no
+// session tokens in URLs or query parameters). Clients must use fetch()
+// + manual SSE parsing, since EventSource cannot set custom headers.
 
 realtimeRouter.get('/stream', async (c): Promise<Response> => {
   if (!deps) throw new Error('[ORDR:API] Realtime routes not configured');
 
   const requestId = c.get('requestId');
-  const token = c.req.query('token');
+  const authHeader = c.req.header('Authorization') ?? c.req.header('authorization');
 
-  if (token === undefined || token.length === 0) {
+  if (authHeader === undefined || authHeader.length === 0) {
     return c.json(
       {
         success: false as const,
         error: {
           code: 'AUTH_FAILED',
-          message: 'Authentication required — provide ?token= query parameter',
+          message: 'Authentication required — provide Authorization: Bearer <jwt>',
           correlationId: requestId,
         },
       },
@@ -114,8 +116,7 @@ realtimeRouter.get('/stream', async (c): Promise<Response> => {
     );
   }
 
-  // Validate the JWT from query param using the same path as requireAuth()
-  const result = await authenticateRequest({ authorization: `Bearer ${token}` }, deps.jwtConfig);
+  const result = await authenticateRequest({ authorization: authHeader }, deps.jwtConfig);
 
   if (!result.authenticated) {
     return c.json(

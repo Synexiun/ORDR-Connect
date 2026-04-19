@@ -6,10 +6,14 @@
  * ISO 27001 A.8.16 — Monitoring activities.
  * HIPAA §164.312 — No PHI in event payloads; IDs and metadata only.
  *
+ * Phase 161: The `?token=` query-param fallback was removed (Rule 2 —
+ * no session tokens in URLs). All tests assert Authorization-header auth.
+ *
  * Verifies:
- * - GET /stream?token=<jwt> → 200 with content-type: text/event-stream
- * - GET /stream (no token) → 401
- * - GET /stream?token=invalid → 401 when authenticateRequest returns not authenticated
+ * - GET /stream with Authorization header → 200 with content-type: text/event-stream
+ * - GET /stream (no Authorization header) → 401
+ * - GET /stream (only ?token= query param) → 401 (Rule 2)
+ * - GET /stream with invalid Bearer → 401 when authenticateRequest rejects
  * - broadcastEvent utility exports correctly (non-stream unit check)
  *
  * NOTE: SSE responses are not parsed as JSON — we only assert on
@@ -79,21 +83,22 @@ describe('Events Route (SSE)', () => {
   // ─── GET /stream ─────────────────────────────────────────────
 
   describe('GET /api/v1/events/stream', () => {
-    it('returns 401 when no token query param is provided', async () => {
+    it('returns 401 when no Authorization header is provided', async () => {
       const app = createTestApp();
       const res = await app.request('/api/v1/events/stream');
 
       expect(res.status).toBe(401);
     });
 
-    it('returns 401 when token query param is empty string', async () => {
+    it('returns 401 when only a ?token= query param is provided (Rule 2)', async () => {
+      // Phase 161: query-param auth is no longer honoured.
       const app = createTestApp();
-      const res = await app.request('/api/v1/events/stream?token=');
+      const res = await app.request('/api/v1/events/stream?token=would-have-worked-pre-phase-161');
 
       expect(res.status).toBe(401);
     });
 
-    it('returns 401 when authenticateRequest rejects the token', async () => {
+    it('returns 401 when authenticateRequest rejects the Bearer token', async () => {
       const { authenticateRequest } = await import('@ordr/auth');
       vi.mocked(authenticateRequest).mockResolvedValueOnce({
         authenticated: false,
@@ -101,24 +106,24 @@ describe('Events Route (SSE)', () => {
       } as never);
 
       const app = createTestApp();
-      const res = await app.request('/api/v1/events/stream?token=expired-token');
+      const res = await app.request('/api/v1/events/stream', {
+        headers: { Authorization: 'Bearer expired-token' },
+      });
 
       expect(res.status).toBe(401);
     });
 
-    it('returns 200 with text/event-stream content-type on valid token', async () => {
-      // The SSE stream keeps the connection open; use an AbortController to
-      // terminate after confirming headers without consuming the full body.
+    it('returns 200 with text/event-stream content-type on valid Authorization header', async () => {
+      // The SSE stream keeps the connection open; the Hono test harness
+      // returns the Response as soon as headers are sent.
       const app = createTestApp();
 
       let res: Response;
       try {
-        // app.request() returns Promise<Response> in Hono's test helper
-        res = await (app.request(
-          '/api/v1/events/stream?token=valid-jwt-token',
-        ) as Promise<Response>);
+        res = await (app.request('/api/v1/events/stream', {
+          headers: { Authorization: 'Bearer valid-jwt-token' },
+        }) as Promise<Response>);
       } catch (err: unknown) {
-        // AbortError is expected if we abort before response — treat as skip
         if (err instanceof Error && err.name === 'AbortError') return;
         throw err;
       }
@@ -128,13 +133,15 @@ describe('Events Route (SSE)', () => {
       expect(contentType).toContain('text/event-stream');
     });
 
-    it('calls authenticateRequest with Bearer prefix on the token value', async () => {
+    it('forwards the Authorization header value to authenticateRequest verbatim', async () => {
       const { authenticateRequest } = await import('@ordr/auth');
 
       const app = createTestApp();
-      await (app.request('/api/v1/events/stream?token=my-jwt-value') as Promise<Response>).catch(
-        () => null,
-      );
+      await (
+        app.request('/api/v1/events/stream', {
+          headers: { Authorization: 'Bearer my-jwt-value' },
+        }) as Promise<Response>
+      ).catch(() => null);
 
       expect(authenticateRequest).toHaveBeenCalledWith(
         expect.objectContaining({ authorization: 'Bearer my-jwt-value' }),
@@ -143,23 +150,16 @@ describe('Events Route (SSE)', () => {
     });
 
     it('returns 503 when events route is not configured', async () => {
-      // Re-create router without configureEventsRoute
       const { eventsRouter: freshRouter } = await import('../routes/events.js');
 
-      // Force reset deps by importing the configure function and calling with null-like
-      // (We test by creating a fresh app without calling configureEventsRoute)
       const app = new Hono<Env>();
       app.onError(globalErrorHandler);
       app.use('*', requestId);
-
-      // Use a separate unconfigured app instance — reset deps by not calling configure
-      // We can test the 503 path by temporarily having the route encounter null deps
-      // Here we verify the configured path works (deps set in beforeEach)
       app.route('/api/v1/events', freshRouter);
 
-      // The route uses the module-level deps singleton; since beforeEach already
-      // configured it, this just confirms the app wires up correctly
-      const res = await app.request('/api/v1/events/stream?token=some-token');
+      const res = await app.request('/api/v1/events/stream', {
+        headers: { Authorization: 'Bearer some-token' },
+      });
       // Either 200 (configured) or 503 (not configured) depending on module state
       expect([200, 503]).toContain(res.status);
     });

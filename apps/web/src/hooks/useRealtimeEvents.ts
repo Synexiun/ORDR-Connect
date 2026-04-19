@@ -1,20 +1,22 @@
 /**
  * useRealtimeEvents — Server-Sent Events hook for real-time ORDR-Connect updates.
  *
- * Connects to the SSE stream at /v1/realtime/stream, routes typed events to registered
- * handlers, and auto-reconnects on disconnect.
+ * Connects to the SSE stream (default /api/v1/realtime/stream), routes typed
+ * events to registered handlers, and auto-reconnects on disconnect.
  *
  * SECURITY (CLAUDE.md Rules 2, 3, 5):
- * - Token passed via query param (SSE does not support custom headers per spec)
- * - Backend must validate the `?token=` param against the in-memory session store
- * - Connection closed and not retried if no token is available (unauthenticated)
- * - All received events are parsed and validated before handler dispatch
- * - No sensitive data is stored in the hook — only routing to caller handlers
+ * - Phase 161: Auth is via `Authorization: Bearer <jwt>` header. The legacy
+ *   `?token=` URL pattern was removed because Rule 2 forbids session tokens
+ *   in URLs or query parameters.
+ * - EventSource cannot set custom headers, so this hook uses `fetch()` with
+ *   a manually-parsed `ReadableStream` of `text/event-stream` frames.
+ * - Connection is not attempted if no in-memory access token is available.
+ * - Received events are parsed and validated before handler dispatch.
  *
  * COMPLIANCE: No PHI in event payloads — events contain IDs + metadata only.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { getAccessToken } from '../lib/api';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -22,7 +24,7 @@ import { getAccessToken } from '../lib/api';
 type EventHandler = (data: Record<string, unknown>) => void;
 
 export interface UseRealtimeEventsOptions {
-  /** SSE endpoint — defaults to /api/v1/events/stream */
+  /** SSE endpoint — defaults to /api/v1/realtime/stream */
   endpoint?: string;
   /** Reconnect delay in milliseconds on disconnect. Default: 5000 */
   reconnectDelayMs?: number;
@@ -30,22 +32,45 @@ export interface UseRealtimeEventsOptions {
   reconnect?: boolean;
 }
 
+// ─── Frame dispatch ────────────────────────────────────────────────────────
+
+function dispatchFrame(
+  handlers: Record<string, EventHandler>,
+  eventType: string,
+  raw: string,
+): void {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return;
+
+    // Server frames are shaped as { type, data }. Prefer the frame's `type`
+    // so the SSE `event:` header and payload stay aligned, but fall back to
+    // the header if the frame does not carry one.
+    const obj = parsed as Record<string, unknown>;
+    const type =
+      typeof obj['type'] === 'string' && obj['type'].length > 0 ? obj['type'] : eventType;
+
+    const handler = handlers[type];
+    if (handler === undefined) return;
+
+    const data =
+      typeof obj['data'] === 'object' && obj['data'] !== null
+        ? (obj['data'] as Record<string, unknown>)
+        : {};
+    handler(data);
+  } catch {
+    // Malformed frame — ignore silently.
+  }
+}
+
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
 /**
  * Subscribes to the ORDR-Connect SSE event stream.
  *
- * @param handlers - Map of `event.type` → handler function. Updated on every render
- *   without reconnecting (handlers are stored in a ref).
+ * @param handlers - Map of `event.type` → handler function. Updated on every
+ *   render without triggering a reconnect (handlers are stored in a ref).
  * @param options  - Connection options.
- *
- * @example
- * ```tsx
- * useRealtimeEvents({
- *   'agent.session_completed': () => void refetchSessions(),
- *   'agent.hitl_created': (data) => setHitlCount(data['count'] as number),
- * });
- * ```
  */
 export function useRealtimeEvents(
   handlers: Record<string, EventHandler>,
@@ -57,65 +82,104 @@ export function useRealtimeEvents(
     reconnect = true,
   } = options;
 
-  const sourceRef = useRef<EventSource | null>(null);
+  // Keep handlers ref current without rebuilding the connect loop.
   const handlersRef = useRef(handlers);
-  // Keep handlers ref current without triggering reconnect on every render
   handlersRef.current = handlers;
 
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const connect = useCallback(() => {
-    const token = getAccessToken();
-    if (token === null || token === '') {
-      // No token — do not attempt SSE connection (unauthenticated)
-      return;
-    }
-
-    // SSE does not support Authorization headers per the spec.
-    // Backend must validate ?token= against the in-memory session store.
-    // SOC2 CC6.1 — alternate authentication mechanism for streaming connections.
-    const url = `${endpoint}?token=${encodeURIComponent(token)}`;
-    const es = new EventSource(url);
-    sourceRef.current = es;
-
-    es.onmessage = (event: MessageEvent<string>) => {
-      try {
-        const parsed = JSON.parse(event.data) as unknown;
-        if (
-          typeof parsed !== 'object' ||
-          parsed === null ||
-          !('type' in parsed) ||
-          typeof (parsed as Record<string, unknown>)['type'] !== 'string'
-        ) {
-          return; // Malformed — ignore
-        }
-        const typedEvent = parsed as { type: string; data: Record<string, unknown> | undefined };
-        const handler = handlersRef.current[typedEvent.type];
-        if (handler) {
-          handler(typedEvent.data ?? {});
-        }
-      } catch {
-        // Malformed event — ignore silently
-      }
-    };
-
-    es.onerror = () => {
-      es.close();
-      sourceRef.current = null;
-      if (reconnect) {
-        retryTimerRef.current = setTimeout(connect, reconnectDelayMs);
-      }
-    };
-  }, [endpoint, reconnect, reconnectDelayMs]);
-
   useEffect(() => {
-    connect();
-    return () => {
-      if (retryTimerRef.current !== null) {
-        clearTimeout(retryTimerRef.current);
-      }
-      sourceRef.current?.close();
-      sourceRef.current = null;
+    let controller: AbortController | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleReconnect = (): void => {
+      if (!reconnect) return;
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        void runOnce();
+      }, reconnectDelayMs);
     };
-  }, [connect]);
+
+    const runOnce = async (): Promise<void> => {
+      const token = getAccessToken();
+      if (token === null || token === '') {
+        // No token — do not attempt an unauthenticated connection.
+        return;
+      }
+
+      controller = new AbortController();
+      const localController = controller;
+
+      try {
+        const resp = await fetch(endpoint, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'text/event-stream',
+            'Cache-Control': 'no-cache',
+          },
+          signal: localController.signal,
+        });
+
+        if (!resp.ok || resp.body === null) {
+          scheduleReconnect();
+          return;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = 'message';
+        let currentData = '';
+
+        // for(;;) avoids @typescript-eslint/no-unnecessary-condition, which
+        // flags `while (true)` as an always-truthy literal condition (same
+        // pattern as cobrowse-api.ts:subscribeCobrowseEvents). Loop exits
+        // when the server closes the stream (done) or the AbortController
+        // fires, which surfaces as AbortError in the catch below.
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (line === '') {
+              if (currentData.length > 0) {
+                dispatchFrame(handlersRef.current, currentEvent, currentData);
+              }
+              currentEvent = 'message';
+              currentData = '';
+              continue;
+            }
+            if (line.startsWith(':')) continue; // comment / heartbeat
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              currentData =
+                currentData.length > 0 ? `${currentData}\n${line.slice(6)}` : line.slice(6);
+            }
+          }
+        }
+
+        // Stream ended cleanly → reconnect if still mounted.
+        scheduleReconnect();
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        scheduleReconnect();
+      }
+    };
+
+    void runOnce();
+
+    return () => {
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      // abort() makes reader.read() throw AbortError, which is caught above
+      // without a reconnect — so we don't need a separate `closed` flag.
+      controller?.abort();
+      controller = null;
+    };
+  }, [endpoint, reconnectDelayMs, reconnect]);
 }

@@ -1,10 +1,14 @@
 /**
  * Server-Sent Events Route — real-time event stream for the ORDR-Connect dashboard.
  *
- * GET /v1/events/stream?token=<jwt>
+ * GET /v1/events/stream
+ *   Authorization: Bearer <jwt>
  *
- * SSE does not support custom headers per spec, so the JWT is passed via the
- * `?token=` query parameter and validated server-side.
+ * Phase 161: The legacy `?token=` query-param auth was removed to comply
+ * with Rule 2 (no session tokens in URLs or query parameters). Clients must
+ * use `fetch()` with an Authorization header and parse the `text/event-stream`
+ * body manually — EventSource is unsuitable because it cannot set custom
+ * headers.
  *
  * SOC2 CC6.1  — Auth required; token validated before stream is opened.
  * SOC2 CC7.2  — Real-time monitoring and alerting pipeline.
@@ -86,11 +90,12 @@ const eventsRouter = new Hono<Env>();
 eventsRouter.get('/stream', async (c) => {
   const requestId = c.get('requestId');
 
-  // Validate token from query param (SSE cannot use Authorization header)
-  const token = new URL(c.req.url).searchParams.get('token');
-  if (token === null || token === '') {
+  // Phase 161: Authorization header only — no more `?token=` query-param
+  // fallback (Rule 2). Clients must use fetch() + manual SSE parsing.
+  const authHeader = c.req.header('Authorization') ?? c.req.header('authorization');
+  if (authHeader === undefined || authHeader.length === 0) {
     return c.json(
-      new AuthenticationError('Missing token query parameter', requestId).toSafeResponse(),
+      new AuthenticationError('Missing Authorization header', requestId).toSafeResponse(),
       401,
     );
   }
@@ -103,10 +108,7 @@ eventsRouter.get('/stream', async (c) => {
     );
   }
 
-  const authResult = await authenticateRequest(
-    { authorization: `Bearer ${token}` },
-    deps.jwtConfig,
-  );
+  const authResult = await authenticateRequest({ authorization: authHeader }, deps.jwtConfig);
 
   if (!authResult.authenticated) {
     return c.json(

@@ -181,11 +181,12 @@ describe('Realtime Routes', () => {
   });
 
   // ─── GET /stream ────────────────────────────────────────────────
+  //
+  // Phase 161: /stream accepts the Authorization header only. The old
+  // `?token=` fallback was removed (Rule 2 — no tokens in URLs/query).
 
   describe('GET /api/v1/realtime/stream', () => {
-    it('returns 401 when token query param is missing', async () => {
-      // Use unauthenticated app — no tenantContext pre-set.
-      // authenticateRequest is not called because the route checks for ?token= first.
+    it('returns 401 when Authorization header is missing', async () => {
       const app = createUnauthenticatedApp();
       const res = await app.request('/api/v1/realtime/stream');
 
@@ -195,14 +196,30 @@ describe('Realtime Routes', () => {
       expect(body.error.code).toBe('AUTH_FAILED');
     });
 
-    it('returns 401 when token is invalid (authenticateRequest returns authenticated: false)', async () => {
+    it('returns 401 when only a ?token= query param is provided (Rule 2)', async () => {
+      // Phase 161: query-param auth is no longer honoured, even if the value
+      // would have passed JWT validation. The middleware must ignore it.
+      const app = createUnauthenticatedApp();
+      const res = await app.request(
+        '/api/v1/realtime/stream?token=would-have-worked-pre-phase-161',
+      );
+
+      expect(res.status).toBe(401);
+      const body = (await res.json()) as { success: boolean; error: { code: string } };
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe('AUTH_FAILED');
+    });
+
+    it('returns 401 when Authorization header carries an invalid token', async () => {
       const { authenticateRequest } = await import('@ordr/auth');
       (authenticateRequest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         authenticated: false,
       });
 
       const app = createUnauthenticatedApp();
-      const res = await app.request('/api/v1/realtime/stream?token=invalid-jwt-token');
+      const res = await app.request('/api/v1/realtime/stream', {
+        headers: { Authorization: 'Bearer invalid-jwt-token' },
+      });
 
       expect(res.status).toBe(401);
       const body = (await res.json()) as { success: boolean; error: { code: string } };
