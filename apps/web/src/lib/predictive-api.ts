@@ -5,6 +5,8 @@
  * All responses contain UUID customer IDs only — no PHI.
  */
 
+import { getAccessToken } from './api';
+
 const BASE = '/api/v1/predictive';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,10 +62,11 @@ export interface TrendPoint {
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string): Promise<T> {
-  const token = localStorage.getItem('auth_token') ?? '';
+  // Rule 2 — auth tokens live in-memory only, never in localStorage/sessionStorage.
+  const token = getAccessToken();
   const res = await fetch(`${BASE}${path}`, {
     headers: {
-      Authorization: token !== '' ? `Bearer ${token}` : '',
+      Authorization: token !== null ? `Bearer ${token}` : '',
       'Content-Type': 'application/json',
     },
   });

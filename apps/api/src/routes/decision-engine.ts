@@ -57,7 +57,11 @@ export interface DecisionStreamEvent {
   readonly complianceFlags: number;
 }
 
-type DecisionStreamListener = (event: DecisionStreamEvent) => void;
+// Listeners receive the masked event *and* the origin tenantId so each SSE
+// subscriber can filter to its own tenant (Rule 2 — tenant isolation). The
+// tenantId is NEVER forwarded to the client; it exists only as a routing key
+// for the in-process fan-out.
+type DecisionStreamListener = (event: DecisionStreamEvent, tenantId: string) => void;
 const decisionListeners = new Set<DecisionStreamListener>();
 
 /** Broadcast a decision event to all active live-feed SSE connections. */
@@ -77,7 +81,7 @@ export function broadcastDecisionEvent(entry: WriteDecisionLogEntry): void {
   };
   for (const listener of decisionListeners) {
     try {
-      listener(event);
+      listener(event, entry.tenantId);
     } catch {
       // Listener disconnected — cleaned up in SSE handler
     }
@@ -377,13 +381,15 @@ function parseValidationErrors(issues: z.ZodIssue[]): Record<string, string[]> {
 }
 
 // ─── Auth middleware — applied to all routes below ───────────────────────────
+//
+// Rule 2 — session tokens MUST NOT appear in URLs or query parameters. The
+// live-feed SSE client fetches the stream with an Authorization header via
+// `fetch()` + manual SSE parsing (see apps/web/src/pages/DecisionEngine.tsx
+// and the same pattern in apps/web/src/lib/cobrowse-api.ts:subscribeCobrowseEvents).
 
 decisionEngineRouter.use('*', async (c, next) => {
   const d = ensureDeps();
-  const token =
-    c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') ??
-    new URL(c.req.url).searchParams.get('token') ??
-    '';
+  const token = c.req.header('Authorization')?.replace(/^Bearer\s+/i, '') ?? '';
   const result = authenticateRequest(token, d.jwtConfig);
   if (result.success !== true) {
     return c.json(
@@ -696,13 +702,35 @@ decisionEngineRouter.post('/rules/:id/test', rateLimit('write'), async (c): Prom
 // ─── GET /stream — SSE live decision feed ─────────────────────────────────────
 //
 // Streams DecisionStreamEvent to the client as they are produced by the pipeline.
-// JWT passed via ?token= query param (SSE does not support custom headers).
+// Authentication uses the Authorization: Bearer header (see auth middleware
+// above). The client runs `fetch()` + manual SSE parsing — NOT EventSource —
+// because EventSource can't carry Authorization headers and Rule 2 forbids
+// putting tokens in the URL query string.
+//
+// Tenant isolation: listeners filter on the origin tenantId passed by
+// broadcastDecisionEvent (Rule 2). A subscriber NEVER sees another tenant's
+// decisions even though the in-process bus is a global Set.
 //
 // PHI rule: customerId is masked to CUST-****{last4} before emission.
 
 decisionEngineRouter.get('/stream', (c): Promise<Response> => {
+  const ctx = c.get('tenantContext');
+  if (ctx === undefined) {
+    return Promise.resolve(
+      c.json(
+        {
+          success: false as const,
+          error: { code: 'UNAUTHENTICATED', message: 'Authentication required' },
+        },
+        401,
+      ),
+    );
+  }
+  const subscriberTenantId = ctx.tenantId;
+
   return streamSSE(c, async (stream) => {
-    const listener: DecisionStreamListener = (event) => {
+    const listener: DecisionStreamListener = (event, eventTenantId) => {
+      if (eventTenantId !== subscriberTenantId) return; // tenant isolation
       void stream.writeSSE({
         data: JSON.stringify(event),
         event: 'decision',

@@ -47,6 +47,7 @@ import {
   type CreateRuleBody,
   type UpdateRuleBody,
 } from '../lib/decision-engine-api';
+import { getAccessToken } from '../lib/api';
 import { cn } from '../lib/cn';
 import { Spinner } from '../components/ui/Spinner';
 
@@ -1144,38 +1145,71 @@ function LiveDecisionFeed(): ReactNode {
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
-  const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token') ?? '';
-    const url = `/api/v1/decision-engine/stream${token !== '' ? `?token=${encodeURIComponent(token)}` : ''}`;
-    const es = new EventSource(url);
-    esRef.current = es;
+    // Rule 2 — session tokens live in memory only and travel via the
+    // Authorization header. EventSource can't carry custom headers, so we use
+    // fetch() + manual SSE parsing (same pattern as subscribeCobrowseEvents
+    // in lib/cobrowse-api.ts).
+    const controller = new AbortController();
 
-    es.addEventListener('decision', (e: MessageEvent<string>) => {
-      if (pausedRef.current) return;
+    void (async () => {
+      const token = getAccessToken();
       try {
-        const evt = JSON.parse(e.data) as LiveDecisionEvent;
-        setEvents((prev) => [evt, ...prev].slice(0, 50));
-      } catch {
-        // malformed SSE — ignore
+        const resp = await fetch('/api/v1/decision-engine/stream', {
+          headers: {
+            Authorization: token !== null ? `Bearer ${token}` : '',
+            Accept: 'text/event-stream',
+            'Cache-Control': 'no-cache',
+          },
+          signal: controller.signal,
+        });
+        if (!resp.ok || resp.body === null) {
+          setConnected(false);
+          return;
+        }
+        setConnected(true);
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = 'message';
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            setConnected(false);
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              if (currentEvent === 'heartbeat') {
+                setConnected(true);
+              } else if (currentEvent === 'decision' && !pausedRef.current) {
+                try {
+                  const evt = JSON.parse(line.slice(6)) as LiveDecisionEvent;
+                  setEvents((prev) => [evt, ...prev].slice(0, 50));
+                } catch {
+                  /* malformed SSE line — skip */
+                }
+              }
+              currentEvent = 'message';
+            }
+          }
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
+        setConnected(false);
       }
-    });
-
-    es.addEventListener('heartbeat', () => {
-      setConnected(true);
-    });
-
-    es.onopen = () => {
-      setConnected(true);
-    };
-    es.onerror = () => {
-      setConnected(false);
-    };
+    })();
 
     return () => {
-      es.close();
-      esRef.current = null;
+      controller.abort();
     };
   }, []);
 
