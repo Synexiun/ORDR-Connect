@@ -17,7 +17,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { SSOManager } from '@ordr/auth';
 import type { AuditLogger } from '@ordr/audit';
-import { AuthenticationError, ValidationError } from '@ordr/core';
+import { AppError, AuthenticationError, ValidationError, ERROR_CODES } from '@ordr/core';
 import type { Env } from '../types.js';
 import { requireAuth, requireRoleMiddleware } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rate-limit.js';
@@ -83,18 +83,25 @@ ssoRouter.get('/authorize', async (c): Promise<Response> => {
     throw new ValidationError('Invalid SSO authorize request', fieldErrors, requestId);
   }
 
-  // Extract tenant from connection (the connection knows its tenant)
   const { connectionId, state } = query.data;
 
-  // For the authorize flow, we derive tenantId from the connection context.
-  // In production, a tenant lookup is done via connection ID mapping.
-  // Here, we pass a placeholder that the SSOManager resolves.
-  const tenantId = c.req.query('tenantId');
-  if (tenantId === undefined || tenantId.length === 0) {
-    throw new ValidationError('tenantId query parameter is required', {}, requestId);
+  // Rule 2: tenantId MUST be derived server-side from a trusted record, never
+  // from client input. The pre-auth /authorize flow has no JWT, so we look
+  // the connection up by its globally-unique UUID and use the tenantId
+  // persisted alongside it.
+  const connection = await deps.ssoManager.getConnectionGlobal(connectionId);
+  if (connection === null) {
+    return jsonErr(
+      c,
+      new AppError('SSO connection not found', ERROR_CODES.NOT_FOUND, 404, true, requestId),
+    );
   }
 
-  const result = await deps.ssoManager.getAuthorizationUrl(tenantId, connectionId, state);
+  const result = await deps.ssoManager.getAuthorizationUrl(
+    connection.tenantId,
+    connectionId,
+    state,
+  );
 
   if (!result.success) {
     return jsonErr(c, result.error);

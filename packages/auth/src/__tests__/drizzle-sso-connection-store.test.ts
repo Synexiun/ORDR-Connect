@@ -53,6 +53,21 @@ describe('DrizzleSSOConnectionStore', () => {
     expect(result).toBeNull();
   });
 
+  it('getByConnectionId (global) returns connection regardless of tenant', async () => {
+    const db = makeDb([SSO_ROW]);
+    const store = new DrizzleSSOConnectionStore(db as never);
+    const result = await store.getByConnectionId('conn-1');
+    expect(result).not.toBeNull();
+    expect(result?.tenantId).toBe('t1');
+  });
+
+  it('getByConnectionId returns null when unknown', async () => {
+    const db = makeDb([]);
+    const store = new DrizzleSSOConnectionStore(db as never);
+    const result = await store.getByConnectionId('missing');
+    expect(result).toBeNull();
+  });
+
   it('listByTenant returns array of connections', async () => {
     const db = makeDb([SSO_ROW]);
     // listByTenant calls select().from().where() — no .limit()

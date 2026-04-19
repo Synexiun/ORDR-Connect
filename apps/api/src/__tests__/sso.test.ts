@@ -116,14 +116,44 @@ beforeEach(async () => {
 describe('GET /api/v1/sso/authorize', () => {
   it('returns 400 when connectionId is missing', async () => {
     const app = createTestApp();
-    const res = await app.request('/api/v1/sso/authorize?tenantId=tenant-001');
+    const res = await app.request('/api/v1/sso/authorize');
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when tenantId is missing', async () => {
+  it('returns 404 when connectionId does not resolve to a tenant (Rule 2)', async () => {
+    // A client-supplied tenantId would have "worked around" a tenant-binding
+    // mismatch; without it, an unknown connectionId must 404 rather than
+    // fall back to caller-provided state.
     const app = createTestApp();
-    const res = await app.request('/api/v1/sso/authorize?connectionId=conn-001');
-    expect(res.status).toBe(400);
+    const res = await app.request('/api/v1/sso/authorize?connectionId=does-not-exist');
+    expect(res.status).toBe(404);
+  });
+
+  it('derives tenantId from the connection, ignoring any client-supplied tenantId (Rule 2)', async () => {
+    // Fetch the connection created in beforeEach via the authenticated list
+    // endpoint to get its real UUID.
+    const app = createTestApp();
+    const token = await makeJwt();
+    const listRes = await app.request('/api/v1/sso/connections', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const list = (await listRes.json()) as { data: readonly { id: string }[] };
+    const realId = list.data[0]?.id;
+    expect(realId).toBeDefined();
+
+    // Pass an attacker-chosen tenantId — it must be ignored. The route must
+    // get past tenant-derivation (no "tenantId is required" error). The
+    // connection is created in 'validating' state so the downstream check
+    // will fail with a different error — that's the proof that tenant
+    // derivation succeeded from the connection record.
+    const res = await app.request(
+      `/api/v1/sso/authorize?connectionId=${realId ?? ''}&tenantId=attacker-tenant`,
+      { redirect: 'manual' },
+    );
+    const body = (await res.json()) as { error?: { message?: string } };
+    const errorMsg = body.error?.message ?? '';
+    expect(errorMsg).not.toMatch(/tenantId/i);
+    expect(errorMsg).toMatch(/not active/i);
   });
 });
 

@@ -91,6 +91,14 @@ export interface WorkOSClient {
 export interface SSOConnectionStore {
   create(connection: SSOConnection): Promise<void>;
   getById(tenantId: string, connectionId: string): Promise<SSOConnection | null>;
+  /**
+   * Global lookup by connection ID. Used in the pre-auth `/authorize` flow
+   * where no JWT is available yet and the tenant MUST be derived from a
+   * server-owned record rather than client input (Rule 2).
+   *
+   * Connection IDs are UUIDv4 primary keys, globally unique across tenants.
+   */
+  getByConnectionId(connectionId: string): Promise<SSOConnection | null>;
   listByTenant(tenantId: string): Promise<readonly SSOConnection[]>;
   delete(tenantId: string, connectionId: string): Promise<void>;
   getActiveByTenant(tenantId: string): Promise<SSOConnection | null>;
@@ -254,6 +262,13 @@ export class InMemorySSOConnectionStore implements SSOConnectionStore {
 
   getById(tenantId: string, connectionId: string): Promise<SSOConnection | null> {
     return Promise.resolve(this.connections.get(`${tenantId}:${connectionId}`) ?? null);
+  }
+
+  getByConnectionId(connectionId: string): Promise<SSOConnection | null> {
+    for (const conn of this.connections.values()) {
+      if (conn.id === connectionId) return Promise.resolve(conn);
+    }
+    return Promise.resolve(null);
   }
 
   listByTenant(tenantId: string): Promise<readonly SSOConnection[]> {
@@ -476,6 +491,18 @@ export class SSOManager {
 
     await this.connectionStore.create(connection);
     return ok(connection);
+  }
+
+  /**
+   * Global (cross-tenant) lookup used by the pre-auth /authorize route.
+   *
+   * Returns the connection record (which carries its authoritative tenantId)
+   * when the caller has no JWT yet and must NOT be trusted to supply a
+   * tenantId. Callers MUST treat the returned `tenantId` as the sole
+   * source of truth for tenant binding.
+   */
+  async getConnectionGlobal(connectionId: string): Promise<SSOConnection | null> {
+    return this.connectionStore.getByConnectionId(connectionId);
   }
 
   /**

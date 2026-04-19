@@ -66,6 +66,15 @@ export class DrizzleSSOConnectionStore implements SSOConnectionStore {
     return rows[0] !== undefined ? rowToSSOConnection(rows[0]) : null;
   }
 
+  async getByConnectionId(connectionId: string): Promise<SSOConnection | null> {
+    const rows = await this.db
+      .select()
+      .from(schema.ssoConnections)
+      .where(eq(schema.ssoConnections.id, connectionId))
+      .limit(1);
+    return rows[0] !== undefined ? rowToSSOConnection(rows[0]) : null;
+  }
+
   async listByTenant(tenantId: string): Promise<readonly SSOConnection[]> {
     const rows = await this.db
       .select()
