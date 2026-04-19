@@ -108,6 +108,13 @@ export const billingApi = {
     return apiClient.get<UsageSummary>('/billing/usage');
   },
 
+  async createSubscription(
+    planTier: PlanTier,
+    paymentMethodId: string | null = null,
+  ): Promise<Subscription> {
+    return apiClient.post<Subscription>('/billing', { planTier, paymentMethodId });
+  },
+
   async upgradeSubscription(planTier: PlanTier): Promise<Subscription> {
     return apiClient.post<Subscription>('/billing/upgrade', { planTier });
   },
