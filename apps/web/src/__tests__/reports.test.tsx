@@ -1186,7 +1186,6 @@ describe('ScheduledReports', () => {
     expect(initialPauseButtons.length).toBe(2);
 
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(initialPauseButtons[0]!);
     });
 
@@ -1208,7 +1207,6 @@ describe('ScheduledReports', () => {
 
     const editButtons = screen.getAllByText('Edit');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(editButtons[0]!);
     });
 

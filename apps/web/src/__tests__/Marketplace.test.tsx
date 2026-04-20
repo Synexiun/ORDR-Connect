@@ -221,7 +221,6 @@ describe('Marketplace', () => {
 
     const installButtons = screen.getAllByText('Install');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(installButtons[0]!);
     });
 
@@ -242,7 +241,6 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(detailButtons[0]!);
     });
 
@@ -266,7 +264,6 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(detailButtons[0]!);
     });
 
@@ -338,7 +335,6 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(detailButtons[0]!);
     });
 
@@ -360,7 +356,6 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(detailButtons[0]!);
     });
 
@@ -401,7 +396,6 @@ describe('Marketplace', () => {
 
     const detailButtons = screen.getAllByText('Details');
     act(() => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       fireEvent.click(detailButtons[0]!);
     });
 

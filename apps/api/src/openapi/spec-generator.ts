@@ -49,14 +49,16 @@ interface OpenAPIOperation {
   readonly tags: readonly string[];
   readonly security?: ReadonlyArray<Record<string, readonly string[]>> | undefined;
   readonly parameters?: readonly OpenAPIParameter[] | undefined;
-  readonly requestBody?: {
-    readonly required: boolean;
-    readonly content: {
-      readonly 'application/json': {
-        readonly schema: { readonly '$ref': string };
-      };
-    };
-  } | undefined;
+  readonly requestBody?:
+    | {
+        readonly required: boolean;
+        readonly content: {
+          readonly 'application/json': {
+            readonly schema: { readonly $ref: string };
+          };
+        };
+      }
+    | undefined;
   readonly responses: Record<string, OpenAPIResponse>;
   readonly 'x-rate-limit'?: number | undefined;
 }
@@ -71,11 +73,13 @@ interface OpenAPIParameter {
 
 interface OpenAPIResponse {
   readonly description: string;
-  readonly content?: {
-    readonly 'application/json': {
-      readonly schema: { readonly '$ref': string };
-    };
-  } | undefined;
+  readonly content?:
+    | {
+        readonly 'application/json': {
+          readonly schema: { readonly $ref: string };
+        };
+      }
+    | undefined;
 }
 
 interface OpenAPISecurityScheme {
@@ -134,7 +138,7 @@ function extractPathParams(path: string): readonly OpenAPIParameter[] {
 
   while ((match = regex.exec(path)) !== null) {
     const paramName = match[1];
-    if (paramName) {
+    if (paramName !== undefined && paramName !== '') {
       params.push({
         name: paramName,
         in: 'path',
@@ -156,9 +160,7 @@ function toOperationId(method: string, path: string): string {
     .filter(Boolean);
 
   const methodPrefix = method.toLowerCase();
-  const pathPart = segments
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join('');
+  const pathPart = segments.map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join('');
 
   return `${methodPrefix}${pathPart}`;
 }
@@ -168,12 +170,12 @@ function buildResponsesMap(meta: RouteMetadata): Record<string, OpenAPIResponse>
 
   // Success response
   const successCode = meta.method === 'POST' ? '201' : '200';
-  if (meta.responseSchema) {
+  if (meta.responseSchema !== undefined) {
     responses[successCode] = {
       description: HTTP_STATUS_DESCRIPTIONS[meta.method === 'POST' ? 201 : 200] ?? 'Success',
       content: {
         'application/json': {
-          schema: { '$ref': `#/components/schemas/${meta.responseSchema}` },
+          schema: { $ref: `#/components/schemas/${meta.responseSchema}` },
         },
       },
     };
@@ -189,7 +191,7 @@ function buildResponsesMap(meta: RouteMetadata): Record<string, OpenAPIResponse>
       description: HTTP_STATUS_DESCRIPTIONS[code] ?? `Error ${String(code)}`,
       content: {
         'application/json': {
-          schema: { '$ref': '#/components/schemas/ErrorResponse' },
+          schema: { $ref: '#/components/schemas/ErrorResponse' },
         },
       },
     };
@@ -210,7 +212,7 @@ function buildOperation(meta: RouteMetadata): OpenAPIOperation {
       readonly required: boolean;
       readonly content: {
         readonly 'application/json': {
-          readonly schema: { readonly '$ref': string };
+          readonly schema: { readonly $ref: string };
         };
       };
     };
@@ -228,11 +230,7 @@ function buildOperation(meta: RouteMetadata): OpenAPIOperation {
   if (meta.auth === 'none') {
     operation.security = [];
   } else if (meta.auth === 'optional') {
-    operation.security = [
-      {},
-      { BearerAuth: [] },
-      { ApiKeyAuth: [] },
-    ];
+    operation.security = [{}, { BearerAuth: [] }, { ApiKeyAuth: [] }];
   }
   // 'required' uses the global security setting
 
@@ -243,12 +241,12 @@ function buildOperation(meta: RouteMetadata): OpenAPIOperation {
   }
 
   // Request body
-  if (meta.requestSchema) {
+  if (meta.requestSchema !== undefined) {
     operation.requestBody = {
       required: true,
       content: {
         'application/json': {
-          schema: { '$ref': `#/components/schemas/${meta.requestSchema}` },
+          schema: { $ref: `#/components/schemas/${meta.requestSchema}` },
         },
       },
     };
@@ -285,19 +283,18 @@ export function generateOpenAPISpec(registry: RouteRegistry): OpenAPIDocument {
     }
   }
 
-  const tags = [...tagSet]
-    .sort()
-    .map((name) => ({
-      name,
-      description: TAG_DESCRIPTIONS[name] ?? name,
-    }));
+  const tags = [...tagSet].sort().map((name) => ({
+    name,
+    description: TAG_DESCRIPTIONS[name] ?? name,
+  }));
 
   return {
     openapi: '3.1.0',
     info: {
       title: 'ORDR-Connect API',
       version: '1.0.0',
-      description: 'Customer Operations OS API — event-sourced, multi-agent platform with SOC2/ISO27001/HIPAA compliance.',
+      description:
+        'Customer Operations OS API — event-sourced, multi-agent platform with SOC2/ISO27001/HIPAA compliance.',
       contact: {
         name: 'ORDR-Connect Engineering',
         email: 'api@ordr-connect.dev',
@@ -327,7 +324,8 @@ export function generateOpenAPISpec(registry: RouteRegistry): OpenAPIDocument {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
-          description: 'JWT access token obtained via /api/v1/auth/login. Required for most endpoints.',
+          description:
+            'JWT access token obtained via /api/v1/auth/login. Required for most endpoints.',
         },
         ApiKeyAuth: {
           type: 'apiKey',
@@ -347,7 +345,11 @@ export function generateOpenAPISpec(registry: RouteRegistry): OpenAPIDocument {
               properties: {
                 code: { type: 'string', description: 'Machine-readable error code' },
                 message: { type: 'string', description: 'Human-readable error description' },
-                correlationId: { type: 'string', format: 'uuid', description: 'Unique request ID for support' },
+                correlationId: {
+                  type: 'string',
+                  format: 'uuid',
+                  description: 'Unique request ID for support',
+                },
               },
               required: ['code', 'message', 'correlationId'],
             },
@@ -376,9 +378,6 @@ export function generateOpenAPISpec(registry: RouteRegistry): OpenAPIDocument {
       },
     },
     tags,
-    security: [
-      { BearerAuth: [] },
-      { ApiKeyAuth: [] },
-    ],
+    security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }],
   };
 }

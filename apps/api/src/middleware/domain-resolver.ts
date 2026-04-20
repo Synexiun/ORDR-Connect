@@ -80,20 +80,24 @@ export const domainResolver = createMiddleware<Env>(async (c, next) => {
   }
 
   const host = c.req.header('host');
-  if (!host) {
+  if (host === undefined || host === '') {
     await next();
     return;
   }
 
   // Strip port number if present (e.g., "app.example.com:443" → "app.example.com")
   const domain = host.split(':')[0]?.toLowerCase();
-  if (!domain) {
+  if (domain === undefined || domain === '') {
     await next();
     return;
   }
 
   // Skip known default domains (localhost, internal)
-  if (domain === 'localhost' || domain.endsWith('.internal') || domain.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+  if (
+    domain === 'localhost' ||
+    domain.endsWith('.internal') ||
+    domain.match(/^\d+\.\d+\.\d+\.\d+$/)
+  ) {
     await next();
     return;
   }
@@ -116,7 +120,7 @@ export const domainResolver = createMiddleware<Env>(async (c, next) => {
   // Cache miss or expired — look up in database
   const tenantId = await lookupFn(domain);
 
-  if (tenantId) {
+  if (tenantId !== null && tenantId !== '') {
     // Store in cache
     domainCache.set(domain, {
       tenantId,

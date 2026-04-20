@@ -16,7 +16,7 @@ export const requestId = createMiddleware<Env>(async (c, next) => {
   // Accept client-provided request ID if present (for distributed tracing),
   // otherwise generate a new one
   const incomingId = c.req.header('x-request-id');
-  const id = incomingId && incomingId.length > 0 ? incomingId : randomUUID();
+  const id = incomingId !== undefined && incomingId.length > 0 ? incomingId : randomUUID();
 
   c.set('requestId', id);
 

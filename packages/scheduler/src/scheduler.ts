@@ -177,7 +177,7 @@ export class InMemorySchedulerStore implements SchedulerStore {
     readonly jobType?: string;
   }): Promise<JobInstance[]> {
     let results = [...this.instances.values()];
-    if (filter?.status !== undefined && filter.status !== '') {
+    if (filter?.status !== undefined) {
       results = results.filter((i) => i.status === filter.status);
     }
     if (filter?.jobType !== undefined && filter.jobType !== '') {
